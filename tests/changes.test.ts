@@ -71,7 +71,8 @@ describe("setup changes", () => {
   it("keeps the review and connection-test gates", () => {
     expect(() => apply([{ type: "set_skill", skill: "fetched", enabled: true }])).toThrow("needs a review");
     expect(apply([{ type: "set_skill", skill: "weekly-report", enabled: false }]).library!.skills[0]!.enabled).toBe(false);
-    expect(() => apply([{ type: "set_mcp_server", server: "github", enabled: true }])).toThrow("hasn't passed a connection test");
+    expect(apply([{ type: "set_mcp_server", server: "github", enabled: true }]).library!.mcpServers[0]!.enabled).toBe(true);
+    expect(() => apply([{ type: "add_mcp_server", name: "files", command: "npx" }, { type: "set_mcp_server", server: "files", enabled: true }])).toThrow("hasn't passed a connection test");
     const added = apply([{ type: "add_mcp_server", name: "files", command: "npx", args: ["-y", "files-mcp"] }]).library!.mcpServers.find((server) => server.name === "files")!;
     expect(added).toMatchObject({ enabled: false, tools: null, config: { type: "stdio", command: "npx", args: ["-y", "files-mcp"], env: {} } });
     expect(() => apply([{ type: "add_mcp_server", name: "paseo", url: "https://x.dev" }])).toThrow("is taken");
@@ -129,7 +130,7 @@ describe("setup changes", () => {
     const text = setupOverview(setup(), PROVIDERS);
     expect(text).toContain("- Chief (id chief). claude · default model; team Ops (Chief of Staff); contact other bots: ask.");
     expect(text).toContain("- fetched: From GitHub [needs review]");
-    expect(text).toContain("- github [off, untested]");
+    expect(text).toContain("- github [off]");
     expect(text).toContain("- claude: models opus (default) [thinking: low, high], haiku; modes default (default), plan");
     expect(botDetails(setup(), "scout")).toContain("Instructions (Soul):\n(none)");
   });

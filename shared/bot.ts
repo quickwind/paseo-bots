@@ -34,12 +34,11 @@ export function isLoopbackUrl(url: string): boolean {
 }
 
 /**
- * This build makes no network connections of its own, and a bot's MCP servers are the one place it
- * could be told to: a server that starts a program on this computer, or listens on this computer, is
- * allowed; one at a remote address is not.
+ * A server at an address other than this computer. The agent connects to it, as it does to any MCP
+ * server it is given; this plugin never does, so it cannot test one or list its tools.
  */
-export function mcpServerAllowed(config: McpServerConfig): boolean {
-  return config.type === "stdio" || isLoopbackUrl(config.url);
+export function isRemoteMcp(config: McpServerConfig): boolean {
+  return config.type !== "stdio" && !isLoopbackUrl(config.url);
 }
 
 export const BotMcpServerSchema = z.object({
@@ -572,7 +571,7 @@ function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name" | "con
   for (const server of servers) {
     const name = server.name.trim();
     // Paseo adds its own "paseo" server; ours can't replace it.
-    if (name && !RESERVED_MCP_NAMES.includes(name) && mcpServerAllowed(server.config)) record[name] = server.config;
+    if (name && !RESERVED_MCP_NAMES.includes(name)) record[name] = server.config;
   }
   return record;
 }
@@ -659,7 +658,6 @@ export function parseMcpJson(text: string): BotMcpServer[] {
   const root = parsed as Record<string, unknown>;
   const map = root.mcpServers && typeof root.mcpServers === "object" ? (root.mcpServers as Record<string, unknown>) : root;
   const servers: BotMcpServer[] = [];
-  const remote: string[] = [];
   for (const [name, raw] of Object.entries(map)) {
     if (!raw || typeof raw !== "object") continue;
     const entry = raw as Record<string, unknown>;
@@ -668,17 +666,11 @@ export function parseMcpJson(text: string): BotMcpServer[] {
       const args = Array.isArray(entry.args) ? entry.args.filter((arg): arg is string => typeof arg === "string") : [];
       servers.push({ name, enabled: true, config: { type: "stdio", command: entry.command, args, env: stringRecord(entry.env) } });
     } else if (typeof entry.url === "string") {
-      if (!isLoopbackUrl(entry.url)) {
-        remote.push(name);
-        continue;
-      }
       const kind = type === "sse" ? "sse" : "http";
       servers.push({ name, enabled: true, config: { type: kind, url: entry.url, headers: stringRecord(entry.headers) } });
     }
   }
-  if (servers.length === 0) {
-    throw new Error(remote.length ? `${remote.join(", ")} ${remote.length === 1 ? "is a remote server" : "are remote servers"}; only servers that run on this computer are supported.` : "No MCP servers found in that JSON.");
-  }
+  if (servers.length === 0) throw new Error("No MCP servers found in that JSON.");
   return servers;
 }
 

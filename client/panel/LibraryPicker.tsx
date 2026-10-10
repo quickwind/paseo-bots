@@ -1,7 +1,7 @@
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { SettingsCard, SettingsSection } from "@getpaseo/plugin/client/ui";
 import type { Bot } from "../../shared/bot";
-import { mcpServerTested, mcpTarget, setBotUses, type LibraryKind } from "../../shared/library";
+import { mcpServerCanEnable, mcpTarget, setBotUses, type LibraryKind } from "../../shared/library";
 import { openLibrary } from "../navigation";
 import type { PanelProps } from "./BotPanel";
 import { CardNote, PressableRow, RowText, SectionLink, Switch } from "./controls";
@@ -32,7 +32,7 @@ export function LibraryPicker({ colors, bot, library, onPatch, kind, title, info
           label: server.name,
           hint: server.description || mcpTarget(server.config),
           enabled: server.enabled,
-          offHint: mcpServerTested(server) ? "Turned off in Skills & Tools" : "Needs a test in Skills & Tools",
+          offHint: mcpServerCanEnable(server) ? "Turned off in Skills & Tools" : "Needs a test in Skills & Tools",
         }));
   const used = kind === "skill" ? bot.skillIds : bot.mcpServerIds;
   const toggle = (id: string, on: boolean) => {

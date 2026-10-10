@@ -16,7 +16,7 @@ This is a fork of [oliexe/paseo-bots](https://github.com/oliexe/paseo-bots) 0.2.
 | Avatar pictures drawn by OpenAI | Removed; pixel-art faces, and pictures you upload |
 | Pictures from an image address | Removed; a picture is kept only as an uploaded `data:` image |
 | Importing skills from GitHub or a link | Imports from **a folder on this computer** instead |
-| MCP servers at a remote address (HTTP, SSE) | Only servers that run on this computer: a program to start, or an `http://localhost` address. Remote ones are skipped on import and never given to an agent |
+| Testing MCP servers at a remote address (HTTP, SSE) | The plugin only tests programs and `http://localhost` addresses. A remote server (for example one inside your company) is imported and can be turned on without a test; the bot's agent is the one that connects to it |
 | GitHub link on the start screen | Removed |
 
 Everything else is unchanged: bots, memory, routines and webhooks, teams, the skill and MCP library, `/learn`, Paseo's own tools for bots, and sharing bots and teams as files.
@@ -24,7 +24,7 @@ Everything else is unchanged: bots, memory, routines and webhooks, teams, the sk
 ## What this does not control
 
 - **The bots' own agents.** A bot runs on a provider (Claude Code, for instance) that talks to its own service. That is the provider's traffic, not the plugin's.
-- **Programs an MCP server starts.** A local server may itself reach the internet. Add only servers you trust.
+- **MCP servers.** The agent connects to the servers you give a bot, remote ones included; the plugin never does. A server may itself reach the internet. Add only servers you trust.
 - **Links in a chat.** A link in a bot's reply opens in your browser only when you press it.
 - **The plugin runs unsandboxed**, like every Paseo plugin. Read the code before installing it.
 
@@ -90,7 +90,7 @@ Whether a bot may ask others for help is set in its settings under **Permissions
 Press **Skills & Tools** at the bottom of the bot list.
 
 - **Skills**: press **+** to import skills from a folder on this computer (the full path; every `SKILL.md` under it comes in, up to 30) or write a new one. Open an imported skill and press **Review** to turn it on. **Update** on a skill reads its folder again.
-- **MCP servers**: press **+**, then **New server**, or **Import config** to pick up the servers set up in Claude Code, Claude Desktop or Cursor (remote ones are left out). Press **Test and turn on** on the server's page.
+- **MCP servers**: press **+**, then **New server**, or **Import config** to pick up the servers set up in Claude Code, Claude Desktop or Cursor. Press **Test and turn on** on the server's page; a remote server has no test and is turned on with its switch.
 
 Then give them to a bot in its settings: skills under **Skills**, MCP servers under **Access**.
 
@@ -112,7 +112,7 @@ node scripts/pack-offline.mjs --out ../paseo-bots-offline
 
 The package is a zip of the plugin's source files only (the daemon compiles them when the plugin starts). It has no runtime dependencies, so installing it needs no npm and no internet.
 
-`tests/offline.test.ts` scans the whole source for network code (`fetch`, sockets, WebSocket, a remote address in code, an image loaded from an address) and fails if it finds any outside the one MCP probe, which refuses everything but this computer. Run it after every change.
+`tests/offline.test.ts` scans the whole source for network code (`fetch`, sockets, WebSocket, a remote address in code, an image loaded from an address) and fails if it finds any outside the one MCP probe, which refuses everything but this computer (remote MCP servers are the agent's to connect to). Run it after every change.
 
 ## Staying close to upstream
 

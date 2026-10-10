@@ -1,4 +1,4 @@
-import { EMPTY_LIBRARY, joinArgs, newGroupId, numberedName, RESERVED_MCP_NAMES, uniqueName, type Bot, type BotMcpServer, type BotSettingsValues, type Library, type LibraryMcpServer, type LibrarySkill, type TeamFileTeam } from "./bot";
+import { EMPTY_LIBRARY, isRemoteMcp, joinArgs, newGroupId, numberedName, RESERVED_MCP_NAMES, uniqueName, type Bot, type BotMcpServer, type BotSettingsValues, type Library, type LibraryMcpServer, type LibrarySkill, type TeamFileTeam } from "./bot";
 import { saveTeam } from "./groups";
 
 // The shared library of skills and MCP servers. Bots only hold ids; these
@@ -102,6 +102,15 @@ export function renameGrants(bots: readonly Bot[], from: string, to: string): Bo
 /** Whether the last test of a server connected; only then can it be turned on. */
 export function mcpServerTested(server: Pick<LibraryMcpServer, "tools" | "checkError">): boolean {
   return server.tools !== null && !server.checkError;
+}
+
+/**
+ * Whether a server can be turned on. One this plugin can reach (a program to start, or an address on
+ * this computer) must pass a test first. A remote one cannot be tested from here, since the plugin
+ * never connects to the network, so the user turns it on knowing the agent will connect to it.
+ */
+export function mcpServerCanEnable(server: Pick<LibraryMcpServer, "tools" | "checkError" | "config">): boolean {
+  return isRemoteMcp(server.config) || mcpServerTested(server);
 }
 
 /** One line describing how a server connects: the command line, or transport and URL. */

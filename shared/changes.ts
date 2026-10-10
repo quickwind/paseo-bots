@@ -20,7 +20,7 @@ import {
   type TeamLogo,
 } from "./bot";
 import { saveTeam, teamLogoOf, withoutBot } from "./groups";
-import { addMcpServers, forgetItem, mcpServerTested, setBotUses } from "./library";
+import { addMcpServers, forgetItem, mcpServerCanEnable, setBotUses } from "./library";
 import { PALETTE_COUNT } from "./pixel";
 import { describeSchedule, ScheduleInput, scheduleFrom } from "./routines";
 import { BOT_TEMPLATES, newBot } from "./templates";
@@ -512,7 +512,7 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
     }
     case "set_mcp_server": {
       const server = findServer(library, change.server);
-      if (change.enabled && !mcpServerTested(server)) throw new Error(`${server.name} hasn't passed a connection test. The user tests it in Skills & Tools, which turns it on.`);
+      if (change.enabled && !mcpServerCanEnable(server)) throw new Error(`${server.name} hasn't passed a connection test. The user tests it in Skills & Tools, which turns it on.`);
       return { ...values, library: { ...library, mcpServers: library.mcpServers.map((entry) => (entry.id === server.id ? { ...entry, enabled: change.enabled, updatedAt: context.now } : entry)) } };
     }
     case "remove_mcp_server": {
@@ -727,7 +727,7 @@ export function setupOverview(values: BotSettingsValues, providers: readonly Pro
         .join("\n") || "- none"
     }`,
     `Library skills (${library.skills.length}):\n${library.skills.map((skill) => `- ${skill.id}: ${skill.description || "no description"} [${skill.reviewedSha === null ? "needs review" : skill.enabled ? "on" : "off"}]`).join("\n") || "- none"}`,
-    `Library MCP servers (${library.mcpServers.length}):\n${library.mcpServers.map((server) => `- ${server.name}${server.description ? `: ${server.description}` : ""} [${server.enabled ? "on" : mcpServerTested(server) ? "off" : "off, untested"}]`).join("\n") || "- none"}`,
+    `Library MCP servers (${library.mcpServers.length}):\n${library.mcpServers.map((server) => `- ${server.name}${server.description ? `: ${server.description}` : ""} [${server.enabled ? "on" : mcpServerCanEnable(server) ? "off" : "off, untested"}]`).join("\n") || "- none"}`,
     `New bots start with: provider ${defaults.provider || "any ready one"}, ${defaults.model ?? "default model"}, contact other bots: ${defaults.contactBots}.`,
     `Presets: ${list((values.presets ?? []).map((preset) => preset.name)) || "none"}.`,
     providers

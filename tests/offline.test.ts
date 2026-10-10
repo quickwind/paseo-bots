@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, readdir, readFile, symlink, writeFile } from "node:fs/p
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BotSchema, buildAgentConfig, isLoopbackUrl, mcpServerAllowed, parseMcpJson, type Library, type LibraryMcpServer } from "../shared/bot";
+import { BotSchema, buildAgentConfig, isLoopbackUrl, isRemoteMcp, parseMcpJson, type Library, type LibraryMcpServer } from "../shared/bot";
+import { mcpServerCanEnable } from "../shared/library";
 import { isLocalFolder, parseSkillFolder } from "../shared/skills";
 import { makeBot } from "./helpers";
 
@@ -67,7 +68,21 @@ describe("skills come from a folder on this computer", () => {
   });
 });
 
-describe("MCP servers stay on this computer", () => {
+describe("MCP servers are the agent's to connect to, never the plugin's", () => {
+  const server = (id: string, config: LibraryMcpServer["config"], patch: Partial<LibraryMcpServer> = {}): LibraryMcpServer => ({
+    id,
+    name: id,
+    description: "",
+    enabled: true,
+    config,
+    tools: null,
+    checkedAt: null,
+    checkError: null,
+    createdAt: "",
+    updatedAt: "",
+    ...patch,
+  });
+
   it("knows which addresses are this computer", () => {
     for (const local of ["http://localhost:3000/mcp", "https://LOCALHOST/mcp", "http://127.0.0.1:9/x", "http://127.9.8.7/x", "http://[::1]:8080/mcp", "http://tools.localhost/mcp"]) {
       expect(isLoopbackUrl(local)).toBe(true);
@@ -77,56 +92,51 @@ describe("MCP servers stay on this computer", () => {
     }
   });
 
-  it("allows a program to start and a localhost address, and nothing remote", () => {
-    expect(mcpServerAllowed({ type: "stdio", command: "npx", args: [], env: {} })).toBe(true);
-    expect(mcpServerAllowed({ type: "http", url: "http://localhost:1/mcp", headers: {} })).toBe(true);
-    expect(mcpServerAllowed({ type: "sse", url: "https://mcp.example.com/sse", headers: {} })).toBe(false);
+  it("calls a server remote when it is not a program here or an address here", () => {
+    expect(isRemoteMcp({ type: "stdio", command: "npx", args: [], env: {} })).toBe(false);
+    expect(isRemoteMcp({ type: "http", url: "http://localhost:1/mcp", headers: {} })).toBe(false);
+    expect(isRemoteMcp({ type: "http", url: "https://mcp.intranet.example/mcp", headers: {} })).toBe(true);
+    expect(isRemoteMcp({ type: "sse", url: "http://10.1.2.3/sse", headers: {} })).toBe(true);
   });
 
-  it("imports the local servers from a config file and skips remote ones", () => {
+  it("imports every server in a config file, remote ones included", () => {
     const json = JSON.stringify({
       mcpServers: {
         files: { command: "npx", args: ["files-mcp"] },
         local: { type: "http", url: "http://localhost:8123/mcp" },
-        hosted: { type: "http", url: "https://mcp.example.com/mcp" },
-        legacy: { type: "sse", url: "https://example.com/sse" },
+        hosted: { type: "http", url: "https://mcp.intranet.example/mcp", headers: { Authorization: "Bearer x" } },
       },
     });
-    expect(parseMcpJson(json).map((server) => server.name)).toEqual(["files", "local"]);
-    expect(() => parseMcpJson(JSON.stringify({ hosted: { url: "https://mcp.example.com/mcp" } }))).toThrow("hosted is a remote server; only servers that run on this computer are supported.");
+    expect(parseMcpJson(json).map((entry) => entry.name)).toEqual(["files", "local", "hosted"]);
   });
 
-  it("never gives a bot's agent a remote server, even one already saved", () => {
-    const server = (id: string, config: LibraryMcpServer["config"]): LibraryMcpServer => ({
-      id,
-      name: id,
-      description: "",
-      enabled: true,
-      config,
-      tools: null,
-      checkedAt: null,
-      checkError: null,
-      createdAt: "",
-      updatedAt: "",
-    });
+  it("hands a bot's agent every enabled server, remote ones too, since the agent connects to them", () => {
     const library: Library = {
       skills: [],
       mcpServers: [
         server("files", { type: "stdio", command: "npx", args: ["files-mcp"], env: {} }),
-        server("local", { type: "http", url: "http://127.0.0.1:9000/mcp", headers: {} }),
-        server("hosted", { type: "http", url: "https://mcp.example.com/mcp", headers: {} }),
+        server("hosted", { type: "http", url: "https://mcp.intranet.example/mcp", headers: { Authorization: "Bearer x" } }),
       ],
     };
-    const config = buildAgentConfig(makeBot({ mcpServerIds: ["files", "local", "hosted"] }), library, "m", "");
-    expect(Object.keys(config.mcpServers ?? {}).sort()).toEqual(["files", "local"]);
+    const config = buildAgentConfig(makeBot({ mcpServerIds: ["files", "hosted"] }), library, "m", "");
+    expect(Object.keys(config.mcpServers ?? {}).sort()).toEqual(["files", "hosted"]);
   });
 
-  it("refuses to probe a remote server and sends nothing", async () => {
+  it("lets a remote server be turned on without a test, since the plugin cannot make one", () => {
+    const remote = server("hosted", { type: "http", url: "https://mcp.intranet.example/mcp", headers: {} });
+    const program = server("files", { type: "stdio", command: "npx", args: [], env: {} });
+    expect(mcpServerCanEnable(remote)).toBe(true);
+    expect(mcpServerCanEnable(program)).toBe(false);
+    expect(mcpServerCanEnable({ ...program, tools: [], checkError: null })).toBe(true);
+    expect(mcpServerCanEnable({ ...program, tools: [], checkError: "boom" })).toBe(false);
+  });
+
+  it("never connects to a remote server to test it", async () => {
     const fetch = vi.spyOn(globalThis, "fetch");
     const { probeMcpServer } = await import("../server/mcp-probe");
     for (const type of ["http", "sse"] as const) {
-      const result = await probeMcpServer({ config: { type, url: "https://mcp.example.com/mcp", headers: {} } });
-      expect(result).toEqual({ ok: false, error: expect.stringContaining("run on this computer") });
+      const result = await probeMcpServer({ config: { type, url: "https://mcp.intranet.example/mcp", headers: {} } });
+      expect(result).toEqual({ ok: false, error: expect.stringContaining("The agent connects to it; this plugin does not") });
     }
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -195,6 +205,7 @@ describe("the source holds no outbound network code", () => {
     const allowed: ((name: string, url: string) => boolean)[] = [
       (_name, url) => /^http:\/\/www\.w3\.org\//.test(url),
       (_name, url) => /^http:\/\/127\.0\.0\.1:\$\{/.test(url),
+      (name, url) => name === "client/library/McpSheets.tsx" && url === "https://mcp.example.com/mcp", // input placeholder
       (name, url) => name === "shared/markdown.ts" && url.startsWith("http://${url"),
     ];
     const offenders: string[] = [];
