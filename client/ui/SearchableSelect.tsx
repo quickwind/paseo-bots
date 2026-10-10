@@ -65,7 +65,7 @@ export function SearchableSelect({ colors, label, value, options, onValueChange,
       </Pressable>
       {open ? (
         <Modal title={label} open onOpenChange={(next) => !next && close()}>
-          <Modal.Content scrollable={false} contentContainerStyle={{ padding: 12, gap: 8 }}>
+          <Modal.Content scrollable={false} contentContainerStyle={{ flex: 1, padding: 12, gap: 8 }}>
             <TextInput
               accessibilityLabel={`Search ${label.toLowerCase()}`}
               placeholder={`Search ${label.toLowerCase()}...`}
@@ -90,7 +90,7 @@ export function SearchableSelect({ colors, label, value, options, onValueChange,
               data={shown}
               keyExtractor={(option) => option.value}
               keyboardShouldPersistTaps="handled"
-              style={{ maxHeight: 360 }}
+              style={{ flex: 1, minHeight: 240 }}
               ListEmptyComponent={<Text style={{ padding: 12, fontSize: ui(14), color: colors.foregroundMuted }}>No match</Text>}
               renderItem={({ item }) => (
                 <Option
