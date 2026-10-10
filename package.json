@@ -1,6 +1,6 @@
 {
-  "name": "@oliexe/paseo-bots",
-  "version": "0.2.0",
+  "name": "paseo-bots-offline",
+  "version": "0.2.0-offline.1",
   "files": [
     "paseo-plugin.json",
     "index.client.ts",
@@ -13,7 +13,8 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "pack:offline": "node scripts/pack-offline.mjs"
   },
   "devDependencies": {
     "@getpaseo/client": "0.9.2",
@@ -27,16 +28,8 @@
     "vitest": "^4.1.11",
     "zod": "^4.4.3"
   },
-  "description": "Personal bots for Paseo: instructions, a model, memory, routines, teams, skills, MCP tools and connected apps.",
+  "description": "Personal bots for Paseo and Wukong: instructions, a model, memory, routines, teams, skills and local MCP tools. Offline edition: makes no network connections of its own.",
   "license": "MIT",
-  "homepage": "https://github.com/oliexe/paseo-bots#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/oliexe/paseo-bots.git"
-  },
-  "bugs": {
-    "url": "https://github.com/oliexe/paseo-bots/issues"
-  },
   "author": "Ondrej Rehacek",
   "keywords": [
     "paseo",
@@ -44,6 +37,6 @@
     "bots",
     "agents",
     "mcp",
-    "composio"
+    "offline"
   ]
 }

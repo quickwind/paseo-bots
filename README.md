@@ -1,42 +1,54 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/bots.svg" width="512" alt="Six pixel-art bots">
+  <img src="docs/bots.svg" width="512" alt="Six pixel-art bots">
 </p>
 
-# paseo-bots
+# paseo-bots, offline edition
 
-Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give each bot instructions, a model, memory, skills and tools, then chat with it in its own workspace or let it run routines.
+Personal bots for [Paseo](https://paseo.sh) and Wukong: give each bot instructions, a model, memory, skills and tools, then chat with it in its own workspace or let it run routines.
 
-## Core Features
+This is a fork of [oliexe/paseo-bots](https://github.com/oliexe/paseo-bots) 0.2.0 (MIT, by Ondrej Rehacek) for machines that must not send data to cloud services. **The plugin makes no network connections of its own.** Everything that needed one is gone, and a test keeps it that way.
 
-| Feature | Description |
+## What is different
+
+| Upstream feature | Offline edition |
 | --- | --- |
-| **Bots** | Instructions, provider and model, host, approval mode and an avatar. Start blank or from a role such as Email triage or Researcher, or ask a bot to set them up. |
-| **Memory** | Each bot keeps a `MEMORY.md` it updates as it learns, and a daily log of its chats. |
-| **Routines** | Runs on a schedule, such as every weekday at 9:00, or when its webhook is called. |
-| **Teams** | Put bots on a team with a Chief of Staff, who takes your requests and hands parts to the others. Each team gets a tab and a pixel-art logo. |
-| **Skills & Tools** | One library of skills and MCP servers, switched on per bot. Import skills from GitHub and MCP servers from Claude Code, Claude Desktop or Cursor. |
-| **Learning** | Send `/learn` after a task and the bot writes it up as a skill. |
-| **Connected apps** | 1,000+ apps such as Gmail, Slack and Notion through [Composio](https://composio.dev), with several named accounts per app. |
-| **Paseo tools** | Bots can start other agents, open workspaces, set up schedules and use the browser. |
+| Connected apps through Composio (Gmail, Slack, Notion, 1,000+ more) | Removed, with its relay proxy, API key, sign-in cards and the roles built on it (Inbox, Watch, Ops) |
+| Avatar pictures drawn by OpenAI | Removed; pixel-art faces, and pictures you upload |
+| Pictures from an image address | Removed; a picture is kept only as an uploaded `data:` image |
+| Importing skills from GitHub or a link | Imports from **a folder on this computer** instead |
+| MCP servers at a remote address (HTTP, SSE) | Only servers that run on this computer: a program to start, or an `http://localhost` address. Remote ones are skipped on import and never given to an agent |
+| GitHub link on the start screen | Removed |
+
+Everything else is unchanged: bots, memory, routines and webhooks, teams, the skill and MCP library, `/learn`, Paseo's own tools for bots, and sharing bots and teams as files.
+
+## What this does not control
+
+- **The bots' own agents.** A bot runs on a provider (Claude Code, for instance) that talks to its own service. That is the provider's traffic, not the plugin's.
+- **Programs an MCP server starts.** A local server may itself reach the internet. Add only servers you trust.
+- **Links in a chat.** A link in a bot's reply opens in your browser only when you press it.
+- **The plugin runs unsandboxed**, like every Paseo plugin. Read the code before installing it.
 
 ## Screenshots
 
 | | |
 | --- | --- |
 | **Bots** | **Bot settings** |
-| ![Bots](https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/splash.png) | ![Bot settings](https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/bot.png) |
+| ![Bots](docs/splash.png) | ![Bot settings](docs/bot.png) |
 | **Skills** | **MCP servers** |
-| ![Skills](https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/skills.png) | ![MCP servers](https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/mcp.png) |
-| **Connected apps** | **Teams** |
-| ![Connected apps](https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/apps.png) | ![Teams](https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/teams.png) |
+| ![Skills](docs/skills.png) | ![MCP servers](docs/mcp.png) |
+| **Teams** | |
+| ![Teams](docs/teams.png) | |
 
 ## Install
 
+Get the plugin folder onto the machine (the offline package unzips into one), then install it from that folder.
+
 ```bash
-paseo plugin install npm:@oliexe/paseo-bots
+wukong plugin install /path/to/paseo-bots      # Wukong
+paseo plugin install /path/to/paseo-bots       # Paseo
 ```
 
-Or paste `npm:@oliexe/paseo-bots` into **Settings → Plugins → Plugin source** in Paseo. Requires Paseo 0.9.2 or later.
+Turn on **Settings → Plugins → Enable plugins** first. Requires Paseo 0.9.2 or later. Wukong installs plugins from a local folder only, which is what this edition is for.
 
 ## Usage
 
@@ -77,8 +89,8 @@ Whether a bot may ask others for help is set in its settings under **Permissions
 
 Press **Skills & Tools** at the bottom of the bot list.
 
-- **Skills**: press **+** to import skills from GitHub (`owner/repo`, a folder or a `SKILL.md` link) or write a new one. Open an imported skill and press **Review** to turn it on.
-- **MCP servers**: press **+**, then **New server**, or **Import config** to pick up the servers set up in Claude Code, Claude Desktop or Cursor. Press **Test and turn on** on the server's page.
+- **Skills**: press **+** to import skills from a folder on this computer (the full path; every `SKILL.md` under it comes in, up to 30) or write a new one. Open an imported skill and press **Review** to turn it on. **Update** on a skill reads its folder again.
+- **MCP servers**: press **+**, then **New server**, or **Import config** to pick up the servers set up in Claude Code, Claude Desktop or Cursor (remote ones are left out). Press **Test and turn on** on the server's page.
 
 Then give them to a bot in its settings: skills under **Skills**, MCP servers under **Access**.
 
@@ -86,24 +98,26 @@ Then give them to a bot in its settings: skills under **Skills**, MCP servers un
 
 After a task, send `/learn` in the chat, or `/learn <what to focus on>`. The bot writes up what worked as a skill and shows it as a card; press **Save skill** to add it to Skills & Tools and turn it on for that bot.
 
-### Connected apps
-
-Connected apps run on your own Composio account.
-
-1. Create a project at [platform.composio.dev](https://platform.composio.dev) and copy its API key (it starts with `ak_`).
-2. In Paseo, open **Bots**, then **Skills & Tools** at the bottom of the bot list.
-3. Next to **Connected apps**, press **+**, paste the key and press **Connect**.
-4. Find an app, press **Connect** and finish signing in in your browser.
-5. Switch the app on for a bot under the bot's **Access** settings, or on the app's page.
-
-To add a second account of an app, such as a work and a personal Gmail, open the app's page and press **Connect** next to **Add another account**. Bots pick an account by its name.
-
-When a bot needs an app that isn't connected, its chat shows a card: press **Sign in**, finish on Composio's page, then **Continue**. Signing in from the card also switches the app on for that bot.
-
-To limit what a bot does with an app, open the app under the bot's **Access** settings: allow all of its tools, only the read-only ones, or the ones you choose, and keep the bot to one account. The relay refuses anything else, and turns off Composio's remote workbench for bots with limits, since code there could run any app's tools.
-
-The key stays on the Paseo host and never reaches the agents: bots reach Composio through a local relay that only lets each bot use the apps you switched on for it.
-
 ### Paseo tools
 
 Bots get Paseo's own tools, so you can ask one in a chat to start other agents, open workspaces and terminals, set up schedules or use the browser. A bot's **Access** settings show whether they're on, and **Turn on** there switches them on for every agent on the host.
+
+## Building the offline package
+
+```bash
+npm ci --ignore-scripts
+npm run typecheck && npm test
+node scripts/pack-offline.mjs --out ../paseo-bots-offline
+```
+
+The package is a zip of the plugin's source files only (the daemon compiles them when the plugin starts). It has no runtime dependencies, so installing it needs no npm and no internet.
+
+`tests/offline.test.ts` scans the whole source for network code (`fetch`, sockets, WebSocket, a remote address in code, an image loaded from an address) and fails if it finds any outside the one MCP probe, which refuses everything but this computer. Run it after every change.
+
+## Staying close to upstream
+
+`upstream` is the original repository. Merge it into the `offline` branch from time to time; the removed features will conflict, and the test above will tell you if a merge brings network code back.
+
+## License
+
+MIT, as upstream. See `LICENSE`.

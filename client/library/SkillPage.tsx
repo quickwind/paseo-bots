@@ -7,6 +7,7 @@ import { useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { skillNeedsReview, type Bot, type LibrarySkill } from "../../shared/bot";
 import { skillImportRpc, skillReadRpc } from "../../shared/rpc";
+import { isLocalFolder } from "../../shared/skills";
 import { errorText, MONO_FONT, MONO_PROPS } from "../native";
 import { Alert, Button, CardNote, SectionLink } from "../panel/controls";
 import { code, codeLine } from "../typography";
@@ -29,10 +30,9 @@ interface SkillPageProps {
 
 export const skillQueryKey = (id: string) => ["paseo-bots", "library-skill", id];
 
-/** Imports stored as "github.com/owner/repo/path" update from "owner/repo/path"; links update from themselves. */
+/** A skill imported from a folder on this computer updates by reading that folder again. */
 function updateSource(source: string): string | null {
-  if (source.startsWith("github.com/")) return source.slice("github.com/".length);
-  return /^https?:\/\//i.test(source) ? source : null;
+  return isLocalFolder(source) ? source : null;
 }
 
 export function SkillPage({ colors, skill, bots, showTitle, onPatch, onToggleBot, onImported, onDelete }: SkillPageProps) {
@@ -104,7 +104,7 @@ export function SkillPage({ colors, skill, bots, showTitle, onPatch, onToggleBot
               <ActivityIndicator size="small" color={colors.foregroundMuted} />
             </View>
           ) : file.data?.missing ? (
-            <CardNote colors={colors} text={source ? "SKILL.md is missing. Update the skill to fetch it again." : "SKILL.md is missing."} />
+            <CardNote colors={colors} text={source ? "SKILL.md is missing. Update the skill to read it again from its folder." : "SKILL.md is missing."} />
           ) : (
             <View style={{ padding: 16 }}>
               <Text selectable {...MONO_PROPS} style={{ fontFamily: MONO_FONT, fontSize: code(), lineHeight: codeLine(), color: colors.foreground }}>

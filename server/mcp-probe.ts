@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { McpServerConfig, McpTool } from "../shared/bot";
+import { mcpServerAllowed, type McpServerConfig, type McpTool } from "../shared/bot";
 import { PLUGIN_VERSION } from "../shared/version";
 
 // Connects to an MCP server the way an agent would, lists its tools and
@@ -256,6 +256,8 @@ function redact(text: string, config: McpServerConfig): string {
 }
 
 export async function probeMcpServer({ config }: { config: McpServerConfig }): Promise<ProbeResult> {
+  // Nothing is sent to an address that is not on this computer.
+  if (!mcpServerAllowed(config)) return { ok: false, error: "Only servers that run on this computer are supported: a program to start, or an http://localhost address." };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {

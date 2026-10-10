@@ -21,6 +21,27 @@ export const McpServerConfigSchema = z.discriminatedUnion("type", [
 ]);
 export type McpServerConfig = z.infer<typeof McpServerConfigSchema>;
 
+/** Whether a URL points at this computer: http(s) on localhost, 127.x.x.x or ::1. */
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    return host === "localhost" || host.endsWith(".localhost") || host === "::1" || /^127(\.\d{1,3}){3}$/.test(host);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * This build makes no network connections of its own, and a bot's MCP servers are the one place it
+ * could be told to: a server that starts a program on this computer, or listens on this computer, is
+ * allowed; one at a remote address is not.
+ */
+export function mcpServerAllowed(config: McpServerConfig): boolean {
+  return config.type === "stdio" || isLoopbackUrl(config.url);
+}
+
 export const BotMcpServerSchema = z.object({
   name: z.string(),
   enabled: z.boolean().default(true),
@@ -48,7 +69,7 @@ export type BotAvatar = z.infer<typeof BotAvatarSchema>;
 const LibrarySkillSchema = z.object({
   id: z.string(),
   description: z.string().default(""),
-  /** Where it came from: "github.com/owner/repo/path", a SKILL.md link, or "" when written here. */
+  /** Where it came from: the folder it was imported from, or "" when written here. */
   source: z.string().default(""),
   /** Off keeps it in the library but out of every bot's prompt. */
   enabled: z.boolean().default(true),
@@ -551,7 +572,7 @@ function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name" | "con
   for (const server of servers) {
     const name = server.name.trim();
     // Paseo adds its own "paseo" server; ours can't replace it.
-    if (name && !RESERVED_MCP_NAMES.includes(name)) record[name] = server.config;
+    if (name && !RESERVED_MCP_NAMES.includes(name) && mcpServerAllowed(server.config)) record[name] = server.config;
   }
   return record;
 }
@@ -638,6 +659,7 @@ export function parseMcpJson(text: string): BotMcpServer[] {
   const root = parsed as Record<string, unknown>;
   const map = root.mcpServers && typeof root.mcpServers === "object" ? (root.mcpServers as Record<string, unknown>) : root;
   const servers: BotMcpServer[] = [];
+  const remote: string[] = [];
   for (const [name, raw] of Object.entries(map)) {
     if (!raw || typeof raw !== "object") continue;
     const entry = raw as Record<string, unknown>;
@@ -646,11 +668,17 @@ export function parseMcpJson(text: string): BotMcpServer[] {
       const args = Array.isArray(entry.args) ? entry.args.filter((arg): arg is string => typeof arg === "string") : [];
       servers.push({ name, enabled: true, config: { type: "stdio", command: entry.command, args, env: stringRecord(entry.env) } });
     } else if (typeof entry.url === "string") {
+      if (!isLoopbackUrl(entry.url)) {
+        remote.push(name);
+        continue;
+      }
       const kind = type === "sse" ? "sse" : "http";
       servers.push({ name, enabled: true, config: { type: kind, url: entry.url, headers: stringRecord(entry.headers) } });
     }
   }
-  if (servers.length === 0) throw new Error("No MCP servers found in that JSON.");
+  if (servers.length === 0) {
+    throw new Error(remote.length ? `${remote.join(", ")} ${remote.length === 1 ? "is a remote server" : "are remote servers"}; only servers that run on this computer are supported.` : "No MCP servers found in that JSON.");
+  }
   return servers;
 }
 

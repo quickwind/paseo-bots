@@ -113,7 +113,7 @@ export interface StartChatInput {
   library: Library;
   /** The chat's agent id, picked in advance so its tools URL can name it. */
   agentId?: string;
-  /** The plugin's servers for this chat (tools, connected apps), from the relay on the bot's host. */
+  /** The plugin's servers for this chat (its tools), from the relay on the bot's host. */
   plugin?: PluginServers;
   placement: BotPlacement;
   prompt: string;

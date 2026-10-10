@@ -5,7 +5,7 @@ import { SettingsCard, SettingsSection } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { skillImportRpc, skillWriteRpc } from "../../shared/rpc";
-import { parseSkillFrontmatter, parseSkillSource, sanitizeSkillName, scanSkillText, skillMarkdown } from "../../shared/skills";
+import { parseSkillFolder, parseSkillFrontmatter, sanitizeSkillName, scanSkillText, skillMarkdown } from "../../shared/skills";
 import { Alert, Button, FormTextArea, InputField, SheetActions, SheetFooter, TextAreaField } from "../panel/controls";
 import { code, codeLine, ui } from "../typography";
 import { errorText, MONO_FONT, MONO_PROPS } from "../native";
@@ -29,7 +29,7 @@ function ErrorLine({ colors, text, tone = "error" }: { colors: Colors; text: str
   ) : null;
 }
 
-/** Fetches one skill, or every skill in a repository or folder, into the library. */
+/** Copies one skill, or every skill in a folder on this computer, into the library. */
 export function ImportSkillsSheet({ colors, onClose, onImported }: { colors: Colors; onClose(): void; onImported(skills: SavedSkill[]): void }) {
   const importSkills = useRpc(skillImportRpc);
   const [source, setSource] = useState("");
@@ -37,7 +37,7 @@ export function ImportSkillsSheet({ colors, onClose, onImported }: { colors: Col
   const [error, setError] = useState<string | null>(null);
   let sourceError: string | null = null;
   try {
-    if (source.trim()) parseSkillSource(source);
+    if (source.trim()) parseSkillFolder(source);
   } catch (caught) {
     sourceError = errorText(caught);
   }
@@ -56,9 +56,9 @@ export function ImportSkillsSheet({ colors, onClose, onImported }: { colors: Col
   return (
     <Modal title="Import skills" open onOpenChange={(open) => !open && !busy && onClose()}>
       <Modal.Content contentContainerStyle={{ gap: 0 }}>
-        <SettingsSection title="From GitHub or a link" info="A repository or folder brings in every SKILL.md inside it (up to 30). Importing a skill that's already here updates it.">
+        <SettingsSection title="From a folder on this computer" info="A folder brings in every SKILL.md inside it (up to 30). Importing a skill that's already here updates it.">
           <SettingsCard>
-            <InputField colors={colors} label="Source" hint='"owner/repo", a GitHub folder or a SKILL.md link' error={sourceError} initialValue="" placeholder="anthropics/skills/skills/pdf" onChangeText={setSource} />
+            <InputField colors={colors} label="Folder" hint="The full path of a folder with SKILL.md files in it" error={sourceError} initialValue="" placeholder="C:\\skills or /home/me/skills" onChangeText={setSource} />
           </SettingsCard>
           <ErrorLine colors={colors} text={error} />
         </SettingsSection>

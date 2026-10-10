@@ -1,33 +1,18 @@
-export type SkillSource =
-  | { kind: "raw"; url: string }
-  | { kind: "github"; owner: string; repo: string; ref: string | null; path: string };
+/** An absolute path on this computer: `/…`, `~`, a Windows drive (`C:\…`) or a UNC path (`\\server\…`). */
+const LOCAL_FOLDER = /^(\/|~([\\/]|$)|[A-Za-z]:[\\/]|\\\\)/;
 
-const trimSlashes = (path: string) => path.replace(/^\/+|\/+$/g, "");
+/** Whether a skill's source is a folder on this computer, which an update can read again offline. */
+export function isLocalFolder(source: string): boolean {
+  return LOCAL_FOLDER.test(source.trim());
+}
 
-/** Accepts "owner/repo", "owner/repo/path", github.com URLs (repo, tree, blob) and raw SKILL.md URLs. */
-export function parseSkillSource(input: string): SkillSource {
-  const source = input.trim();
-  if (/^https?:\/\//i.test(source)) {
-    const url = new URL(source);
-    if (url.hostname === "github.com") {
-      const [owner, repo, mode, ref, ...rest] = trimSlashes(url.pathname).split("/");
-      if (!owner || !repo) throw new Error("That GitHub URL doesn't name a repository.");
-      if (mode === "blob" || mode === "tree") {
-        let path = rest.join("/");
-        if (mode === "blob") path = path.replace(/\/?SKILL\.md$/i, "");
-        return { kind: "github", owner, repo: repo.replace(/\.git$/, ""), ref: ref ?? null, path };
-      }
-      return { kind: "github", owner, repo: repo.replace(/\.git$/, ""), ref: null, path: "" };
-    }
-    if (/SKILL\.md$/i.test(url.pathname)) return { kind: "raw", url: source };
-    throw new Error("Use a GitHub repository, a GitHub folder, or a link to a SKILL.md file.");
+/** The folder a skill import reads from. Skills come from this computer only, never from the network. */
+export function parseSkillFolder(input: string): string {
+  const folder = input.trim();
+  if (!isLocalFolder(folder)) {
+    throw new Error("Use the full path of a folder on this computer, like /home/me/skills or C:\\skills.");
   }
-  const parts = trimSlashes(source).split("/");
-  if (parts.length < 2 || parts.some((part) => !/^[A-Za-z0-9._-]+$/.test(part))) {
-    throw new Error('Use "owner/repo", "owner/repo/path/to/skill" or a GitHub URL.');
-  }
-  const [owner, repo, ...rest] = parts;
-  return { kind: "github", owner: owner!, repo: repo!, ref: null, path: rest.join("/").replace(/\/?SKILL\.md$/i, "") };
+  return folder;
 }
 
 /** Reads `name` and `description` from SKILL.md frontmatter. */

@@ -123,7 +123,7 @@ function TeamSection({ colors, bots, groups, commit }: { colors: Colors; bots: B
   };
 
   return (
-    <SettingsSection title="Team file" info="Share your bots and their teams at once. Chats, keys and each bot's host, folder, tool grants and connected apps stay behind. Imports only add bots and teams; a bot name already in use gets a number.">
+    <SettingsSection title="Team file" info="Share your bots and their teams at once. Chats and each bot's host, folder and tool grants stay behind. Imports only add bots and teams; a bot name already in use gets a number.">
       <SettingsCard>
         <SettingsSwitch label="Include memory" hint="MEMORY.md and topic files. Leave off when sharing with someone else." value={includeMemory} onValueChange={setIncludeMemory} />
         <SettingsAction

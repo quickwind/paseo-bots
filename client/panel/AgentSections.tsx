@@ -111,7 +111,7 @@ function GrantsSection({ colors, bot, library, localHost, onPatch }: PanelProps)
           autoCapitalize="none"
           autoCorrect={false}
           minHeight={72}
-          placeholder={"gmail/search_threads\nfetch/fetch"}
+          placeholder={"files/read_file\nfetch/fetch"}
         />
       </SettingsCard>
     </SettingsSection>

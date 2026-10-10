@@ -43,7 +43,7 @@ const GROUPS: { label: string; sections: SectionEntry[] }[] = [
   {
     label: "Knowledge",
     sections: [
-      { id: "skills", label: "Skills", icon: "Puzzle", rows: ["Library skills"], keywords: "skill github SKILL.md library" },
+      { id: "skills", label: "Skills", icon: "Puzzle", rows: ["Library skills"], keywords: "skill SKILL.md library" },
       { id: "playbooks", label: "Playbooks", icon: "BookOpenCheck", rows: ["New playbook", "Trigger words", "Steps"], keywords: "playbook process guidance triggers steps procedure" },
       { id: "memory", label: "Memory", icon: "Brain", rows: ["MEMORY.md", "Topic files", "Changes", "Daily log", "New topic file"], keywords: "memory notes remember undo journal log" },
     ],
@@ -55,7 +55,7 @@ const GROUPS: { label: string; sections: SectionEntry[] }[] = [
   {
     label: "Agent",
     sections: [
-      { id: "access", label: "Access", icon: "KeyRound", rows: ["Working folder", "Paseo tools", "MCP servers", "Connected apps", "Always allowed"], keywords: "folder directory path mcp tools apps composio gmail slack grants library" },
+      { id: "access", label: "Access", icon: "KeyRound", rows: ["Working folder", "Paseo tools", "MCP servers", "Always allowed"], keywords: "folder directory path mcp tools apps composio gmail slack grants library" },
       { id: "model", label: "Model", icon: "Sparkles", rows: ["Host", "Agent profile", "Provider", "Model", "Thinking"], keywords: "effort reasoning" },
       { id: "permissions", label: "Permissions", icon: "Shield", rows: ["Mode", "Contact other bots", "Allowed commands"], keywords: "approval permissions ask auto bots contact delegate commands allowlist shell" },
     ],

@@ -31,13 +31,13 @@ const apply = (changes: Change[], values = setup()) => applyChanges(values, Chan
 describe("setup changes", () => {
   it("creates bots and a team that refers to them by name", () => {
     const next = apply([
-      { type: "create_bot", name: "Juno", role: "ops", title: "Producer", skills: ["weekly-report"], playbooks: [{ name: "Standup", triggers: ["standup"], instructions: "Collect updates." }] },
+      { type: "create_bot", name: "Juno", role: "research", title: "Producer", skills: ["weekly-report"], playbooks: [{ name: "Standup", triggers: ["standup"], instructions: "Collect updates." }] },
       { type: "create_bot", name: "Mika", instructions: "Draw sprites." },
       { type: "create_team", name: "Studio", lead: "Juno", members: ["Mika", "solo"], instructions: "Ship on Fridays." },
     ]);
     const juno = next.bots.find((bot) => bot.name === "Juno")!;
     expect(juno).toMatchObject({ title: "Producer", provider: "claude", skillIds: ["weekly-report"], contactBots: "ask" });
-    expect(juno.soul).toMatch(/keep the user's week on track/i);
+    expect(juno.soul).toMatch(/research questions and return a brief/i);
     expect(juno.playbooks.map((playbook) => playbook.name)).toEqual(["Standup"]);
     expect(next.bots.find((bot) => bot.name === "Mika")!.soul).toBe("Draw sprites.");
     const studio = next.groups!.find((group) => group.name === "Studio")!;

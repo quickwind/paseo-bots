@@ -5,7 +5,7 @@ import { SettingsAction, SettingsCard, SettingsSection, SettingsSelect } from "@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
-import { formatPairs, joinArgs, MCP_NAME, RESERVED_MCP_NAMES, parseMcpJson, parsePairs, splitArgs, type BotMcpServer, type LibraryMcpServer, type McpServerConfig } from "../../shared/bot";
+import { formatPairs, isLoopbackUrl, joinArgs, MCP_NAME, RESERVED_MCP_NAMES, parseMcpJson, parsePairs, splitArgs, type BotMcpServer, type LibraryMcpServer, type McpServerConfig } from "../../shared/bot";
 import { PASEO_MCP_NAME } from "../../shared/paseo-tools";
 import { mcpSourcesRpc } from "../../shared/rpc";
 import { Button, FormTextArea, InputField, SheetFooter, TextAreaField } from "../panel/controls";
@@ -18,7 +18,6 @@ export type McpDraft = Pick<LibraryMcpServer, "name" | "description" | "config">
 
 export const BLANK_SERVER: McpDraft = { name: "", description: "", config: { type: "stdio", command: "", args: [], env: {} } };
 
-const URL_PATTERN = /^https?:\/\/\S+$/i;
 
 interface ServerSheetProps {
   colors: Colors;
@@ -50,11 +49,11 @@ export function ServerSheet({ colors, initial, isNew, otherNames, onClose, onSav
     : !MCP_NAME.test(name)
       ? "Use letters, numbers, dashes and underscores"
       : RESERVED_MCP_NAMES.includes(name)
-        ? `"${name}" is taken by ${name === PASEO_MCP_NAME ? "Paseo's own tools" : "connected apps"}`
+        ? `"${name}" is taken by ${name === PASEO_MCP_NAME ? "Paseo's own tools" : "the plugin's own tools"}`
         : otherNames.includes(name)
           ? `"${name}" is already in the library`
           : null;
-  const urlError = config.type !== "stdio" && config.url.trim() && !URL_PATTERN.test(config.url.trim()) ? "Use an http:// or https:// URL" : null;
+  const urlError = config.type !== "stdio" && config.url.trim() && !isLoopbackUrl(config.url) ? "Use an address on this computer, like http://localhost:3000/mcp" : null;
   const complete = !!name && (config.type === "stdio" ? !!config.command.trim() : !!config.url.trim());
   const canSave = complete && !nameError && !urlError;
 
@@ -78,7 +77,7 @@ export function ServerSheet({ colors, initial, isNew, otherNames, onClose, onSav
             {config.type === "stdio" ? (
               <InputField colors={colors} key="command" label="Command" monospace autoCapitalize="none" autoCorrect={false} initialValue={config.command} placeholder="npx" onChangeText={(command) => setConfig({ ...config, command })} />
             ) : (
-              <InputField colors={colors} key={`url-${config.type}`} label="URL" error={urlError} initialValue={config.url} placeholder="https://example.com/mcp" onChangeText={(url) => setConfig({ ...config, url: url.trim() })} />
+              <InputField colors={colors} key={`url-${config.type}`} label="URL" error={urlError} initialValue={config.url} placeholder="http://localhost:3000/mcp" onChangeText={(url) => setConfig({ ...config, url: url.trim() })} />
             )}
             {config.type === "stdio" ? (
               <InputField colors={colors}

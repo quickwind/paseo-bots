@@ -128,20 +128,20 @@ describe("botProblems", () => {
 });
 
 describe("parseMcpJson", () => {
-  it("reads the mcpServers wrapper used by Claude Code and .mcp.json", () => {
+  it("reads the mcpServers wrapper used by Claude Code and .mcp.json, keeping the servers that run on this computer", () => {
     const servers = parseMcpJson(
       JSON.stringify({
         mcpServers: {
           fetch: { command: "uvx", args: ["mcp-server-fetch"], env: { A: "1" } },
           linear: { type: "sse", url: "https://mcp.linear.app/sse" },
           notion: { url: "https://mcp.notion.com/mcp", headers: { X: "y" } },
+          local: { url: "http://localhost:8123/mcp", headers: { X: "y" } },
         },
       }),
     );
     expect(servers).toEqual([
       { name: "fetch", enabled: true, config: { type: "stdio", command: "uvx", args: ["mcp-server-fetch"], env: { A: "1" } } },
-      { name: "linear", enabled: true, config: { type: "sse", url: "https://mcp.linear.app/sse", headers: {} } },
-      { name: "notion", enabled: true, config: { type: "http", url: "https://mcp.notion.com/mcp", headers: { X: "y" } } },
+      { name: "local", enabled: true, config: { type: "http", url: "http://localhost:8123/mcp", headers: { X: "y" } } },
     ]);
   });
 

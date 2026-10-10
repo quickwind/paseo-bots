@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, readlink, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
-import { dirname, join, posix, relative, sep } from "node:path";
+import { lstat, mkdir, readdir, readFile, readlink, rename, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, dirname, join, posix, relative, resolve, sep } from "node:path";
 import type { LibrarySkill } from "../shared/bot";
-import { parseSkillFrontmatter, parseSkillSource, sanitizeSkillName } from "../shared/skills";
+import { parseSkillFolder, parseSkillFrontmatter, sanitizeSkillName } from "../shared/skills";
 import { botDataPath, botsHomePath, pluginDataPath } from "./bot-home";
 
 // The shared skill library: one folder per skill under plugin-data/library/skills.
@@ -24,16 +25,6 @@ export function librarySkillPath(id: string): string {
   return join(librarySkillsPath(), id);
 }
 
-async function fetchText(url: string): Promise<string> {
-  const response = await fetch(url, { headers: { "User-Agent": "paseo-bots", Accept: "application/vnd.github+json" } });
-  if (!response.ok) throw new Error(`${url} answered ${response.status}.`);
-  return response.text();
-}
-
-async function fetchJson<T>(url: string): Promise<T> {
-  return JSON.parse(await fetchText(url)) as T;
-}
-
 async function saveSkill(files: Map<string, string>, source: string, fallbackName: string): Promise<ImportedSkill> {
   const meta = parseSkillFrontmatter(files.get("SKILL.md") ?? "");
   const id = sanitizeSkillName(meta.name ?? fallbackName);
@@ -48,46 +39,61 @@ async function saveSkill(files: Map<string, string>, source: string, fallbackNam
   return { id, description: meta.description ?? "", source };
 }
 
-interface TreeEntry {
-  path: string;
-  type: "blob" | "tree";
-  size?: number;
+const MAX_SEARCH_DEPTH = 4;
+const SKIPPED_FOLDERS = new Set(["node_modules", ".git"]);
+
+function expandHome(path: string): string {
+  if (path === "~") return homedir();
+  return /^~[\\/]/.test(path) ? join(homedir(), path.slice(2)) : path;
 }
 
-/** Fetches skills from "owner/repo", "owner/repo/path", a GitHub URL or a SKILL.md link into the library. */
-export async function importSkills({ source: input }: { source: string }): Promise<{ skills: ImportedSkill[] }> {
-  const source = parseSkillSource(input);
-  if (source.kind === "raw") {
-    const text = await fetchText(source.url);
-    const fallback = posix.basename(posix.dirname(new URL(source.url).pathname)) || "skill";
-    return { skills: [await saveSkill(new Map([["SKILL.md", text]]), source.url, fallback)] };
-  }
-
-  const { owner, repo } = source;
-  const api = `https://api.github.com/repos/${owner}/${repo}`;
-  const ref = source.ref ?? (await fetchJson<{ default_branch: string }>(api)).default_branch;
-  const tree = await fetchJson<{ tree: TreeEntry[]; truncated: boolean }>(`${api}/git/trees/${encodeURIComponent(ref)}?recursive=1`);
-  const prefix = source.path ? `${source.path}/` : "";
-  const skillDirs = tree.tree
-    .filter((entry) => entry.type === "blob" && posix.basename(entry.path) === "SKILL.md" && (entry.path === `${prefix}SKILL.md` || entry.path.startsWith(prefix)))
-    .map((entry) => posix.dirname(entry.path))
-    .slice(0, MAX_SKILLS);
-  if (skillDirs.length === 0) throw new Error(`No SKILL.md found in ${owner}/${repo}${source.path ? `/${source.path}` : ""}.`);
-
-  const skills: ImportedSkill[] = [];
-  for (const dir of skillDirs) {
-    const base = dir === "." ? "" : `${dir}/`;
-    const blobs = tree.tree
-      .filter((entry) => entry.type === "blob" && entry.path.startsWith(base) && (entry.size ?? 0) <= MAX_FILE_BYTES)
-      // Nested skills are imported on their own.
-      .filter((entry) => !skillDirs.some((other) => other !== dir && other.startsWith(base) && entry.path.startsWith(`${other}/`)))
-      .slice(0, MAX_FILES_PER_SKILL);
-    const files = new Map<string, string>();
-    for (const blob of blobs) {
-      files.set(blob.path.slice(base.length), await fetchText(`https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${blob.path}`));
+/** Folders at or under `root` that hold a SKILL.md, shallowest first. */
+async function findSkillFolders(root: string): Promise<string[]> {
+  const found: string[] = [];
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (found.length >= MAX_SKILLS) return;
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    if (entries.some((entry) => entry.isFile() && entry.name === "SKILL.md")) found.push(dir);
+    if (depth >= MAX_SEARCH_DEPTH) return;
+    for (const entry of entries) {
+      if (entry.isDirectory() && !SKIPPED_FOLDERS.has(entry.name) && !entry.name.startsWith(".")) await walk(join(dir, entry.name), depth + 1);
     }
-    const origin = `github.com/${owner}/${repo}${dir === "." ? "" : `/${dir}`}`;
-    skills.push(await saveSkill(files, origin, dir === "." ? repo : posix.basename(dir)));
+  };
+  await walk(root, 0);
+  return found;
+}
+
+/** The text files of one skill folder, keyed by their path inside it; symlinks, big and binary files are left out. */
+async function readSkillFiles(dir: string, nested: readonly string[]): Promise<Map<string, string>> {
+  const files = new Map<string, string>();
+  const walk = async (current: string): Promise<void> => {
+    if (files.size >= MAX_FILES_PER_SKILL) return;
+    for (const entry of await readdir(current, { withFileTypes: true }).catch(() => [])) {
+      const path = join(current, entry.name);
+      // Nested skills are imported on their own.
+      if (entry.isDirectory()) {
+        if (!SKIPPED_FOLDERS.has(entry.name) && !nested.includes(path)) await walk(path);
+      } else if (entry.isFile() && files.size < MAX_FILES_PER_SKILL && (await stat(path)).size <= MAX_FILE_BYTES) {
+        const text = await readFile(path, "utf8");
+        if (!text.includes("\0")) files.set(relative(dir, path).split(sep).join("/"), text);
+      }
+    }
+  };
+  await walk(dir);
+  return files;
+}
+
+/** Copies the skills in a folder on this computer into the library: every folder under it that has a SKILL.md. */
+export async function importSkills({ source: input }: { source: string }): Promise<{ skills: ImportedSkill[] }> {
+  const root = resolve(expandHome(parseSkillFolder(input)));
+  const info = await stat(root).catch(() => null);
+  if (!info?.isDirectory()) throw new Error(`${root} isn't a folder on this computer.`);
+  const folders = await findSkillFolders(root);
+  if (folders.length === 0) throw new Error(`No SKILL.md found in ${root}.`);
+  const skills: ImportedSkill[] = [];
+  for (const dir of folders) {
+    const files = await readSkillFiles(dir, folders.filter((other) => other !== dir));
+    skills.push(await saveSkill(files, dir, basename(dir)));
   }
   return { skills };
 }

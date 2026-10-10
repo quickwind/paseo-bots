@@ -106,7 +106,7 @@ export const memoryUndoRpc = defineRpc({
 
 const ImportedSkillSchema = z.object({ id: SkillName, description: z.string(), source: z.string() });
 
-/** Imports skills into the library from "owner/repo", "owner/repo/path", a GitHub URL or a raw SKILL.md URL. */
+/** Copies the skills in a folder on this computer (its full path) into the library. */
 export const skillImportRpc = defineRpc({
   name: "bots.library.import-skills",
   input: z.object({ source: z.string().min(1).max(500) }),

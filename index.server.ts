@@ -68,7 +68,7 @@ export default function contribute(server: PluginServerContext) {
     return state.status === "ready" ? (state.values.library ?? EMPTY_LIBRARY) : EMPTY_LIBRARY;
   };
   const host = new BotsHost(settings);
-  // Bots' tools and connected apps go through this relay; it reads the saved settings on every call.
+  // Bots' tools go through this relay; it reads the saved settings on every call.
   const relay = new Relay(host, BOT_TOOLS);
   void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the relay", error));
   const scheduler = new RoutineScheduler(host, relay);

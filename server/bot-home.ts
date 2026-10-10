@@ -15,7 +15,7 @@ export function pluginDataPath(): string {
 
 /**
  * The plugin was called paseo-bot before. Move its data (bots' folders, the
- * skill library, the Composio key) to the new name and leave a link behind,
+ * skill library) to the new name and leave a link behind,
  * so chats started in the old folders keep their working directory. Runs
  * once, synchronously, before anything reads the data folder.
  */

@@ -5,7 +5,7 @@ import type { LibraryKind } from "../shared/library";
 // to it. Paseo can keep more than one Bots screen mounted, so every listener
 // gets the target instead of the first one taking it.
 
-/** The library item to show: a skill, an MCP server, a connected app (by slug), or the app catalog. */
+/** The library item to show: a skill or an MCP server. */
 export type LibraryTarget = { kind: LibraryKind; id: string };
 
 type Listener = (target: LibraryTarget | null) => void;

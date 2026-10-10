@@ -8,7 +8,7 @@ import type { Relay } from "./relay";
 
 /**
  * Starts a chat for a bot on this host, the way the app does: its system
- * prompt, its folder, and the plugin's tools and connected apps. Routines and
+ * prompt, its folder, and the plugin's tools. Routines and
  * requests from other bots start chats with it.
  */
 export async function startChat(host: BotsHost, relay: Relay, bot: Bot, input: { prompt: string; title: string; labels: Record<string, string> }): Promise<string> {
