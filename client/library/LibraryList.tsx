@@ -7,8 +7,6 @@ import { matchesQuery, mcpTarget } from "../../shared/library";
 import type { LibraryTarget } from "../navigation";
 import { nativeTokens, useHover } from "../native";
 import { SearchField } from "../panel/controls";
-import { connectedApps, useAppsAccounts, useAppsCatalog, useAppsStatus } from "./apps";
-import { AppLogo } from "./parts";
 import { ui } from "../typography";
 import { measureAnchor } from "../ui/Menu";
 import { tooltip } from "../ui/Tooltip";
@@ -46,11 +44,6 @@ export function LibraryList({ colors, library, query, onQuery, selected, onSelec
     .sort((a, b) => a.name.localeCompare(b.name));
   const searching = query.trim().length > 0;
   const is = (kind: LibraryTarget["kind"], id?: string) => selected?.kind === kind && (id === undefined || ("id" in selected && selected.id === id));
-  const appsStatus = useAppsStatus();
-  const configured = appsStatus.data?.configured ?? false;
-  const accounts = useAppsAccounts(configured);
-  const catalog = useAppsCatalog(configured);
-  const apps = connectedApps(accounts.data?.accounts ?? [], catalog.data?.apps ?? []).filter((app) => matchesQuery(query, app.name, app.slug));
 
   return (
     <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 + bottomInset }}>
@@ -91,24 +84,6 @@ export function LibraryList({ colors, library, query, onQuery, selected, onSelec
           />
         ))}
         {servers.length === 0 ? <GroupNote colors={colors} text={searching ? "No matching servers" : "No MCP servers yet"} /> : null}
-      </Group>
-      <Divider colors={colors} />
-
-      <Group colors={colors} label="Connected apps" addLabel={configured ? "Connect an app" : "Set up connected apps"} onAdd={() => onSelect({ kind: "apps" })}>
-        {apps.map((app) => (
-          <NavRow
-            key={app.slug}
-            colors={colors}
-            icon="AppWindow"
-            leading={<AppLogo colors={colors} app={app} size={16} />}
-            label={app.name}
-            note={app.status === "connected" ? undefined : app.status === "pending" ? "Pending" : "Failed"}
-            selected={is("app", app.slug)}
-            touch={touch}
-            onPress={() => onSelect({ kind: "app", id: app.slug })}
-          />
-        ))}
-        {apps.length === 0 ? <GroupNote colors={colors} text={searching ? "No matching apps" : configured ? "No apps connected yet" : "Not set up yet"} /> : null}
       </Group>
     </ScrollView>
   );

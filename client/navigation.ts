@@ -6,7 +6,7 @@ import type { LibraryKind } from "../shared/library";
 // gets the target instead of the first one taking it.
 
 /** The library item to show: a skill, an MCP server, a connected app (by slug), or the app catalog. */
-export type LibraryTarget = { kind: LibraryKind | "app"; id: string } | { kind: "apps" };
+export type LibraryTarget = { kind: LibraryKind; id: string };
 
 type Listener = (target: LibraryTarget | null) => void;
 const listeners = new Set<Listener>();

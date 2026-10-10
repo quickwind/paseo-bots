@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BotGroup, BotSettingsValues } from "../shared/bot";
-import { applyChanges, botDetails, changeWarnings, ChangesSchema, describeChange, providerInfo, readyProvider, resolveChanges, setupOverview, type ApplyContext, type Change, type ProviderInfo } from "../shared/changes";
+import { applyChanges, botDetails, changeWarnings, ChangesSchema, describeChange, providerInfo, readyProvider, setupOverview, type ApplyContext, type Change, type ProviderInfo } from "../shared/changes";
 import { makeBot, NOW } from "./helpers";
 
 const PROVIDERS: ProviderInfo[] = [
@@ -31,12 +31,12 @@ const apply = (changes: Change[], values = setup()) => applyChanges(values, Chan
 describe("setup changes", () => {
   it("creates bots and a team that refers to them by name", () => {
     const next = apply([
-      { type: "create_bot", name: "Juno", role: "ops", title: "Producer", skills: ["weekly-report"], apps: [{ app: "Gmail", tools: "read" }], playbooks: [{ name: "Standup", triggers: ["standup"], instructions: "Collect updates." }] },
+      { type: "create_bot", name: "Juno", role: "ops", title: "Producer", skills: ["weekly-report"], playbooks: [{ name: "Standup", triggers: ["standup"], instructions: "Collect updates." }] },
       { type: "create_bot", name: "Mika", instructions: "Draw sprites." },
       { type: "create_team", name: "Studio", lead: "Juno", members: ["Mika", "solo"], instructions: "Ship on Fridays." },
     ]);
     const juno = next.bots.find((bot) => bot.name === "Juno")!;
-    expect(juno).toMatchObject({ title: "Producer", provider: "claude", skillIds: ["weekly-report"], apps: ["gmail"], appRules: { gmail: { tools: "read", account: null } }, contactBots: "ask" });
+    expect(juno).toMatchObject({ title: "Producer", provider: "claude", skillIds: ["weekly-report"], contactBots: "ask" });
     expect(juno.soul).toMatch(/keep the user's week on track/i);
     expect(juno.playbooks.map((playbook) => playbook.name)).toEqual(["Standup"]);
     expect(next.bots.find((bot) => bot.name === "Mika")!.soul).toBe("Draw sprites.");
@@ -98,14 +98,6 @@ describe("setup changes", () => {
     expect(apply([{ type: "delete_preset", preset: "scout" }], next).presets).toEqual([]);
   });
 
-  it("resolves app accounts by name on the host", () => {
-    const accounts = [{ id: "ca_1", slug: "gmail", names: ["work"] }];
-    const changes = resolveChanges(ChangesSchema.parse([{ type: "update_bot", bot: "Solo", add_apps: [{ app: "gmail", account: "Work" }] }]), { ...context, accounts });
-    expect(changes[0]).toMatchObject({ add_apps: [{ app: "gmail", account: "ca_1" }] });
-    expect(applyChanges(setup(), changes, { now: NOW, provider: "" }).bots[2]!.appRules).toEqual({ gmail: { tools: "all", account: "ca_1" } });
-    expect(() => resolveChanges(ChangesSchema.parse([{ type: "update_bot", bot: "Solo", add_apps: [{ app: "slack", account: "x" }] }]), { ...context, accounts })).toThrow("slack isn't connected yet");
-  });
-
   it("gives new bots the defaults' provider, else the host's pick", () => {
     expect(apply([{ type: "create_bot", name: "Juno" }]).bots[3]!.provider).toBe("claude");
     const withDefaults = setup({ defaults: { provider: "codex", model: "gpt", modeId: null, thinkingOptionId: null, contactBots: "off" } });
@@ -115,32 +107,30 @@ describe("setup changes", () => {
   it("describes changes plainly and flags more access", () => {
     const changes = ChangesSchema.parse([
       { type: "create_team", name: "Studio", lead: "Juno", members: ["Juno", "Mika"] },
-      { type: "update_bot", bot: "Scout", mode: "plan", allow_tools: ["github/search"], add_apps: [{ app: "gmail", tools: "read" }] },
+      { type: "update_bot", bot: "Scout", mode: "plan", allow_tools: ["github/search"] },
       { type: "add_mcp_server", name: "files", command: "npx", args: ["files-mcp"] },
       { type: "delete_bot", bot: "Chief" },
     ]);
     expect(changes.map(describeChange)).toEqual([
       "**New team Studio**: led by Juno; with Mika",
-      "**Scout**: approval mode plan; may use gmail (read-only tools); uses github/search without asking",
+      "**Scout**: approval mode plan; uses github/search without asking",
       "**New MCP server files**: runs `npx files-mcp`; off until it passes a test in Skills & Tools",
       "**Delete bot Chief**; its chats stay in Paseo's history",
     ]);
     expect(changeWarnings(changes)).toEqual([
       'Scout runs in approval mode "plan".',
       "Scout may use github/search without asking you.",
-      "Scout may use gmail with your connected accounts.",
       "The files MCP server runs a program on this computer once it's on.",
       "Deletes the bot Chief.",
     ]);
   });
 
   it("gives an overview and a bot's details", () => {
-    const text = setupOverview(setup(), PROVIDERS, null);
+    const text = setupOverview(setup(), PROVIDERS);
     expect(text).toContain("- Chief (id chief). claude · default model; team Ops (Chief of Staff); contact other bots: ask.");
     expect(text).toContain("- fetched: From GitHub [needs review]");
     expect(text).toContain("- github [off, untested]");
     expect(text).toContain("- claude: models opus (default) [thinking: low, high], haiku; modes default (default), plan");
-    expect(text).toContain("Connected apps: not set up.");
     expect(botDetails(setup(), "scout")).toContain("Instructions (Soul):\n(none)");
   });
 });

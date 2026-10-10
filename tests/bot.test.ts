@@ -20,8 +20,6 @@ function bot(patch: Partial<Bot> = {}): Bot {
     mcpServerIds: [],
     alwaysAllow: [],
     skillIds: [],
-    apps: [],
-    appRules: {},
     voice: { name: null, readReplies: false },
     contactBots: "ask",
     playbooks: [],
@@ -103,7 +101,6 @@ describe("promptSections", () => {
       skills: [{ name: "pdf", description: "PDFs.", path: "/m/skills/pdf/SKILL.md" }],
       paseoTools: true,
       botTools: true,
-      apps: [],
     });
     expect(sections.map((section) => section.title)).toEqual(["Persona", "Standing instructions", "Memory", "Recent work", "Skills", "Bot tools", "Paseo tools"]);
     expect(sections[5]!.text).toContain("propose_routine");
@@ -116,7 +113,7 @@ describe("promptSections", () => {
   });
 
   it("leaves out memory and skills when the bot has no local folder", () => {
-    expect(promptSections(bot({ soul: "" }), { memory: "", memoryPath: null, recentWork: [], playbooks: [], skills: [], paseoTools: false, botTools: false, apps: [] }).map((section) => section.title)).toEqual(["Persona"]);
+    expect(promptSections(bot({ soul: "" }), { memory: "", memoryPath: null, recentWork: [], playbooks: [], skills: [], paseoTools: false, botTools: false }).map((section) => section.title)).toEqual(["Persona"]);
   });
 });
 

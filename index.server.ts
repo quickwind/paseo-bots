@@ -9,9 +9,7 @@ import { RoutineScheduler } from "./server/scheduler";
 import { exportBot, exportTeam, importBot, importTeam } from "./server/share";
 import { deleteSkill, importSkills, migrateBotSkills, readSkill, writeSkill } from "./server/library";
 import { probeMcpServer } from "./server/mcp-probe";
-import { generateAvatar, imageStatus, removeImageKey, setImageKey } from "./server/images";
 import { mcpSources } from "./server/mcp-sources";
-import { accounts, appTools, catalog, connect, disconnect, removeKey, renameAccount, setKey, status as appsStatus } from "./server/composio";
 import { BotsHost } from "./server/host";
 import { Relay } from "./server/relay";
 import { acceptProposal, dismissProposal, getProposal } from "./server/proposals";
@@ -43,19 +41,6 @@ import {
   proposalAcceptRpc,
   proposalDismissRpc,
   proposalGetRpc,
-  appsAccountsRpc,
-  avatarGenerateRpc,
-  avatarKeyStatusRpc,
-  avatarRemoveKeyRpc,
-  avatarSetKeyRpc,
-  appsCatalogRpc,
-  appsConnectRpc,
-  appsDisconnectRpc,
-  appsRenameRpc,
-  appsToolsRpc,
-  appsRemoveKeyRpc,
-  appsSetKeyRpc,
-  appsStatusRpc,
   routineRunNowRpc,
   routineStatusRpc,
   routineWebhookRpc,
@@ -126,23 +111,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(skillDeleteRpc, deleteSkill);
   server.handle(mcpProbeRpc, probeMcpServer);
   server.handle(mcpSourcesRpc, () => mcpSources());
-  server.handle(avatarKeyStatusRpc, () => imageStatus());
-  server.handle(avatarSetKeyRpc, setImageKey);
-  server.handle(avatarRemoveKeyRpc, () => removeImageKey());
-  server.handle(avatarGenerateRpc, generateAvatar);
-  server.handle(appsStatusRpc, () => appsStatus());
-  server.handle(appsSetKeyRpc, setKey);
-  server.handle(appsRemoveKeyRpc, () => removeKey());
-  server.handle(appsCatalogRpc, () => catalog());
-  server.handle(appsAccountsRpc, accounts);
-  server.handle(appsConnectRpc, connect);
-  server.handle(appsDisconnectRpc, disconnect);
-  server.handle(appsRenameRpc, renameAccount);
-  server.handle(appsToolsRpc, appTools);
-  server.handle(mountRpc, async ({ botId, agentId }) => {
-    const bot = await host.bot(botId);
-    return { tools: await relay.mountTools(botId, agentId), apps: bot?.apps.length ? await relay.mountApps(botId) : null };
-  });
+  server.handle(mountRpc, async ({ botId, agentId }) => ({ tools: await relay.mountTools(botId, agentId) }));
   server.handle(proposalGetRpc, async ({ id }) => ({ proposal: await getProposal(id) }));
   server.handle(proposalAcceptRpc, ({ id }) => acceptProposal(id));
   server.handle(proposalDismissRpc, async ({ id }) => ({ proposal: await dismissProposal(id) }));

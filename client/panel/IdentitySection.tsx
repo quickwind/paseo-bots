@@ -8,7 +8,6 @@ import type { PanelProps } from "./BotPanel";
 import { errorText } from "../native";
 import { canSpeak, speak, useVoices } from "../speech";
 import { canPickFiles } from "../web";
-import { AvatarSheet } from "./AvatarSheet";
 import { Button, DrillRow, InputField, SheetActions, TextAreaField } from "./controls";
 import { ColourRow, pickPicture, PictureSource } from "./picture";
 
@@ -16,7 +15,7 @@ const DESCRIPTION_MAX = 4000;
 
 export function IdentitySection({ colors, bot, onPatch }: PanelProps) {
   const setAvatar = (patch: Partial<BotAvatar>) => onPatch({ avatar: { ...bot.avatar, ...patch } });
-  const [sheet, setSheet] = useState<"avatar" | "generate" | null>(null);
+  const [sheet, setSheet] = useState<"avatar" | null>(null);
   const [nameEmpty, setNameEmpty] = useState(!bot.name.trim());
   const length = bot.description.length;
 
@@ -27,18 +26,7 @@ export function IdentitySection({ colors, bot, onPatch }: PanelProps) {
           <DrillRow colors={colors} label="Picture" hint={pictureHint(bot)} hintLines={2} trailing={<Avatar avatar={bot.avatar} size={40} />} onPress={() => setSheet("avatar")} />
         </SettingsCard>
       </SettingsSection>
-      {sheet === "avatar" ? <AvatarEditor colors={colors} bot={bot} setAvatar={setAvatar} onGenerate={() => setSheet("generate")} onClose={() => setSheet(null)} /> : null}
-      {sheet === "generate" ? (
-        <AvatarSheet
-          colors={colors}
-          bot={bot}
-          onClose={() => setSheet("avatar")}
-          onPicture={(imageUrl) => {
-            setAvatar({ imageUrl });
-            setSheet("avatar");
-          }}
-        />
-      ) : null}
+      {sheet === "avatar" ? <AvatarEditor colors={colors} bot={bot} setAvatar={setAvatar} onClose={() => setSheet(null)} /> : null}
       <SettingsSection title="Profile">
         <SettingsCard>
           <InputField colors={colors}
@@ -77,11 +65,11 @@ export function IdentitySection({ colors, bot, onPatch }: PanelProps) {
 
 function pictureHint(bot: Bot): string {
   if (bot.avatar.imageUrl?.startsWith("data:")) return "Your picture";
-  return bot.avatar.imageUrl ? "The image from its URL" : "A pixel-art face drawn for this bot";
+  return "A pixel-art face drawn for this bot";
 }
 
 /** Everything about the picture: the face, its colour and shape, or a picture of your own. */
-function AvatarEditor({ colors, bot, setAvatar, onGenerate, onClose }: { colors: PanelProps["colors"]; bot: Bot; setAvatar(patch: Partial<BotAvatar>): void; onGenerate(): void; onClose(): void }) {
+function AvatarEditor({ colors, bot, setAvatar, onClose }: { colors: PanelProps["colors"]; bot: Bot; setAvatar(patch: Partial<BotAvatar>): void; onClose(): void }) {
   const toast = useToast();
   const upload = () =>
     void pickPicture()
@@ -98,7 +86,6 @@ function AvatarEditor({ colors, bot, setAvatar, onGenerate, onClose }: { colors:
           {canPickFiles ? (
             <>
               <SettingsAction label="Upload a picture" hint="Cropped to a square" actionLabel="Upload" onPress={upload} />
-              <SettingsAction label="Generate a picture" hint="Drawn by OpenAI with your key" actionLabel="Generate" onPress={onGenerate} />
             </>
           ) : null}
           <ColourRow colors={colors} value={bot.avatar.palette} onChange={(palette) => setAvatar({ palette })} />
@@ -112,7 +99,7 @@ function AvatarEditor({ colors, bot, setAvatar, onGenerate, onClose }: { colors:
             ]}
             onValueChange={(shape) => setAvatar({ shape })}
           />
-          <PictureSource colors={colors} imageUrl={bot.avatar.imageUrl} hint="Optional. Replaces the pixel face" placeholder="https://example.com/avatar.png" onChange={(imageUrl) => setAvatar({ imageUrl })} />
+          <PictureSource colors={colors} imageUrl={bot.avatar.imageUrl} onChange={(imageUrl) => setAvatar({ imageUrl })} />
         </SettingsCard>
         <SheetActions>
           <Button colors={colors} variant="default" label="Done" onPress={onClose} />

@@ -3,7 +3,6 @@ import { Modal, useToast } from "@getpaseo/plugin/client/react-native";
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { APPS_MCP_NAME } from "../../shared/apps";
 import { botMcpServers, toolGrants } from "../../shared/bot";
 import { TOOLS_MCP_NAME } from "../../shared/bot-tools";
 import { commandListRpc, commandRemoveRpc } from "../../shared/rpc";
@@ -11,7 +10,6 @@ import { useAgentProfiles, useBotHost, useHostWorkspaces, usePaseoTools, useProv
 import { errorText } from "../native";
 import type { PanelProps } from "./BotPanel";
 import { AdvancedToggle, CardNote, DrillRow, InputField, SectionMeta, StatusBadge, TextAreaField } from "./controls";
-import { AppsPicker } from "./AppsPicker";
 import { LibraryPicker } from "./LibraryPicker";
 
 const MANAGED = "__managed__";
@@ -29,7 +27,6 @@ export function AccessSection(props: PanelProps) {
     <>
       <PaseoToolsSection colors={colors} bot={bot} localHost={localHost} />
       <LibraryPicker {...props} kind="mcp" title="MCP servers" info="Added on top of the MCP servers the provider already loads. Paseo's own tools are always included. Add and edit servers in Skills & Tools." />
-      <AppsPicker colors={colors} bot={bot} localHost={localHost} onPatch={onPatch} />
       <AdvancedToggle colors={colors} open={advanced} onToggle={() => setAdvanced(!advanced)} />
       {advanced ? (
         <>
@@ -92,7 +89,7 @@ function GrantsSection({ colors, bot, library, localHost, onPatch }: PanelProps)
   const [allowText, setAllowText] = useState(bot.alwaysAllow.join("\n"));
   const lines = allowText.split("\n").map((line) => line.trim()).filter(Boolean);
   // Only grants for the bot's own servers are sent; Paseo rejects the rest.
-  const active = new Set([...botMcpServers(bot, library).map((server) => server.name), ...(host.isLocal && bot.apps.length ? [APPS_MCP_NAME] : []), ...(host.isLocal ? [TOOLS_MCP_NAME] : [])]);
+  const active = new Set([...botMcpServers(bot, library).map((server) => server.name), ...(host.isLocal ? [TOOLS_MCP_NAME] : [])]);
   const grants = toolGrants(lines).filter((grant) => active.has(grant.server));
   const ignored = lines.length - grants.length;
   return (

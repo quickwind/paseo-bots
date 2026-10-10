@@ -16,6 +16,11 @@ interface AvatarProps {
 const AvatarThemeContext = createContext(false);
 
 /** Tells every Avatar below it whether the theme is dark, so pastel backgrounds are toned down. */
+/** Pictures are shown only from a data: URL, so the browser never fetches an address. */
+function isDataImage(url: string | null | undefined): boolean {
+  return !!url && url.startsWith("data:image/");
+}
+
 export function AvatarTheme({ dark, children }: { dark: boolean; children: ReactNode }) {
   return <AvatarThemeContext.Provider value={dark}>{children}</AvatarThemeContext.Provider>;
 }
@@ -30,8 +35,8 @@ export function Avatar({ avatar, size, dark: darkProp }: AvatarProps) {
   const palette = avatar.palette ?? null;
   const sprite = useMemo(() => pixelAvatar(avatar.seed, palette, { dark }), [avatar.seed, palette, dark]);
   const radius = radiusFor(avatar.shape, size);
-  if (avatar.imageUrl) {
-    return <Image accessibilityIgnoresInvertColors source={{ uri: avatar.imageUrl }} style={{ width: size, height: size, borderRadius: radius }} />;
+  if (isDataImage(avatar.imageUrl)) {
+    return <Image accessibilityIgnoresInvertColors source={{ uri: avatar.imageUrl! }} style={{ width: size, height: size, borderRadius: radius }} />;
   }
   return <PixelSprite sprite={sprite} size={size} radius={radius} />;
 }
@@ -43,8 +48,8 @@ export function TeamLogo({ group, size, dark: darkProp }: { group: Pick<BotGroup
   const logo = teamLogoOf(group);
   const image = useMemo(() => teamLogo(logo.seed, logo.palette, { dark }), [logo.seed, logo.palette, dark]);
   const radius = size / 4;
-  if (logo.imageUrl) {
-    return <Image accessibilityIgnoresInvertColors source={{ uri: logo.imageUrl }} style={{ width: size, height: size, borderRadius: radius }} />;
+  if (isDataImage(logo.imageUrl)) {
+    return <Image accessibilityIgnoresInvertColors source={{ uri: logo.imageUrl! }} style={{ width: size, height: size, borderRadius: radius }} />;
   }
   // The motif has its margin drawn in, so it fills the tile.
   return <PixelSprite sprite={image} size={size} radius={radius} grid={LOGO_SIZE} inset={false} />;

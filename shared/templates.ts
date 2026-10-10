@@ -76,8 +76,6 @@ export function newBot(provider: string, template?: BotTemplate): Bot {
     mcpServerIds: [],
     alwaysAllow: [],
     skillIds: [],
-    apps: [],
-    appRules: {},
     voice: { name: null, readReplies: false },
     contactBots: "ask",
     routines: [],

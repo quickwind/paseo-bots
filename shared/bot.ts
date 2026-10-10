@@ -1,6 +1,5 @@
 import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
-import { APPS_MCP_NAME, appsPrompt, type PromptApp } from "./apps";
 import { botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 import { renderPlaybooks } from "./playbooks";
@@ -29,14 +28,19 @@ export const BotMcpServerSchema = z.object({
 });
 export type BotMcpServer = z.infer<typeof BotMcpServerSchema>;
 
+/** Pictures are kept only as data: URLs, so nothing ever loads an address from the network. */
+function dataImageOnly(value: string | null): string | null {
+  return value !== null && /^data:image\//i.test(value) ? value : null;
+}
+
 const BotAvatarSchema = z.object({
   /** Seed for the generated robot face. */
   seed: z.string(),
   /** Palette override for the generated face; null lets the seed pick. */
   palette: z.number().int().nullable().default(null),
   shape: z.enum(["circle", "rounded", "square"]).default("circle"),
-  /** An http(s) or data: image shown instead of the generated face. */
-  imageUrl: z.string().nullable().default(null),
+  /** A data: image shown instead of the generated face. Any other address is dropped. */
+  imageUrl: z.string().nullable().default(null).transform(dataImageOnly),
 });
 export type BotAvatar = z.infer<typeof BotAvatarSchema>;
 
@@ -127,17 +131,6 @@ const PlaybookSchema = z.object({
 });
 export type Playbook = z.infer<typeof PlaybookSchema>;
 
-/**
- * How a bot may use one connected app: its tools ("all", "read" for the ones
- * Composio marks read-only, or exact tool names) and the account it must use
- * (a Composio account id; null lets it pick one by name).
- */
-const AppRuleSchema = z.object({
-  tools: z.union([z.enum(["all", "read"]), z.array(z.string())]).default("all"),
-  account: z.string().nullable().default(null),
-});
-export type AppRule = z.infer<typeof AppRuleSchema>;
-
 /** How a bot sounds when its replies are read aloud: a device voice by name (voices differ per device) and whether finished replies are read out. */
 const BotVoiceSchema = z.object({
   name: z.string().nullable().default(null),
@@ -168,10 +161,6 @@ export const BotSchema = z.object({
   alwaysAllow: z.array(z.string()).default([]),
   /** Library skills this bot gets. */
   skillIds: z.array(z.string()).default([]),
-  /** Connected apps (Composio toolkit slugs) this bot may use. */
-  apps: z.array(z.string()).default([]),
-  /** Limits on connected apps, by slug. An app without one allows every tool and account. */
-  appRules: z.record(z.string(), AppRuleSchema).default({}),
   voice: BotVoiceSchema.default({ name: null, readReplies: false }),
   /** Whether the bot may ask other bots for help: after the user approves each request, freely, or not at all. */
   contactBots: z.enum(["ask", "allow", "off"]).default("ask"),
@@ -221,8 +210,8 @@ const TeamLogoSchema = z.object({
   seed: z.string(),
   /** Palette override for the generated logo; null lets the seed pick. */
   palette: z.number().int().nullable().default(null),
-  /** An http(s) or data: image shown instead of the generated logo. */
-  imageUrl: z.string().nullable().default(null),
+  /** A data: image shown instead of the generated logo. Any other address is dropped. */
+  imageUrl: z.string().nullable().default(null).transform(dataImageOnly),
 });
 export type TeamLogo = z.infer<typeof TeamLogoSchema>;
 
@@ -455,8 +444,6 @@ export interface PromptContext {
   paseoTools: boolean;
   /** Whether chats get the plugin's own tools (bots on the plugin's host). */
   botTools: boolean;
-  /** The connected apps the bot may use; empty when it has none. */
-  apps: PromptApp[];
 }
 
 export interface PromptSection {
@@ -502,7 +489,6 @@ export function promptSections(bot: Bot, context: PromptContext): PromptSection[
     });
   }
   if (context.playbooks.length > 0) sections.push({ title: "Playbooks", text: renderPlaybooks(context.playbooks) });
-  if (context.apps.length > 0) sections.push({ title: "Connected apps", text: appsPrompt(context.apps) });
   if (context.botTools) sections.push({ title: "Bot tools", text: botToolsPrompt(bot.contactBots !== "off") });
   if (context.paseoTools) sections.push({ title: "Paseo tools", text: PASEO_TOOLS_PROMPT });
   return sections;
@@ -517,15 +503,14 @@ export function composeSystemPrompt(bot: Bot, context: PromptContext): string {
 /**
  * What a bot won't do, from its settings, for the Overview (OpenMausBot's
  * wontLines). `local` is whether it runs on this host, where the plugin's tools
- * and connected apps reach it.
+ * reach it.
  */
-export function botLimits(bot: Bot, facts: { local: boolean; appsConfigured: boolean }): string[] {
+export function botLimits(bot: Bot, facts: { local: boolean }): string[] {
   const lines: string[] = [];
   // Modes that skip approvals: Claude's bypassPermissions, Codex's full-access and the like.
   if (!/bypass|full|yolo|dangerous/i.test(bot.modeId ?? "")) lines.push("Asks before running commands and tools it isn't allowed to use.");
   if (!facts.local || bot.contactBots === "off") lines.push("Can't contact other bots.");
   else if (bot.contactBots === "ask") lines.push("Asks before contacting other bots.");
-  if (!facts.local || !facts.appsConfigured || bot.apps.length === 0) lines.push("Has no connected apps.");
   if (!bot.routines.some((routine) => routine.enabled)) lines.push("Won't act on a schedule.");
   if (facts.local) lines.push("Keeps skills and routines only after you confirm them.");
   return lines;
@@ -565,7 +550,7 @@ function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name" | "con
   const record: Record<string, McpServerConfig> = {};
   for (const server of servers) {
     const name = server.name.trim();
-    // Paseo adds its own "paseo" server and connected apps use "composio"; ours can't replace them.
+    // Paseo adds its own "paseo" server; ours can't replace it.
     if (name && !RESERVED_MCP_NAMES.includes(name)) record[name] = server.config;
   }
   return record;
@@ -575,16 +560,14 @@ function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name" | "con
  * The `config` half of `paseo.agents.create()` for a bot. The SDK needs an
  * explicit model, so bots on "provider default" pass the resolved default in.
  */
-/** Servers the plugin itself adds to a local bot's chat: its tools and, when set up, connected apps. */
+/** Servers the plugin itself adds to a local bot's chat: its tools. */
 export interface PluginServers {
-  apps?: McpServerConfig | null;
   tools?: McpServerConfig | null;
 }
 
 export function buildAgentConfig(bot: Bot, library: Library, model: string, systemPrompt: string, plugin: PluginServers = {}) {
   const mcpServers: Record<string, McpServerConfig> = {
     ...mcpServersRecord(botMcpServers(bot, library)),
-    ...(plugin.apps ? { [APPS_MCP_NAME]: plugin.apps } : {}),
     ...(plugin.tools ? { [TOOLS_MCP_NAME]: plugin.tools } : {}),
   };
   // The plugin's quiet tools (reading, or proposing what the user confirms) run without prompts;
@@ -629,7 +612,7 @@ export function botProblems(bot: Bot, isLocalHost: boolean): string[] {
 }
 
 /** MCP server names bots get from elsewhere, which library servers can't take. */
-export const RESERVED_MCP_NAMES: readonly string[] = [PASEO_MCP_NAME, APPS_MCP_NAME, TOOLS_MCP_NAME];
+export const RESERVED_MCP_NAMES: readonly string[] = [PASEO_MCP_NAME, TOOLS_MCP_NAME];
 
 /** Names agents accept as an MCP server key (it prefixes every tool name). */
 export const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/;

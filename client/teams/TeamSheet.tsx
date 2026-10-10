@@ -72,7 +72,7 @@ export function TeamSheet({
             </SettingsRow>
             {canPickFiles ? <SettingsAction label="Upload a picture" hint="Cropped to a square" actionLabel="Upload" onPress={upload} /> : null}
             <ColourRow colors={colors} value={logo.palette} onChange={(palette) => patchLogo({ palette })} />
-            <PictureSource colors={colors} imageUrl={logo.imageUrl} hint="Optional. Replaces the pixel logo" placeholder="https://example.com/logo.png" onChange={(imageUrl) => patchLogo({ imageUrl })} />
+            <PictureSource colors={colors} imageUrl={logo.imageUrl} onChange={(imageUrl) => patchLogo({ imageUrl })} />
           </SettingsCard>
         </SettingsSection>
         <SettingsSection title="Members" info="Every member gets the roster and the shared instructions in its prompt. A bot can be on one team at a time.">

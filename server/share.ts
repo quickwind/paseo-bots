@@ -174,8 +174,6 @@ export async function importBot({ botId, json }: { botId: string; json: string }
     alwaysAllow: [],
     skillIds: skills.map((skill) => skill.id),
     mcpServerIds: [],
-    apps: [],
-    appRules: {},
     voice: { name: null, readReplies: false },
     // Contact with other bots starts at asking, as on a new bot.
     contactBots: "ask",

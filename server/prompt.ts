@@ -3,30 +3,10 @@ import type { PaseoApi } from "./paseo";
 import { recentWork } from "../shared/activity";
 import { selectPlaybooks } from "../shared/playbooks";
 import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
-import type { AppAccount, PromptApp } from "../shared/apps";
-import { accounts, catalog, readState } from "./composio";
 import { botSkills, composeSystemPrompt, promptSections, type Bot, type BotGroup, type BotSettingsValues, type Library, type PromptContext } from "../shared/bot";
 import { teamOf, teamPrompt } from "../shared/groups";
 import { linkBotSkills, skillSha } from "./library";
 import { injectedMemory, MAIN_MEMORY, memoryFolder, recentLogEntries } from "./memory";
-
-/**
- * The connected apps a bot may use right now (allowed for it and signed in on
- * this host), with their accounts when it picks one of several, and its limits.
- */
-async function botApps(bot: Bot): Promise<PromptApp[]> {
-  if (bot.apps.length === 0 || !(await readState()).apiKey) return [];
-  const connected = (await accounts().catch(() => ({ accounts: [] as AppAccount[] }))).accounts.filter((account) => account.status === "connected");
-  const slugs = bot.apps.filter((slug) => connected.some((account) => account.slug === slug));
-  if (slugs.length === 0) return [];
-  const names = new Map((await catalog().catch(() => ({ apps: [] }))).apps.map((app) => [app.slug, app.name]));
-  return slugs.map((slug) => {
-    const rule = bot.appRules[slug];
-    // A bot kept to one account doesn't pick; the relay fills it in.
-    const mine = rule?.account ? [] : connected.filter((account) => account.slug === slug);
-    return { name: names.get(slug) ?? slug, accounts: mine.length > 1 ? mine.map((account) => ({ account: account.alias ?? account.id, name: account.name })) : [], tools: rule?.tools ?? "all" };
-  });
-}
 
 export interface ChatStart {
   /** The chat's first message, which picks the playbooks. */
@@ -43,8 +23,7 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
   // Playbooks and teams live in the settings, so they travel with the bot to any host.
   const playbooks = selectPlaybooks(start.message ?? "", bot.playbooks);
   const team = start.team ? teamPrompt(start.team.group, bot, start.team.bots) : null;
-  // Connected apps go through this host's relay, so bots on other hosts can't reach them.
-  if (!local) return { memory: "", memoryPath: null, recentWork: [], playbooks, team, skills: [], paseoTools, botTools: false, apps: [] };
+  if (!local) return { memory: "", memoryPath: null, recentWork: [], playbooks, team, skills: [], paseoTools, botTools: false };
   // Only skills whose SKILL.md is still what the user reviewed.
   const skills: typeof library.skills = [];
   for (const skill of botSkills(bot, library)) {
@@ -63,7 +42,6 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
     skills: skills.map((skill) => ({ name: skill.id, description: skill.description, path: paths.get(skill.id)! })),
     paseoTools,
     botTools: true,
-    apps: await botApps(bot),
   };
 }
 

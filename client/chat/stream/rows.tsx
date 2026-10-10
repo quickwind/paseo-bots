@@ -4,7 +4,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { Image, Pressable, Text, View } from "react-native";
 import type { ComposerAttachment } from "../../../shared/attachments";
 import { capMessageForRender, formatDuration, formatMessageTimestamp, utf8ByteLength } from "../../../shared/markdown";
-import { appSignIns } from "../../../shared/apps";
 import { proposalIdOf } from "../../../shared/proposals";
 import { buildToolCallPresentation, type TaskActivity, type TaskEntry, type ToolCallDetail, type ToolCallStatus } from "../../../shared/tools";
 import { AttachmentPill } from "../../AttachmentPill";
@@ -16,7 +15,6 @@ import { content, contentLine, ui } from "../../typography";
 import { ToolCallDetailsContent } from "./details";
 import type { StreamRow, TurnFooterInfo } from "./model";
 import { PlanCard } from "./PlanCard";
-import { ConnectCard } from "./ConnectCard";
 import { ProposalCard } from "./ProposalCard";
 import { RoutineRunCard } from "./RoutineRunCard";
 import { CopyButton, ExpandableBadge, isWeb, SpeakButton, Spinner } from "./ui";
@@ -70,8 +68,6 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
     case "tool": {
       const proposalId = proposalIdOf(row);
       if (proposalId) return <ProposalCard colors={colors} compact={context.compact} proposalId={proposalId} />;
-      const signIns = appSignIns(row);
-      if (signIns.length) return <>{signIns.map((signIn) => <ConnectCard key={signIn.url} colors={colors} signIn={signIn} since={row.timestamp} agentId={context.agentId} botId={context.botId} />)}</>;
       return <ToolCallRow colors={colors} compact={context.compact} cwd={context.cwd} name={row.name} status={row.status} error={row.error} detail={row.detail} metadata={row.metadata} />;
     }
     case "speak":

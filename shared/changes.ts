@@ -35,12 +35,11 @@ import { BOT_TEMPLATES, newBot } from "./templates";
 
 const Ref = (what: string) => z.string().min(1).max(100).describe(`${what}: its name or id.`);
 const Ids = (what: string) => z.array(z.string().min(1).max(100)).max(100).describe(what);
-const IMAGE_URL = /^(https?:\/\/\S+|data:image\/\S+)$/i;
-const APP_SLUG = /^[a-z0-9_-]{1,60}$/i;
+const IMAGE_URL = /^data:image\/\S+$/i;
 const TOOL_GRANT = /^[A-Za-z0-9_-]{1,64}\/\S{1,200}$/;
 
 const Colour = z.number().int().min(0).max(PALETTE_COUNT - 1).nullable().optional();
-const ImageUrl = z.string().max(2000).nullable().optional().describe("An https:// picture shown instead of the pixel art; null removes it.");
+const ImageUrl = z.string().max(2000).nullable().optional().describe("A data:image picture shown instead of the pixel art; null removes it. Web addresses are not accepted.");
 
 const AvatarInput = z.object({
   new_face: z.boolean().optional().describe("Draw a different pixel-art face."),
@@ -59,15 +58,6 @@ const PlaybookInput = z.object({
   name: z.string().min(1).max(80),
   triggers: z.array(z.string().min(1).max(60)).min(1).max(20).describe("Words or phrases that bring the playbook into a chat when its first message has one."),
   instructions: z.string().min(1).max(20_000),
-});
-
-const AppInput = z.object({
-  app: z.string().min(1).max(60).describe("The connected app's slug, like gmail or slack."),
-  tools: z
-    .union([z.enum(["all", "read"]), z.array(z.string().min(1).max(200)).min(1).max(200)])
-    .optional()
-    .describe('Which of its tools: "all" (the default), "read" for the read-only ones, or exact tool names.'),
-  account: z.string().max(200).nullable().optional().describe("The one account it must use, by its name; null or left out lets it pick."),
 });
 
 const BotFields = {
@@ -93,7 +83,6 @@ const CreateBot = z.object({
   ...BotFields,
   skills: Ids("Library skill ids to turn on.").optional(),
   mcp_servers: Ids("Library MCP servers to turn on, by name.").optional(),
-  apps: z.array(AppInput).max(50).optional().describe("Connected apps it may use."),
   playbooks: z.array(PlaybookInput).max(20).optional(),
 });
 
@@ -107,8 +96,6 @@ const UpdateBot = z.object({
   remove_skills: Ids("Skill ids to turn off.").optional(),
   add_mcp_servers: Ids("Library MCP servers to turn on, by name.").optional(),
   remove_mcp_servers: Ids("MCP servers to turn off, by name.").optional(),
-  add_apps: z.array(AppInput).max(50).optional().describe("Connected apps it may use, or new limits on ones it has."),
-  remove_apps: Ids("App slugs it may no longer use.").optional(),
   allow_tools: Ids('MCP tools it may use without asking, as "server/tool".').optional(),
   disallow_tools: Ids('Tools to take off that list, as "server/tool".').optional(),
   add_playbooks: z.array(PlaybookInput).max(20).optional().describe("Playbooks to add; one with the name of an existing playbook replaces it."),
@@ -213,7 +200,6 @@ export const ChangeSchema = z.discriminatedUnion("type", [
 export type Change = z.infer<typeof ChangeSchema>;
 export const ChangesSchema = z.array(ChangeSchema).min(1).max(50);
 
-type AppInputValue = z.infer<typeof AppInput>;
 type BotFieldValues = { [Key in keyof typeof BotFields]?: z.infer<(typeof BotFields)[Key]> };
 
 // ---------------------------------------------------------------- lookups
@@ -224,13 +210,6 @@ export interface ProviderInfo {
   models: { id: string; label: string; isDefault: boolean; thinking: string[] }[];
   modes: { id: string; label: string }[];
   defaultModeId: string | null;
-}
-
-/** A connected app account, for resolving `account` names. */
-export interface AppAccountInfo {
-  id: string;
-  slug: string;
-  names: string[];
 }
 
 /** Paseo's provider snapshot entry, as far as changes need it. */
@@ -267,8 +246,6 @@ export interface ApplyContext {
   provider: string;
   /** Checks provider, model, mode and thinking ids when known. */
   providers?: readonly ProviderInfo[] | null;
-  /** Resolves app account names when known. */
-  accounts?: readonly AppAccountInfo[] | null;
 }
 
 function byRef<T>(items: readonly T[], ref: string, id: (item: T) => string, name: (item: T) => string, what: string): T {
@@ -305,7 +282,7 @@ function checkAgent(context: ApplyContext, fields: { provider: string; model: st
 }
 
 function imageUrl(value: string | null): string | null {
-  if (value !== null && !IMAGE_URL.test(value.trim())) throw new Error("A picture needs an https:// or data:image URL.");
+  if (value !== null && !IMAGE_URL.test(value.trim())) throw new Error("A picture needs a data:image URL; web addresses are not accepted.");
   return value?.trim() ?? null;
 }
 
@@ -362,39 +339,6 @@ function withLibraryItems(bot: Bot, library: Library, kind: "skill" | "mcp", add
   for (const ref of add) next = setBotUses(next, kind, id(ref), true);
   for (const ref of remove) next = setBotUses(next, kind, id(ref), false);
   return next;
-}
-
-function withApps(bot: Bot, add: readonly AppInputValue[] = [], remove: readonly string[] = [], context: ApplyContext): Bot {
-  const apps = [...bot.apps];
-  const appRules = { ...bot.appRules };
-  for (const entry of add) {
-    const slug = entry.app.trim().toLowerCase();
-    if (!APP_SLUG.test(slug)) throw new Error(`"${entry.app}" isn't an app slug, like gmail.`);
-    if (!apps.includes(slug)) apps.push(slug);
-    const account = entry.account ? accountId(slug, entry.account, context) : null;
-    const tools = entry.tools ?? "all";
-    if (tools === "all" && !account) delete appRules[slug];
-    else appRules[slug] = { tools, account };
-  }
-  for (const ref of remove) {
-    const slug = ref.trim().toLowerCase();
-    const index = apps.indexOf(slug);
-    if (index === -1) throw new Error(`${bot.name} doesn't use ${ref}.`);
-    apps.splice(index, 1);
-    delete appRules[slug];
-  }
-  return { ...bot, apps, appRules };
-}
-
-function accountId(slug: string, ref: string, context: ApplyContext): string {
-  const accounts = context.accounts;
-  // Proposals store the id once the host resolved it.
-  if (!accounts) return ref;
-  const mine = accounts.filter((account) => account.slug === slug);
-  const key = ref.trim().toLowerCase();
-  const found = mine.find((account) => account.id === ref.trim()) ?? mine.find((account) => account.names.some((name) => name.toLowerCase() === key));
-  if (!found) throw new Error(mine.length ? `${slug} has no account called "${ref}". Its accounts: ${mine.flatMap((account) => account.names.slice(0, 1)).join(", ")}.` : `${slug} isn't connected yet.`);
-  return found.id;
 }
 
 function withGrants(bot: Bot, allow: readonly string[] = [], disallow: readonly string[] = []): Bot {
@@ -476,7 +420,6 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
       bot = withFields(bot, change, context);
       bot = withLibraryItems(bot, library, "skill", change.skills);
       bot = withLibraryItems(bot, library, "mcp", change.mcp_servers);
-      bot = withApps(bot, change.apps, [], context);
       bot = withPlaybooks(bot, change.playbooks);
       return withBot(values, bot, context);
     }
@@ -487,7 +430,6 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
       if (change.archived !== undefined) bot = { ...bot, archived: change.archived };
       bot = withLibraryItems(bot, library, "skill", change.add_skills, change.remove_skills);
       bot = withLibraryItems(bot, library, "mcp", change.add_mcp_servers, change.remove_mcp_servers);
-      bot = withApps(bot, change.add_apps, change.remove_apps, context);
       bot = withGrants(bot, change.allow_tools, change.disallow_tools);
       bot = withPlaybooks(bot, change.add_playbooks, change.remove_playbooks);
       return withBot(values, bot, context);
@@ -614,25 +556,9 @@ export function applyChanges(values: BotSettingsValues, changes: readonly Change
   }, values);
 }
 
-/** Swaps app account names, which only the host can look up, for their ids, so the app applies the changes as they are. */
-export function resolveChanges(changes: readonly Change[], context: ApplyContext): Change[] {
-  const resolveApps = (apps: readonly AppInputValue[] | undefined) =>
-    apps?.map((entry) => (entry.account ? { ...entry, account: accountId(entry.app.trim().toLowerCase(), entry.account, context) } : entry));
-  return changes.map((change) => {
-    if (change.type === "create_bot") return { ...change, apps: resolveApps(change.apps) };
-    if (change.type === "update_bot") return { ...change, add_apps: resolveApps(change.add_apps) };
-    return change;
-  });
-}
-
 // ---------------------------------------------------------------- card
 
 const list = (items: readonly string[]) => items.join(", ");
-
-function appText(entry: AppInputValue): string {
-  const tools = !entry.tools || entry.tools === "all" ? "" : entry.tools === "read" ? " (read-only tools)" : ` (${list(entry.tools)})`;
-  return `${entry.app}${tools}${entry.account ? " with one account" : ""}`;
-}
 
 function agentText(fields: BotFieldValues): string[] {
   const parts: string[] = [];
@@ -673,7 +599,6 @@ export function describeChange(change: Change): string {
         ...fieldsText(change),
         ...(change.skills?.length ? [`skills ${list(change.skills)}`] : []),
         ...(change.mcp_servers?.length ? [`MCP servers ${list(change.mcp_servers)}`] : []),
-        ...(change.apps?.length ? [`apps ${list(change.apps.map(appText))}`] : []),
         ...(change.playbooks?.length ? [`playbooks ${list(change.playbooks.map((playbook) => playbook.name))}`] : []),
       ];
       return `**New bot ${oneLine(change.name)}**${parts.length ? `: ${parts.join("; ")}` : ""}`;
@@ -687,8 +612,6 @@ export function describeChange(change: Change): string {
         ...(change.remove_skills?.length ? [`turns off skills ${list(change.remove_skills)}`] : []),
         ...(change.add_mcp_servers?.length ? [`turns on MCP servers ${list(change.add_mcp_servers)}`] : []),
         ...(change.remove_mcp_servers?.length ? [`turns off MCP servers ${list(change.remove_mcp_servers)}`] : []),
-        ...(change.add_apps?.length ? [`may use ${list(change.add_apps.map(appText))}`] : []),
-        ...(change.remove_apps?.length ? [`no longer uses ${list(change.remove_apps)}`] : []),
         ...(change.allow_tools?.length ? [`uses ${list(change.allow_tools)} without asking`] : []),
         ...(change.disallow_tools?.length ? [`asks again before ${list(change.disallow_tools)}`] : []),
         ...(change.add_playbooks?.length ? [`playbooks ${list(change.add_playbooks.map((playbook) => playbook.name))}`] : []),
@@ -760,8 +683,6 @@ export function changeWarnings(changes: readonly Change[]): string[] {
     if ((change.type === "create_bot" || change.type === "update_bot") && change.mode) warnings.push(`${who} runs in approval mode "${change.mode}".`);
     if ((change.type === "create_bot" || change.type === "update_bot") && change.contact_bots === "allow") warnings.push(`${who} may ask other bots without asking you.`);
     if (change.type === "update_bot" && change.allow_tools?.length) warnings.push(`${who} may use ${list(change.allow_tools)} without asking you.`);
-    const apps = change.type === "create_bot" ? change.apps : change.type === "update_bot" ? change.add_apps : undefined;
-    if (apps?.length) warnings.push(`${who} may use ${list(apps.map((entry) => entry.app))} with your connected accounts.`);
     if ((change.type === "create_bot" || change.type === "update_bot") && change.working_folder) warnings.push(`${who} works in ${change.working_folder}.`);
     if (change.type === "add_mcp_server" && change.command) warnings.push(`The ${change.name} MCP server runs a program on this computer once it's on.`);
     if (change.type === "delete_bot") warnings.push(`Deletes the bot ${change.bot}.`);
@@ -782,7 +703,6 @@ function botLine(bot: Bot, values: BotSettingsValues): string {
     team ? `team ${team.name}${team.leadId === bot.id ? " (Chief of Staff)" : ""}` : null,
     bot.skillIds.length ? `skills ${list(bot.skillIds)}` : null,
     bot.mcpServerIds.length ? `MCP servers ${list(name(bot.mcpServerIds, library.mcpServers))}` : null,
-    bot.apps.length ? `apps ${list(bot.apps)}` : null,
     bot.routines.length ? `${bot.routines.length} routine${bot.routines.length === 1 ? "" : "s"}` : null,
     `contact other bots: ${bot.contactBots}`,
     bot.archived ? "archived" : null,
@@ -791,7 +711,7 @@ function botLine(bot: Bot, values: BotSettingsValues): string {
 }
 
 /** get_setup's overview: bots, teams, the library, defaults, presets and providers. */
-export function setupOverview(values: BotSettingsValues, providers: readonly ProviderInfo[] | null, apps: readonly AppAccountInfo[] | null): string {
+export function setupOverview(values: BotSettingsValues, providers: readonly ProviderInfo[] | null): string {
   const library = values.library ?? EMPTY_LIBRARY;
   const groups = values.groups ?? [];
   const defaults = values.defaults ?? DEFAULT_BOT_DEFAULTS;
@@ -808,7 +728,6 @@ export function setupOverview(values: BotSettingsValues, providers: readonly Pro
     }`,
     `Library skills (${library.skills.length}):\n${library.skills.map((skill) => `- ${skill.id}: ${skill.description || "no description"} [${skill.reviewedSha === null ? "needs review" : skill.enabled ? "on" : "off"}]`).join("\n") || "- none"}`,
     `Library MCP servers (${library.mcpServers.length}):\n${library.mcpServers.map((server) => `- ${server.name}${server.description ? `: ${server.description}` : ""} [${server.enabled ? "on" : mcpServerTested(server) ? "off" : "off, untested"}]`).join("\n") || "- none"}`,
-    apps ? `Connected apps:\n${[...new Set(apps.map((account) => account.slug))].map((slug) => `- ${slug}: accounts ${list(apps.filter((account) => account.slug === slug).map((account) => account.names[0] ?? account.id))}`).join("\n") || "- none"}` : "Connected apps: not set up.",
     `New bots start with: provider ${defaults.provider || "any ready one"}, ${defaults.model ?? "default model"}, contact other bots: ${defaults.contactBots}.`,
     `Presets: ${list((values.presets ?? []).map((preset) => preset.name)) || "none"}.`,
     providers
@@ -837,10 +756,6 @@ export function botDetails(values: BotSettingsValues, ref: string): string {
     block("Routines", bot.routines.map((routine) => `- ${routine.name} (id ${routine.id}, ${routine.enabled ? describeSchedule(routine.schedule) : "paused"}):\n${routine.prompt}`).join("\n\n")),
     block("MCP servers", bot.mcpServerIds.map((id) => library.mcpServers.find((server) => server.id === id)?.name ?? id).join(", ")),
     block("Tools allowed without asking", bot.alwaysAllow.join(", ")),
-    block("Connected apps", bot.apps.map((slug) => {
-      const rule = bot.appRules[slug];
-      return `${slug}${rule ? ` (tools: ${Array.isArray(rule.tools) ? list(rule.tools) : rule.tools}${rule.account ? "; one account" : ""})` : ""}`;
-    }).join(", ")),
     block("Working folder", bot.cwd ?? "its own folder in the Bots project"),
   ].join("\n\n");
 }

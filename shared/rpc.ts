@@ -146,34 +146,6 @@ export const mcpSourcesRpc = defineRpc({
   output: z.object({ sources: z.array(z.object({ label: z.string(), count: z.number(), json: z.string() })) }),
 });
 
-// ---------------------------------------------------------------- avatar pictures
-
-/** Whether an OpenAI key for drawing avatars is saved on this host; only its last characters are shown. */
-export const avatarKeyStatusRpc = defineRpc({
-  name: "bots.avatar.status",
-  input: z.object({}),
-  output: z.object({ configured: z.boolean(), keyHint: z.string().nullable() }),
-});
-
-export const avatarSetKeyRpc = defineRpc({
-  name: "bots.avatar.set-key",
-  input: z.object({ key: z.string().min(1).max(400) }),
-  output: z.object({ ok: z.boolean() }),
-});
-
-export const avatarRemoveKeyRpc = defineRpc({
-  name: "bots.avatar.remove-key",
-  input: z.object({}),
-  output: z.object({ ok: z.boolean() }),
-});
-
-/** Draws an avatar from a bot's name, role and an optional direction; returns a WebP data URL. */
-export const avatarGenerateRpc = defineRpc({
-  name: "bots.avatar.generate",
-  input: z.object({ name: z.string().max(200), title: z.string().max(400), description: z.string().max(4000), direction: z.string().max(400) }),
-  output: z.object({ image: z.string() }),
-});
-
 /** One run of a routine, like Paseo's ScheduleRun. */
 const RoutineRunSchema = z.object({
   id: z.string(),
@@ -259,85 +231,14 @@ export const uploadRpc = defineRpc({
   output: z.object({ path: z.string(), size: z.number() }),
 });
 
-// ---------------------------------------------------------------- connected apps
-
-const AppCardSchema = z.object({ slug: z.string(), name: z.string(), description: z.string(), logo: z.string().nullable(), domain: z.string().nullable(), noAuth: z.boolean() });
-const AppAccountSchema = z.object({ id: z.string(), slug: z.string(), status: z.enum(["connected", "pending", "failed"]), alias: z.string().nullable(), name: z.string().nullable(), wordId: z.string().nullable() });
-
-/** A sign-in a bot started, as its chat shows it. */
-export const APP_SIGN_IN_CARD = { kind: "app-sign-in", version: 1 } as const;
-export const AppSignInSchema = z.object({ slug: z.string(), url: z.string(), wordId: z.string().nullable(), alias: z.string().nullable() });
-const Alias = z.string().max(40).regex(/^[\w .@+-]*$/, "Use letters, numbers, spaces, dots and dashes");
-const AppSlug = z.string().regex(/^[a-z0-9_-]+$/);
-
-/** Whether a Composio project key is saved on this host; only its last characters are shown. */
-export const appsStatusRpc = defineRpc({
-  name: "bots.apps.status",
-  input: z.object({}),
-  output: z.object({ configured: z.boolean(), keyHint: z.string().nullable() }),
-});
-
-/** Saves a Composio project key after opening a session with it. */
-export const appsSetKeyRpc = defineRpc({
-  name: "bots.apps.set-key",
-  input: z.object({ key: z.string().min(1).max(200) }),
-  output: z.object({ ok: z.boolean() }),
-});
-
-export const appsRemoveKeyRpc = defineRpc({
-  name: "bots.apps.remove-key",
-  input: z.object({}),
-  output: z.object({ ok: z.boolean() }),
-});
-
-export const appsCatalogRpc = defineRpc({
-  name: "bots.apps.catalog",
-  input: z.object({}),
-  output: z.object({ apps: z.array(AppCardSchema) }),
-});
-
-export const appsAccountsRpc = defineRpc({
-  name: "bots.apps.accounts",
-  input: z.object({ fresh: z.boolean().optional() }),
-  output: z.object({ accounts: z.array(AppAccountSchema) }),
-});
-
-/** A Composio-hosted sign-in link for an app; `alias` names the new account. */
-export const appsConnectRpc = defineRpc({
-  name: "bots.apps.connect",
-  input: z.object({ slug: AppSlug, alias: Alias.optional() }),
-  output: z.object({ url: z.string() }),
-});
-
-/** Names an account (unique per app); "" clears the name. */
-export const appsRenameRpc = defineRpc({
-  name: "bots.apps.rename",
-  input: z.object({ accountId: z.string().min(1).max(200), alias: Alias }),
-  output: z.object({ ok: z.boolean() }),
-});
-
-/** An app's tools, and which ones Composio marks read-only, for choosing what a bot may run. */
-export const appsToolsRpc = defineRpc({
-  name: "bots.apps.tools",
-  input: z.object({ slug: AppSlug }),
-  output: z.object({ tools: z.array(z.object({ slug: z.string(), name: z.string(), readOnly: z.boolean() })) }),
-});
-
-export const appsDisconnectRpc = defineRpc({
-  name: "bots.apps.disconnect",
-  input: z.object({ accountId: z.string().min(1).max(200) }),
-  output: z.object({ ok: z.boolean() }),
-});
-
 /**
- * The plugin's MCP servers for a new chat of a local bot: its tools, and
- * connected apps when the bot uses them. `agentId` is the chat's id, picked
- * before the chat is created.
+ * The plugin's MCP servers for a new chat of a local bot: its tools. `agentId`
+ * is the chat's id, picked before the chat is created.
  */
 export const mountRpc = defineRpc({
   name: "bots.mount",
   input: z.object({ botId: BotId, agentId: z.uuid() }),
-  output: z.object({ tools: McpServerConfigSchema, apps: McpServerConfigSchema.nullable() }),
+  output: z.object({ tools: McpServerConfigSchema }),
 });
 
 // ---------------------------------------------------------------- proposals

@@ -26,7 +26,7 @@ describe("teams", () => {
     const scout = teamPrompt(withInstructions, bots[1]!, bots);
     expect(scout).toMatch(/^You're on the "Ops" team\. Chief leads it\./);
     expect(scout).toContain("- Chief (Chief of Staff): Runs the house");
-    expect(promptSections(bots[1]!, { memory: "", memoryPath: null, recentWork: [], playbooks: [], team: scout, skills: [], paseoTools: false, botTools: false, apps: [] }).map((section) => section.title)).toEqual(["Persona", "Team"]);
+    expect(promptSections(bots[1]!, { memory: "", memoryPath: null, recentWork: [], playbooks: [], team: scout, skills: [], paseoTools: false, botTools: false }).map((section) => section.title)).toEqual(["Persona", "Team"]);
   });
 
   it("keeps a bot on one team and drops leads that aren't members", () => {

@@ -12,7 +12,6 @@ import { relativeTime } from "../../shared/time";
 import { useBotChats, useBotHost } from "../data";
 import { MONO_FONT, MONO_PROPS } from "../native";
 import { code, codeLine, ui } from "../typography";
-import { useAppsCatalog, useAppsStatus } from "../library/apps";
 import type { PanelProps } from "./BotPanel";
 import { CardNote, DrillRow, SectionMeta } from "./controls";
 
@@ -52,12 +51,9 @@ export function OverviewSection({ colors, bot, library, groups, localHost, onSet
   });
   const [sheet, setSheet] = useState<"summary" | "prompt" | null>(null);
 
-  const appsStatus = useAppsStatus();
-  const appNames = new Map((useAppsCatalog(appsStatus.data?.configured ?? false).data?.apps ?? []).map((app) => [app.slug, app.name]));
   const tools = [
     ...botMcpServers(bot, library).map((server) => server.name),
     ...botSkills(bot, library).map((skill) => `${skill.id} (skill)`),
-    ...(appsStatus.data?.configured && host.isLocal ? bot.apps.map((slug) => `${appNames.get(slug) ?? slug} (app)`) : []),
   ];
   const sections = prompt.data?.sections ?? [];
 
@@ -82,7 +78,7 @@ export function OverviewSection({ colors, bot, library, groups, localHost, onSet
               <SettingsRow label="Team" hint={teamLine(bot, groups)} />
               <SettingsRow label="Can reach" hint={tools.length ? tools.join(", ") : "Only its provider's built-in tools and Paseo's tools"} />
               <SettingsRow label="Runs" hint={bot.routines.length ? bot.routines.map((routine) => `${routine.name}: ${describeSchedule(routine.schedule)}${routine.enabled ? "" : " (paused)"}`).join("\n") : "Only when you message it"} />
-              <SettingsRow label="Won't" hint={botLimits(bot, { local: host.isLocal, appsConfigured: !!appsStatus.data?.configured }).join("\n")} />
+              <SettingsRow label="Won't" hint={botLimits(bot, { local: host.isLocal }).join("\n")} />
             </SettingsCard>
           </Modal.Content>
         </Modal>
@@ -125,7 +121,6 @@ function summarize(before: Bot, after: Bot): string {
     ["routines", "routines"],
     ["playbooks", "playbooks"],
     ["mcpServerIds", "MCP servers"],
-    ["apps", "connected apps"],
     ["alwaysAllow", "always-allowed tools"],
     ["contactBots", "contact with other bots"],
     ["cwd", "folder"],
