@@ -9,6 +9,7 @@ import { exportTeamRpc, importTeamRpc } from "../../shared/rpc";
 import { useBotHost, useProviders } from "../data";
 import { confirmDialog, errorText } from "../native";
 import { Button, CardNote, FormTextArea, SheetActions } from "../panel/controls";
+import { SearchableSelect } from "../ui/SearchableSelect";
 import { useBotSettings } from "../useBotSettings";
 
 type Colors = PluginSurfaceProps["theme"]["colors"];
@@ -22,6 +23,7 @@ export function BotsSettings({ theme, host }: PluginSurfaceProps) {
   return (
     <>
       <DefaultsSection
+        colors={colors}
         localHost={{ id: host.id, label: host.label }}
         defaults={values.defaults ?? DEFAULT_BOT_DEFAULTS}
         onChange={(patch) => void commit((current) => ({ ...current, defaults: { ...(current.defaults ?? DEFAULT_BOT_DEFAULTS), ...patch } }))}
@@ -49,7 +51,7 @@ export function BotsSettings({ theme, host }: PluginSurfaceProps) {
   );
 }
 
-function DefaultsSection({ localHost, defaults, onChange }: { localHost: { id: string; label: string }; defaults: BotDefaults; onChange(patch: Partial<BotDefaults>): void }) {
+function DefaultsSection({ colors, localHost, defaults, onChange }: { colors: Colors; localHost: { id: string; label: string }; defaults: BotDefaults; onChange(patch: Partial<BotDefaults>): void }) {
   const providers = useProviders(useBotHost(null, localHost));
   const provider = providers.data?.find((entry) => entry.provider === defaults.provider);
   const models = (provider?.models ?? []).filter((model) => model.isSelectable !== false);
@@ -65,7 +67,7 @@ function DefaultsSection({ localHost, defaults, onChange }: { localHost: { id: s
         />
         {provider ? (
           <>
-            <SettingsSelect label="Model" value={defaults.model ?? ""} options={[{ label: "Default", value: "" }, ...models.map((entry) => ({ label: entry.label, value: entry.id }))]} onValueChange={(value) => onChange({ model: value || null, thinkingOptionId: null })} />
+            <SearchableSelect colors={colors} label="Model" value={defaults.model ?? ""} options={[{ label: "Default", value: "" }, ...models.map((entry) => ({ label: entry.label, value: entry.id }))]} onValueChange={(value) => onChange({ model: value || null, thinkingOptionId: null })} />
             <SettingsSelect label="Mode" value={defaults.modeId ?? ""} options={[{ label: "Default", value: "" }, ...(provider.modes ?? []).map((mode) => ({ label: mode.label, value: mode.id }))]} onValueChange={(value) => onChange({ modeId: value || null })} />
           </>
         ) : null}

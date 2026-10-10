@@ -10,6 +10,7 @@ import { useAgentProfiles, useBotHost, useHostWorkspaces, usePaseoTools, useProv
 import { errorText } from "../native";
 import type { PanelProps } from "./BotPanel";
 import { AdvancedToggle, CardNote, DrillRow, InputField, SectionMeta, StatusBadge, TextAreaField } from "./controls";
+import { SearchableSelect } from "../ui/SearchableSelect";
 import { LibraryPicker } from "./LibraryPicker";
 
 const MANAGED = "__managed__";
@@ -192,7 +193,8 @@ export function ModelSection({ colors, bot, localHost, onPatch }: PanelProps) {
               onPatch({ provider: value, model: null, modeId: entry?.defaultModeId ?? null, thinkingOptionId: null });
             }}
           />
-          <SettingsSelect
+          <SearchableSelect
+            colors={colors}
             label="Model"
             value={provider ? (bot.model ?? "") : "Choose a provider first"}
             disabled={!provider}
