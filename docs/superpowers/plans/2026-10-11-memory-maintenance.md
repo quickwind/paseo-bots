@@ -942,11 +942,11 @@ const ended = (agentId: string) =>
 
 describe("saving when the context fills up", () => {
   let home: string;
-  beforeAll(async () => {
+  beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "paseo-bots-save-"));
     process.env.PASEO_HOME = home;
   });
-  afterAll(async () => {
+  afterEach(async () => {
     delete process.env.PASEO_HOME;
     await rm(home, { recursive: true, force: true });
   });
@@ -1015,7 +1015,7 @@ describe("saving when the context fills up", () => {
 });
 ```
 
-(Add `DEFAULT_BOT_MEMORY` to the existing import from `../shared/memory-maintenance`, and `ChatActivity`/`SaveTracker` come from the Task 3 import.)
+(Add `DEFAULT_BOT_MEMORY` to the existing import from `../shared/memory-maintenance`, `ChatActivity`/`SaveTracker` come from the Task 3 import, and change the vitest import at the top of the file to `import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";`, dropping the duplicate `afterAll, beforeAll` import added in Task 3.)
 
 - [ ] **Step 2: Run and see it fail**
 
@@ -1086,10 +1086,11 @@ async function askToSave(host: BotsHost, maintenance: Maintenance, botId: string
   const snapshot = await host.paseo?.agents.ref(agentId).refresh().catch(() => null);
   const agent = snapshot?.agent;
   if (!agent) return;
+  // The user may already have sent the next message; ask after that turn instead. Checking this
+  // before `decide` matters: `decide` records that the chat was asked.
+  if (agent.status === "running" || agent.status === "initializing") return;
   const percent = contextPercent(agent.lastUsage as { contextWindowUsedTokens?: number | null; contextWindowMaxTokens?: number | null } | null | undefined);
   if (!maintenance.saves.decide(agentId, percent, bot.memory.saveAt.percent)) return;
-  // The user may already have sent the next message; try again after that turn.
-  if (agent.status === "running" || agent.status === "initializing") return;
   maintenance.saves.markSent(agentId);
   await host.paseo!.agents
     .ref(agentId)
@@ -1099,14 +1100,6 @@ async function askToSave(host: BotsHost, maintenance: Maintenance, botId: string
       console.error("paseo-bots: couldn't ask a chat to save its notes", error);
     });
 }
-```
-
-Note on a detail the test depends on: when the chat is busy the tracker has already recorded `asked`, so the request is lost for this fill. Fix in the same step: check the status first, and call `decide` only when idle. Reorder the two statements:
-
-```ts
-  if (agent.status === "running" || agent.status === "initializing") return;
-  const percent = contextPercent(...);
-  if (!maintenance.saves.decide(agentId, percent, bot.memory.saveAt.percent)) return;
 ```
 
 - [ ] **Step 4: Run, type check, commit**
@@ -1135,7 +1128,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 - Consumes: `tidyDecision`, `tidyPrompt`, `checkTidyResult`, `publicModelFrom`, constants; `ChatActivity`; `memoryUsage`, `topicIndex`, `inboxBytes`, `inboxPath`, `newLogLines`, `memoryFilePath`; `startChat(host, relay, bot, { prompt, title, labels })`; `BotsHost`; `Relay`.
 - Produces:
   - `class MemoryTidy { constructor(host: BotsHost, relay: Relay, activity: ChatActivity); stop(): void; status(botId: string): Promise<TidyStatus>; runNow(botId: string): Promise<TidyStatus>; finished(botId: string, agentId: string, outcome: PluginTurnOutcome, reply: string): Promise<void> }`
-  - `interface TidyStatus { enabled: boolean; running: boolean; lastRunAt: string | null; last: { at: string; status: "running" | "succeeded" | "failed"; reason: string; note: string | null; flags: string[] } | null; nextDueAt: string | null; blockedUntil: string | null; runsToday: number }`
+  - `type TidyStatus` (in `shared/rpc.ts`, from the RPC's zod schema): `{ enabled; running; lastRunAt; last: { at; status: "running" | "succeeded" | "failed"; reason; note; flags } | null; nextDueAt; blockedUntil; runsToday }`
   - `tidyBot(bot: Bot, pick: { provider: string; model: string | null } | null): Bot` (the bot a tidy chat runs as)
   - RPCs `tidyStatusRpc` (`bots.tidy.status`) and `tidyRunRpc` (`bots.tidy.run`), both `input: { botId }`, `output: TidyStatus` shape.
 
@@ -1162,11 +1155,11 @@ describe("the bot a tidy chat runs as", () => {
 
 describe("the tidy service", () => {
   let home: string;
-  beforeAll(async () => {
+  beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "paseo-bots-tidy-"));
     process.env.PASEO_HOME = home;
   });
-  afterAll(async () => {
+  afterEach(async () => {
     delete process.env.PASEO_HOME;
     await rm(home, { recursive: true, force: true });
   });
@@ -1184,8 +1177,8 @@ describe("the tidy service", () => {
     const tidy = new MemoryTidy(host, { mountTools: async () => ({}) } as never, activity);
     tidy.stop();
     const started: { bot: ReturnType<typeof makeBot>; prompt: string; labels: Record<string, string> }[] = [];
-    (tidy as unknown as { startChat: (...args: unknown[]) => Promise<string> }).startChat = async (_bot, input) => {
-      started.push({ bot: _bot as never, prompt: (input as { prompt: string }).prompt, labels: (input as { labels: Record<string, string> }).labels });
+    (tidy as unknown as { startChat: (...args: unknown[]) => Promise<string> }).startChat = async (_host, _relay, chatBot, input) => {
+      started.push({ bot: chatBot as never, prompt: (input as { prompt: string }).prompt, labels: (input as { labels: Record<string, string> }).labels });
       return `tidy-chat-${started.length}`;
     };
     const { botDataPath } = await import("../server/bot-home");
@@ -1259,7 +1252,7 @@ describe("the tidy service", () => {
     await tidy.finished("tb", "tidy-chat-1", { kind: "completed" }, "Tried.");
     const status = await tidy.status("tb");
     expect(status.blockedUntil).not.toBeNull();
-    (tidy as unknown as { forgetLastRun(botId: string): Promise<void> }).forgetLastRun("tb");
+    await tidy.forgetLastRun("tb");
     await tidy.tick();
     expect(started).toHaveLength(1);
   });
@@ -1293,6 +1286,7 @@ import type { PluginTurnOutcome } from "@getpaseo/plugin/server";
 import { foldText } from "../shared/activity";
 import type { Bot } from "../shared/bot";
 import { checkTidyResult, FORCE_BACKOFF_MS, publicModelFrom, TIDY_LABEL, tidyDecision, tidyPrompt, type TidyDecision } from "../shared/memory-maintenance";
+import type { TidyStatus } from "../shared/rpc";
 import { pluginDataPath } from "./bot-home";
 import { startChat } from "./chats";
 import type { BotsHost } from "./host";
@@ -1322,16 +1316,6 @@ interface TidyRecord {
   runs: string[];
   blockedUntil: string | null;
   last: LastRun | null;
-}
-
-export interface TidyStatus {
-  enabled: boolean;
-  running: boolean;
-  lastRunAt: string | null;
-  last: { at: string; status: LastRun["status"]; reason: string; note: string | null; flags: string[] } | null;
-  nextDueAt: string | null;
-  blockedUntil: string | null;
-  runsToday: number;
 }
 
 const EMPTY: TidyRecord = { lastRunAt: null, runs: [], blockedUntil: null, last: null };
@@ -1548,6 +1532,8 @@ const TidyStatusSchema = z.object({
   runsToday: z.number(),
 });
 
+export type TidyStatus = z.infer<typeof TidyStatusSchema>;
+
 export const tidyStatusRpc = defineRpc({
   name: "bots.tidy.status",
   input: z.object({ botId: BotId }),
@@ -1598,6 +1584,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ### Task 7: Settings and status UI
 
 **Files:**
+- Create: `client/panel/maintenance-text.ts`
 - Create: `client/panel/MaintenanceSection.tsx`
 - Modify: `client/panel/KnowledgeSections.tsx` (render it in `MemorySection`)
 - Modify: `client/settings/BotsSettings.tsx` (nothing needed: new bots start with it on; no setting here)
@@ -1605,14 +1592,14 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `PanelProps` (`colors`, `bot`, `localHost`, `onPatch`), `tidyStatusRpc`, `tidyRunRpc`, `SearchableSelect`, `useProviders`, `useBotHost` from `../data`.
-- Produces: `MaintenanceSection(props: PanelProps)`, and the pure helpers `intervalLabel(minutes: number): string` and `describeTidy(status: TidyStatus, now: Date): string` exported from the file for tests.
+- Produces: `MaintenanceSection(props: PanelProps)`, and the pure helpers `intervalLabel(minutes: number): string` and `describeTidy(status: Pick<TidyStatus, "running" | "last" | "blockedUntil">, now: Date): string` in `client/panel/maintenance-text.ts` (no React, so tests can import it).
 
 - [ ] **Step 1: Write the failing test for the text helpers**
 
 Append to `tests/maintenance.test.ts`:
 
 ```ts
-import { describeTidy, intervalLabel } from "../client/panel/MaintenanceSection";
+import { describeTidy, intervalLabel } from "../client/panel/maintenance-text";
 
 describe("maintenance texts", () => {
   it("names intervals", () => {
@@ -1641,23 +1628,10 @@ Expected: FAIL (missing file).
 
 - [ ] **Step 3: Implement the section**
 
-`client/panel/MaintenanceSection.tsx`:
+`client/panel/maintenance-text.ts`:
 
-```tsx
-import { useRpc } from "@getpaseo/plugin/client";
-import { useToast } from "@getpaseo/plugin/client/react-native";
-import { SettingsAction, SettingsCard, SettingsSection, SettingsSelect, SettingsSwitch } from "@getpaseo/plugin/client/ui";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { tidyRunRpc, tidyStatusRpc } from "../../shared/rpc";
-import type { TidyStatus } from "../../server/tidy";
-import { useBotHost, useProviders } from "../data";
-import { errorText } from "../native";
-import { SearchableSelect } from "../ui/SearchableSelect";
-import type { PanelProps } from "./BotPanel";
-
-const INTERVALS = [30, 60, 120, 240, 480, 1440];
-const THRESHOLDS = [50, 60, 70, 80, 90];
+```ts
+import type { TidyStatus } from "../../shared/rpc";
 
 export function intervalLabel(minutes: number): string {
   if (minutes === 1440) return "Every day";
@@ -1685,6 +1659,26 @@ export function describeTidy(status: Pick<TidyStatus, "running" | "last" | "bloc
   if (status.blockedUntil) parts.push("Memory is over budget and tidy could not shrink it; it will try again tomorrow");
   return parts.join(". ");
 }
+
+```
+
+`client/panel/MaintenanceSection.tsx`:
+
+```tsx
+import { useRpc } from "@getpaseo/plugin/client";
+import { useToast } from "@getpaseo/plugin/client/react-native";
+import { SettingsAction, SettingsCard, SettingsSection, SettingsSelect, SettingsSwitch } from "@getpaseo/plugin/client/ui";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { tidyRunRpc, tidyStatusRpc } from "../../shared/rpc";
+import { useBotHost, useProviders } from "../data";
+import { errorText } from "../native";
+import { SearchableSelect } from "../ui/SearchableSelect";
+import type { PanelProps } from "./BotPanel";
+import { describeTidy, intervalLabel } from "./maintenance-text";
+
+const INTERVALS = [30, 60, 120, 240, 480, 1440];
+const THRESHOLDS = [50, 60, 70, 80, 90];
 
 export function MaintenanceSection({ colors, bot, localHost, onPatch }: PanelProps) {
   const host = useBotHost(bot.hostId, localHost);
