@@ -1,5 +1,6 @@
 import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
+import { SetupSettingsSchema } from "./setup";
 import { botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 import { renderPlaybooks } from "./playbooks";
@@ -304,6 +305,8 @@ export const botSettings = defineSettings({
     defaults: BotDefaultsSchema.optional(),
     presets: z.array(PresetSchema).optional(),
     groups: z.array(BotGroupSchema).optional(),
+    /** The setup interview ("Set up with the bot"). Optional like the other later additions. */
+    setup: SetupSettingsSchema.optional(),
   }),
   migrate: (values, fromVersion) => {
     let migrated = values;

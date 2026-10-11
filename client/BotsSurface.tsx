@@ -18,6 +18,7 @@ import { ensureBotHomeRpc, mountRpc, exportBotRpc, importBotRpc, importTeamRpc, 
 import { botFromPreset, newBot } from "../shared/templates";
 import { AvatarTheme } from "./Avatar";
 import { botMenuEntries, chatMenuEntries, ExportDialog, NewBotDialog, RenameDialog } from "./BotDialogs";
+import { setupPromptText, shouldAutoSetup } from "../shared/setup";
 import { BotSidebar, type ChatMenuContext, type MenuSource, type Selection } from "./BotSidebar";
 import { ChatPane, type OutgoingMessage } from "./ChatPane";
 import { useBotHost, useChatInvalidation, useHostResolver, useProviders, type LocalHost } from "./data";
@@ -43,10 +44,6 @@ import { newUuid } from "../shared/uuid";
 import { ui, useTypeScale } from "./typography";
 
 type Colors = PluginTheme["colors"];
-
-const SETUP_PROMPT =
-  "Let's set you up. Interview me one short question at a time about what I want from you, how I like to work, and what you should never do. " +
-  "Then propose standing instructions for yourself and a starting MEMORY.md. Write the memory file once I confirm, and give me the instructions to paste into your Soul settings.";
 
 /** Autosave delay after the last edit in the settings panel. */
 const SAVE_DELAY_MS = 600;
@@ -282,11 +279,12 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   };
 
   /** Saves a new bot and opens it with its settings. */
-  const addBot = async (bot: Bot, section: SectionId = "identity") => {
+  const addBot = async (bot: Bot, section: SectionId = "identity", setupPrompt?: string) => {
     const saved = await commit((values) => ({ ...values, bots: [...values.bots, bot] }));
     if (saved) {
-      select({ botId: bot.id, chatId: null });
-      setPanel({ open: true, section });
+      // A blank bot starts its setup interview in the chat; the settings stay one tap away.
+      select({ botId: bot.id, chatId: null, ...(setupPrompt ? { prompt: setupPrompt } : {}) });
+      setPanel({ open: !setupPrompt, section });
     }
   };
 
@@ -600,7 +598,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
           setPanelVersion((version) => version + 1);
           toast.show("Restored. Undo it from History if needed.", { variant: "success" });
         }}
-        onSetup={() => select({ botId: selectedBot.id, chatId: null, prompt: SETUP_PROMPT })}
+        onSetup={() => select({ botId: selectedBot.id, chatId: null, prompt: setupPromptText(settings.status === "ready" ? settings.values.setup : undefined) })}
         onOpenChat={(chatId) => {
           select({ botId: selectedBot.id, chatId });
           // On phones the panel covers the chat.
@@ -691,7 +689,9 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
             setCreating(false);
             const bot = start?.preset ? botFromPreset(defaultProvider(), start.preset) : newBot(defaultProvider(), start?.template);
             const defaults = (settings.status === "ready" ? settings.values.defaults : undefined) ?? DEFAULT_BOT_DEFAULTS;
-            void addBot(applyDefaults(bot, defaults, defaultProvider()), start ? "overview" : "identity");
+            const created = applyDefaults(bot, defaults, defaultProvider());
+            const setup = settings.status === "ready" ? settings.values.setup : undefined;
+            void addBot(created, start ? "overview" : "identity", shouldAutoSetup(start, setup, created.provider) ? setupPromptText(setup) : undefined);
           }}
           onImport={async (json) => {
             const { bots, teams } = await importTeam({ json });
