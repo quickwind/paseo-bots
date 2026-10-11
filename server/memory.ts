@@ -1,11 +1,10 @@
 import { appendFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { localDay, parseLog, type LogEntry } from "../shared/activity";
+import { INBOX_FILE, MEMORY_MAX_BYTES, MEMORY_MAX_LINES } from "../shared/memory-maintenance";
 import { botDataPath } from "./bot-home";
 
-/** OpenMausBot's budget: the first 200 lines or 24 KB of MEMORY.md go into every chat. */
-const MEMORY_MAX_LINES = 200;
-const MEMORY_MAX_BYTES = 24_000;
+// OpenMausBot's budget: the first MEMORY_MAX_LINES lines or MEMORY_MAX_BYTES bytes of MEMORY.md go into every chat.
 export const MAIN_MEMORY = "MEMORY.md";
 
 export function memoryFolder(botId: string): string {
@@ -124,4 +123,45 @@ export async function memoryTexts(botId: string): Promise<{ path: string; text: 
   for (const name of topics.filter((entry) => entry.endsWith(".md")).sort()) files.push({ path: `memory/${name}`, text: await readText(memoryFilePath(botId, name)) });
   for (const { day } of (await listLogDays(botId)).days) files.push({ path: `memory/log/${day}.md`, text: await readText(logPath(botId, day)) });
   return files.filter((file) => file.text);
+}
+
+// ---------------------------------------------------------------- maintenance
+
+export function inboxPath(botId: string): string {
+  return memoryFilePath(botId, INBOX_FILE);
+}
+
+export async function memoryUsage(botId: string): Promise<{ lines: number; bytes: number }> {
+  const text = await readText(memoryFilePath(botId, MAIN_MEMORY));
+  return { lines: text ? text.split("\n").length : 0, bytes: Buffer.byteLength(text, "utf8") };
+}
+
+/** The topic files (memory/*.md, the inbox included) with their first non-empty line. */
+export async function topicIndex(botId: string): Promise<{ name: string; firstLine: string }[]> {
+  const names = (await readdir(join(botDataPath(botId), "memory")).catch(() => [] as string[])).filter((name) => name.endsWith(".md")).sort();
+  const out: { name: string; firstLine: string }[] = [];
+  for (const name of names) {
+    const text = await readText(memoryFilePath(botId, name));
+    out.push({ name, firstLine: text.split("\n").find((line) => line.trim())?.trim().slice(0, 120) ?? "" });
+  }
+  return out;
+}
+
+export async function inboxBytes(botId: string): Promise<number> {
+  return Buffer.byteLength(await readText(inboxPath(botId)), "utf8");
+}
+
+/** Daily-log lines written after `since` (all of the last 31 days when null), and the log files that hold them. */
+export async function newLogLines(botId: string, since: Date | null, now = new Date()): Promise<{ count: number; files: string[] }> {
+  let count = 0;
+  const files: string[] = [];
+  for (let back = 30; back >= 0; back--) {
+    const day = localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - back));
+    const entries = parseLog(day, await readText(logPath(botId, day))).filter((entry) => !since || entry.at > since);
+    if (entries.length) {
+      count += entries.length;
+      files.push(logPath(botId, day));
+    }
+  }
+  return { count, files };
 }

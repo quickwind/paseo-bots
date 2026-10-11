@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BotSchema } from "../shared/bot";
 import { DEFAULT_BOT_MEMORY, NEW_BOT_MEMORY } from "../shared/memory-maintenance";
 import { newBot } from "../shared/templates";
@@ -162,5 +165,85 @@ describe("the public model", () => {
     expect(publicModelFrom({ config: {} })).toEqual([]);
     expect(publicModelFrom(null)).toEqual([]);
     expect(publicModelFrom({ config: { metadataGeneration: { providers: [{ model: "x" }, 4] } } })).toEqual([]);
+  });
+});
+
+import { ChatActivity, SaveTracker } from "../server/maintenance";
+
+describe("which chats are running", () => {
+  it("is busy while a chat of the bot has a turn running", () => {
+    const activity = new ChatActivity();
+    expect(activity.busy("b1")).toBe(false);
+    activity.started("b1", "chat-1", 1000);
+    expect(activity.busy("b1", 2000)).toBe(true);
+    expect(activity.busy("b2", 2000)).toBe(false);
+    activity.ended("b1", "chat-1");
+    expect(activity.busy("b1", 3000)).toBe(false);
+  });
+
+  it("stops counting a turn whose end was never seen", () => {
+    const activity = new ChatActivity();
+    activity.started("b1", "chat-1", 0);
+    expect(activity.busy("b1", 3 * 3_600_000)).toBe(false);
+  });
+});
+
+describe("the save tracker", () => {
+  it("asks once per fill and recognises the save turn when it ends", () => {
+    const saves = new SaveTracker();
+    expect(saves.decide("c1", 50, 70)).toBe(false);
+    expect(saves.decide("c1", 75, 70)).toBe(true);
+    saves.markSent("c1");
+    expect(saves.decide("c1", 80, 70)).toBe(false);
+    expect(saves.consume("c1")).toBe(true);
+    expect(saves.consume("c1")).toBe(false);
+    expect(saves.decide("c1", 20, 70)).toBe(false);
+    expect(saves.decide("c1", 71, 70)).toBe(true);
+  });
+  it("tracks chats separately", () => {
+    const saves = new SaveTracker();
+    expect(saves.decide("c1", 90, 70)).toBe(true);
+    expect(saves.decide("c2", 90, 70)).toBe(true);
+  });
+});
+
+describe("memory files for maintenance", () => {
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "paseo-bots-maint-"));
+    process.env.PASEO_HOME = home;
+  });
+  afterEach(async () => {
+    delete process.env.PASEO_HOME;
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("reads usage, the topic index, the inbox and new log lines", async () => {
+    const memory = await import("../server/memory");
+    const { botDataPath } = await import("../server/bot-home");
+    const folder = botDataPath("m1");
+    await mkdir(join(folder, "memory", "log"), { recursive: true });
+    await writeFile(join(folder, "MEMORY.md"), "# Memory\n- likes short answers\n");
+    await writeFile(join(folder, "memory", "clients.md"), "# Clients\nAcme is the big one.\n");
+    await writeFile(join(folder, "memory", "inbox.md"), "- note\n");
+    await writeFile(join(folder, "memory", "log", "2026-10-10.md"), '- 09:00 · from chat "A" · did a thing\n- 10:00 · from chat "A" · did another\n');
+    await writeFile(join(folder, "memory", "log", "2026-10-11.md"), '- 08:30 · from chat "B" · newest\n');
+
+    expect(await memory.memoryUsage("m1")).toEqual({ lines: 3, bytes: 31 });
+    expect(await memory.topicIndex("m1")).toEqual([
+      { name: "clients.md", firstLine: "# Clients" },
+      { name: "inbox.md", firstLine: "- note" },
+    ]);
+    expect(await memory.inboxBytes("m1")).toBe(7);
+    expect(memory.inboxPath("m1")).toBe(join(folder, "memory", "inbox.md"));
+
+    const now = new Date(2026, 9, 11, 12, 0);
+    expect((await memory.newLogLines("m1", null, now)).count).toBe(3);
+    const since = new Date(2026, 9, 10, 9, 30);
+    const recent = await memory.newLogLines("m1", since, now);
+    expect(recent.count).toBe(2);
+    expect(recent.files.map((path) => path.endsWith("2026-10-10.md") || path.endsWith("2026-10-11.md"))).toEqual([true, true]);
+    expect(await memory.inboxBytes("nobody")).toBe(0);
+    expect(await memory.memoryUsage("nobody")).toEqual({ lines: 0, bytes: 0 });
   });
 });
