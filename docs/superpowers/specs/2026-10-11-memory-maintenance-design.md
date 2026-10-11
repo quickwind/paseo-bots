@@ -271,3 +271,26 @@ too big for that), shared user-level memory (`USER.md`), agent-authored skills, 
 - Threshold 70% and interval 4 h as defaults.
 - Existing bots off, new bots on.
 - The save message and the agent's one-line reply being visible in the chat.
+
+## Spike results (2026-10-11, Claude Code on macOS, throwaway Wukong daemon)
+
+1. **Hook can read fresh usage and send.** In `agent.turn_ended`, `agents.ref(id).refresh()` returned
+   `status: "idle"` and `lastUsage.contextWindowUsedTokens` / `contextWindowMaxTokens` that had grown
+   since the previous turn (25 922 then 28 785 of 1 000 000). `agents.ref(id).send(text, { messageId })`
+   from the hook started a second turn in the same chat. Design holds.
+2. **`paseo.config.get()` includes `metadataGeneration`**, at `config.metadataGeneration.providers`.
+   It was an empty list on a fresh daemon, so "public model" falls back to the bot's own model until
+   someone sets Paseo's Metadata generation list.
+3. **Devin usage: not checked.** Devin is not installed on this Mac. The user must repeat the check
+   (the temporary logging snippet is in the plan, Task 0 step 1). Until then Devin chats may never
+   reach the save threshold; interval tidy does not depend on it.
+4. **Provider snapshot is `loading` for the first seconds after the daemon starts**, then `ready`
+   (`devin` was `unavailable` here). The public-model pick only accepts `ready` providers, so right
+   after a restart it can fall back to the bot's own model. Accepted.
+5. **Busy detection** does not need the Paseo API: `ChatActivity` counts turns from the plugin's own events.
+6. **Permissions.** Claude Code's `default` mode stops at a permission prompt for a file write (the
+   agent stayed `running` with a pending `Write` request). `acceptEdits` ("Accept File Edits")
+   approves edit tools without prompting. A tidy chat therefore runs in an edit-approving mode when
+   the provider offers one (Claude Code: `acceptEdits`); a bot already in a bypass mode keeps it.
+   Devin's modes are unknown; if it has none, an unattended tidy on Devin waits for approval and the
+   status row says so.
