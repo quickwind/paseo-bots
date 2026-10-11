@@ -1,6 +1,6 @@
 {
   "name": "paseo-bots-offline",
-  "version": "0.2.0-offline.5",
+  "version": "0.2.0-offline.6",
   "files": [
     "paseo-plugin.json",
     "index.client.ts",

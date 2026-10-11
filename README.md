@@ -60,6 +60,8 @@ Turn on **Settings → Plugins → Enable plugins** first. Requires Paseo 0.9.2 
 
 Bots can do the setting up too. Ask one in a chat, for example "Create a research team of three bots with Scout as Chief of Staff", and it shows every change on one card; **Apply changes** makes them. A bot can create, edit and delete bots, teams, routines, library skills and MCP servers, and change what new bots start with. Each bot's earlier settings stay under **History** in its settings.
 
+**Set up with the bot.** A bot made with **Blank bot** opens with a short interview: it asks about what you want from it, how you work and what it must never do, then proposes its name, description and instructions on one card and writes a starting `MEMORY.md` once you confirm. It does not change its provider, model or approval mode; you set those under **Model** and **Permissions**. You can start the interview again from **Overview > Set up with the bot**. Under Settings > Plugins > paseo-bots, **Set up with the bot** holds the prompt (leave it empty for the built-in one; name a skill in it to have the bot use it, if the skill is on for that bot) and a switch to stop blank bots from starting it by themselves. Bots made from a role or preset never start it by themselves.
+
 ### Memory
 
 A bot updates its `MEMORY.md` when it learns something worth keeping, for example when you say "Remember that I prefer short answers". New chats start with it.
