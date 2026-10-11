@@ -247,3 +247,32 @@ describe("memory files for maintenance", () => {
     expect(await memory.memoryUsage("nobody")).toEqual({ lines: 0, bytes: 0 });
   });
 });
+
+import { promptSections, type PromptContext } from "../shared/bot";
+
+function context(patch: Partial<PromptContext> = {}): PromptContext {
+  return { memory: "- likes short answers", memoryPath: "/b/MEMORY.md", recentWork: [], playbooks: [], skills: [], paseoTools: false, botTools: false, ...patch };
+}
+const memoryText = (bot: ReturnType<typeof makeBot>, ctx: PromptContext) => promptSections(bot, ctx).find((section) => section.title === "Memory")!.text;
+
+describe("the Memory part of the prompt", () => {
+  it("is unchanged for a bot with maintenance off and nothing to list", () => {
+    const text = memoryText(makeBot(), context());
+    expect(text).not.toContain("inbox");
+    expect(text).not.toContain("Topic files");
+  });
+
+  it("says how full MEMORY.md is and lists the topic files", () => {
+    const text = memoryText(makeBot(), context({ memoryUsage: { lines: 141, bytes: 15_300 }, topics: [{ name: "clients.md", firstLine: "# Clients" }] }));
+    expect(text).toContain("141 of 200 lines");
+    expect(text).toContain("15.3 of 24 KB");
+    expect(text).toContain("memory/clients.md: # Clients");
+  });
+
+  it("explains the inbox when maintenance is on", () => {
+    const bot = makeBot({ memory: NEW_BOT_MEMORY });
+    const text = memoryText(bot, context({ memoryUsage: { lines: 3, bytes: 80 }, topics: [] }));
+    expect(text).toContain("memory/inbox.md");
+    expect(text).toContain("when you learn it");
+  });
+});

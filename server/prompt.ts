@@ -6,7 +6,7 @@ import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
 import { botSkills, composeSystemPrompt, promptSections, type Bot, type BotGroup, type BotSettingsValues, type Library, type PromptContext } from "../shared/bot";
 import { teamOf, teamPrompt } from "../shared/groups";
 import { linkBotSkills, skillSha } from "./library";
-import { injectedMemory, MAIN_MEMORY, memoryFolder, recentLogEntries } from "./memory";
+import { injectedMemory, MAIN_MEMORY, memoryFolder, memoryUsage, recentLogEntries, topicIndex } from "./memory";
 
 export interface ChatStart {
   /** The chat's first message, which picks the playbooks. */
@@ -42,6 +42,8 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
     skills: skills.map((skill) => ({ name: skill.id, description: skill.description, path: paths.get(skill.id)! })),
     paseoTools,
     botTools: true,
+    topics: await topicIndex(bot.id),
+    memoryUsage: await memoryUsage(bot.id),
   };
 }
 

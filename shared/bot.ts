@@ -1,6 +1,6 @@
 import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
-import { BotMemorySchema, DEFAULT_BOT_MEMORY } from "./memory-maintenance";
+import { BotMemorySchema, DEFAULT_BOT_MEMORY, MEMORY_MAX_BYTES, MEMORY_MAX_LINES } from "./memory-maintenance";
 import { botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 import { renderPlaybooks } from "./playbooks";
@@ -467,11 +467,30 @@ export interface PromptContext {
   paseoTools: boolean;
   /** Whether chats get the plugin's own tools (bots on the plugin's host). */
   botTools: boolean;
+  /** The topic files under memory/ with their first line, so the agent knows what it can read. */
+  topics?: { name: string; firstLine: string }[];
+  /** How much of the injection budget MEMORY.md uses. */
+  memoryUsage?: { lines: number; bytes: number } | null;
 }
 
 export interface PromptSection {
   title: string;
   text: string;
+}
+
+function memoryNotes(bot: Bot, context: PromptContext): string {
+  const parts: string[] = [];
+  if (context.memoryUsage) {
+    const kb = (context.memoryUsage.bytes / 1000).toFixed(1).replace(/\.0$/, "");
+    parts.push(`MEMORY.md is ${context.memoryUsage.lines} of ${MEMORY_MAX_LINES} lines and ${kb} of ${MEMORY_MAX_BYTES / 1000} KB. Only that much reaches future chats, so keep it short and move detail into topic files.`);
+  }
+  if (context.topics?.length) {
+    parts.push(`Topic files (read one when it is relevant):\n${context.topics.map((topic) => `- memory/${topic.name}${topic.firstLine ? `: ${topic.firstLine}` : ""}`).join("\n")}`);
+  }
+  if (bot.memory.saveAt.enabled || bot.memory.tidy.enabled) {
+    parts.push("Write down what you learn when you learn it, not at the end of the chat. Notes that are unfinished or uncertain go in memory/inbox.md; the app tidies them into MEMORY.md later.");
+  }
+  return parts.length ? `\n\n${parts.join("\n\n")}` : "";
 }
 
 /**
@@ -495,7 +514,7 @@ export function promptSections(bot: Bot, context: PromptContext): PromptSection[
     const body = context.memory.trim() ? `\n\nCurrent memory:\n${context.memory.trim()}` : "\n\nYour memory is empty so far.";
     sections.push({
       title: "Memory",
-      text: `Your long-term memory lives in ${context.memoryPath}. When you learn something durable about the user or your work (preferences, recurring tasks, key facts), update that file: keep it short, factual and organised, and never store secrets. The app keeps a daily log of your chats in memory/log/ beside it.${body}`,
+      text: `Your long-term memory lives in ${context.memoryPath}. When you learn something durable about the user or your work (preferences, recurring tasks, key facts), update that file: keep it short, factual and organised, and never store secrets. The app keeps a daily log of your chats in memory/log/ beside it.${body}${memoryNotes(bot, context)}`,
     });
   }
   if (context.recentWork.length > 0) {
