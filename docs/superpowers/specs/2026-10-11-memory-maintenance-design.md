@@ -74,6 +74,11 @@ At `agent.turn_ended`, for a chat of a bot with the feature on:
 
 Rules that keep it safe and cheap:
 
+- **The save turn is not logged.** `turnEnded` writes a daily-log line for every turn, and the
+  recent-work brief shows the newest line of each chat. Without an exception the brief would show
+  "Saved." instead of the chat's real last work. The save turn is skipped by `appendDailyLog`.
+- The save turn is recognised by the turn id of the message the plugin sent, not by its text, so
+  pasted content that contains the marker cannot switch saving off.
 - Once per chat per fill cycle. The "asked" flag clears when usage falls under the threshold again
   (after the provider compacts).
 - Never while a turn is running; if the user already sent the next message, skip this time.
@@ -100,9 +105,19 @@ When it runs:
   after the laptop wakes the next tick runs it. Tidy uses its own due check and does not apply the
   12 h "skip missed" rule.
 - Skip when all hold: the inbox is empty or missing, no log lines were added since the last tidy,
-  `MEMORY.md` is under 80% of the budget, and the user has not edited memory since. Force a run when
-  `MEMORY.md` is over 80%, even with no new input.
+  and `MEMORY.md` is under 80% of the budget. Force a run when `MEMORY.md` is over 80%, even with
+  no new input.
+- **Tidy chats are labelled and never logged.** Otherwise each tidy turn adds a log line, the next
+  check sees "new input", and tidy runs every interval forever. "New log lines" also ignores
+  lines from tidy and save turns.
+- **Runaway guards.** At most 6 tidy runs per bot per day. If a forced run (over 80%) leaves
+  `MEMORY.md` still over 80%, or fails, wait 24 h before forcing again and show "Memory is over
+  budget and tidy could not shrink it" on the Memory page, instead of retrying every interval.
 - Skip while the bot has a chat running (a normal chat or a routine), and try again next tick.
+  The memory journal keeps one snapshot per bot, not per chat. If a user chat overlaps a tidy run,
+  changes are credited to whichever turn ends first. Skipping while busy avoids most of that; a
+  chat that starts during a tidy run can still blur attribution, which is accepted and noted on
+  the run card.
 
 What the tidy chat does (prompt, in this order):
 
@@ -120,7 +135,8 @@ What the tidy chat does (prompt, in this order):
 
 After the turn the plugin checks the result: `MEMORY.md` exists, is inside the budget, and did not
 shrink by more than half. A failed check does not roll anything back; it marks the run "Large
-change, please review" on the run card.
+change, please review" on the run card. Undo restores the whole file as it was before that entry,
+so it also discards edits made after it. The Changes list says so.
 
 ### Model for tidy
 
@@ -168,7 +184,8 @@ memory: {
 }
 ```
 
-- Existing bots: both off. New bots: both on. (Default to be confirmed.)
+- Existing bots: both off, so the schema default is off and old settings files parse unchanged.
+  New bots: both on, set where a bot is created from "Defaults for new bots". (To be confirmed.)
 - Tidy run history lives with routine records in `routines.json`, under the key `tidy-<botId>`,
   reusing `RoutineRun`.
 - The "asked" flag per chat is in memory only; losing it on restart at worst repeats one save.
@@ -185,13 +202,21 @@ memory: {
   threshold, model select, budget bar, run status.
 - `tests/`: below.
 
+## Cost
+
+- Save: one short turn in a chat that already has its context cached, at most once per fill cycle.
+- Tidy: at most 6 turns a day per bot, none when there is nothing new. Each reads the memory files
+  and the new log lines, so it grows with how much the bot is used, not with chat length.
+- A usage readout for these runs is future work; until then the run card shows tokens if the
+  provider reports them.
+
 ## Failure modes
 
 | Case | Behaviour |
 |---|---|
 | Provider reports no context usage (maybe Devin) | Threshold save never fires for that bot; interval tidy still works |
 | Save message sent, agent ignores or fails | Nothing lost; the log still has the turn; tidy runs later |
-| Tidy chat stops at a permission prompt | Run shows "waiting for permission"; counts as busy; user can approve or stop it |
+| Tidy chat stops at a permission prompt | Run shows "waiting for permission"; counts as busy; user can approve or stop it. An unattended run is only reliable if the provider has a mode that auto-approves edits inside the memory folder; spike 6 |
 | Tidy produces a tiny or empty `MEMORY.md` | Flagged for review on the run card; user can Undo |
 | User edits memory while tidy runs | Tidy skips when a chat of the bot is running; the journal attributes later edits normally |
 | Daemon restarts mid-tidy | The run goes stale like routine runs and is marked failed; next tick retries |
@@ -216,7 +241,12 @@ memory: {
 2. Does `paseo.config.get()` include `metadataGeneration.providers`?
 3. Does Devin report `contextWindowUsedTokens` / `contextWindowMaxTokens`?
 4. Can a chat be started with a provider other than the bot's, with a minimal config?
-5. Can the plugin tell that a bot has a chat running?
+5. Can the plugin tell that a bot has a chat running? Fallback: count `turn_started` and
+   `turn_ended` events per bot inside the plugin.
+6. Which mode lets a tidy chat edit files in the memory folder without a prompt, for Claude Code
+   and for Devin? If none exists for Devin, tidy on Devin needs the user present.
+7. Does the scheduler handle a run record whose id is not in any bot's routine list (`finished`
+   looks the routine up in `bots`)? The synthesized tidy routine needs its own path for the card.
 
 ## Out of scope
 
