@@ -11,6 +11,7 @@ import { confirmDialog, errorText } from "../native";
 import { Button, CardNote, FormTextArea, SheetActions } from "../panel/controls";
 import { SearchableSelect } from "../ui/SearchableSelect";
 import { useBotSettings } from "../useBotSettings";
+import { DEFAULT_SETUP_PROMPT, type SetupSettings } from "../../shared/setup";
 
 type Colors = PluginSurfaceProps["theme"]["colors"];
 
@@ -28,6 +29,7 @@ export function BotsSettings({ theme, host }: PluginSurfaceProps) {
         defaults={values.defaults ?? DEFAULT_BOT_DEFAULTS}
         onChange={(patch) => void commit((current) => ({ ...current, defaults: { ...(current.defaults ?? DEFAULT_BOT_DEFAULTS), ...patch } }))}
       />
+      <SetupSection colors={colors} setup={values.setup} onChange={(setup) => void commit((current) => ({ ...current, setup }))} />
       <SettingsSection title="Presets" info="Bots you saved with Save as preset in their menu: their identity, instructions, playbooks and skills. They're listed under New bot.">
         <SettingsCard>
           {(values.presets ?? []).length === 0 ? <CardNote colors={colors} text="No presets yet" /> : null}
@@ -48,6 +50,45 @@ export function BotsSettings({ theme, host }: PluginSurfaceProps) {
       </SettingsSection>
       <TeamSection colors={colors} bots={values.bots.filter((bot) => !bot.archived)} groups={values.groups ?? []} commit={commit} />
     </>
+  );
+}
+
+/** The interview a bot opens with ("Set up with the bot"), and whether a new blank bot starts it by itself. */
+function SetupSection({ colors, setup, onChange }: { colors: Colors; setup: SetupSettings | undefined; onChange(setup: SetupSettings): void }) {
+  const current: SetupSettings = setup ?? { prompt: "", autoStart: true };
+  const [text, setText] = useState(current.prompt);
+  const custom = current.prompt.trim() !== "";
+  return (
+    <SettingsSection title="Set up with the bot" info="The first message of the setup interview. The bot asks its questions, then proposes its own name, description and instructions on a card you apply. Name a skill to have the bot use it; the skill has to be switched on for that bot.">
+      <SettingsCard>
+        <SettingsSwitch
+          label="Start it for a new blank bot"
+          hint="A bot made with Blank bot opens with the interview. Bots made from a role or a preset do not."
+          value={current.autoStart}
+          onValueChange={(autoStart) => onChange({ ...current, autoStart })}
+        />
+        <SettingsAction
+          label="Prompt"
+          hint={custom ? "Using your own prompt" : "Using the built-in prompt"}
+          actionLabel="Reset to default"
+          disabled={!custom && text.trim() === ""}
+          onPress={() => {
+            setText("");
+            onChange({ ...current, prompt: "" });
+          }}
+        />
+      </SettingsCard>
+      <FormTextArea
+        colors={colors}
+        accessibilityLabel="Setup prompt"
+        value={text}
+        onChangeText={setText}
+        onBlur={() => text !== current.prompt && onChange({ ...current, prompt: text })}
+        autoCapitalize="none"
+        placeholder={DEFAULT_SETUP_PROMPT}
+        minHeight={160}
+      />
+    </SettingsSection>
   );
 }
 
