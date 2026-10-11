@@ -147,8 +147,13 @@ export async function topicIndex(botId: string): Promise<{ name: string; firstLi
   return out;
 }
 
+/** Bytes of real notes in the inbox: blank lines and headings do not count, so an inbox the tidy chat "emptied" with a blank line stays empty. */
 export async function inboxBytes(botId: string): Promise<number> {
-  return Buffer.byteLength(await readText(inboxPath(botId)), "utf8");
+  const notes = (await readText(inboxPath(botId)))
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+  return Buffer.byteLength(notes.join("\n"), "utf8");
 }
 
 /** Daily-log lines written after `since` (all of the last 31 days when null), and the log files that hold them. */

@@ -1,4 +1,5 @@
 import type { PaseoApi } from "../paseo";
+import { TIDY_LABEL } from "../../shared/memory-maintenance";
 import { z } from "zod";
 import { foldText, lastTurn } from "../../shared/activity";
 import { BOT_LABEL } from "../../shared/bot";
@@ -73,7 +74,8 @@ function describeChat(chat: ChatState, who: string, chatId: string): string {
 async function mayAsk({ bot, agentId, host }: ToolCaller): Promise<boolean> {
   if (bot.contactBots === "off") return false;
   const chat = await host.chatOf(agentId);
-  return !chat?.labels[ASKED_BY_LABEL];
+  // A memory tidy chat reads untrusted text unattended, so it does not ask other bots either.
+  return !chat?.labels[ASKED_BY_LABEL] && !chat?.labels[TIDY_LABEL];
 }
 
 export const askBot = defineTool({

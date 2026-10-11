@@ -45,6 +45,8 @@ export const memoryListRpc = defineRpc({
 const TidyStatusSchema = z.object({
   enabled: z.boolean(),
   running: z.boolean(),
+  /** The tidy chat is stopped at a permission prompt. */
+  waiting: z.boolean(),
   lastRunAt: z.string().nullable(),
   last: z.object({ at: z.string(), status: z.enum(["running", "succeeded", "failed"]), reason: z.string(), note: z.string().nullable(), flags: z.array(z.string()) }).nullable(),
   nextDueAt: z.string().nullable(),

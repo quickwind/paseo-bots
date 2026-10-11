@@ -17,8 +17,8 @@ function ago(from: string, now: Date): string {
 }
 
 /** The Status row under Tidy: what the last run did, anything to review, and a note when memory stays over budget. */
-export function describeTidy(status: Pick<TidyStatus, "running" | "last" | "blockedUntil">, now: Date): string {
-  if (status.running) return "Tidying now...";
+export function describeTidy(status: Pick<TidyStatus, "running" | "waiting" | "last" | "blockedUntil">, now: Date): string {
+  if (status.running) return status.waiting ? "Waiting for you to approve something in the Memory tidy chat" : "Tidying now...";
   const parts: string[] = [];
   if (status.last) {
     const note = status.last.note ? `: ${status.last.note}` : "";

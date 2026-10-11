@@ -5,6 +5,7 @@ import { foldText } from "../shared/activity";
 import type { Bot } from "../shared/bot";
 import { checkTidyResult, editApprovingMode, FORCE_BACKOFF_MS, publicModelFrom, TIDY_LABEL, tidyDecision, tidyPrompt, type TidyDecision } from "../shared/memory-maintenance";
 import type { TidyStatus } from "../shared/rpc";
+import { newUuid } from "../shared/uuid";
 import { botDataPath, pluginDataPath } from "./bot-home";
 import { startChat } from "./chats";
 import type { BotsHost } from "./host";
@@ -127,15 +128,23 @@ export class MemoryTidy {
     const running = record.last?.status === "running" && now - Date.parse(record.last.at) < STALE_RUN_MS;
     const last = record.last ? { at: record.last.at, status: running || record.last.status !== "running" ? record.last.status : ("failed" as const), reason: record.last.reason, note: record.last.note, flags: record.last.flags } : null;
     const due = record.lastRunAt && bot ? new Date(Date.parse(record.lastRunAt) + bot.memory.tidy.everyMinutes * 60_000).toISOString() : null;
+    // A tidy chat stopped at a permission prompt looks like a slow one unless it is asked.
+    const waiting = running && record.last?.agentId ? await this.waitingForApproval(record.last.agentId) : false;
     return {
       enabled: bot?.memory.tidy.enabled ?? false,
       running,
+      waiting,
       lastRunAt: record.lastRunAt,
       last,
       nextDueAt: due,
       blockedUntil: record.blockedUntil && Date.parse(record.blockedUntil) > now ? record.blockedUntil : null,
       runsToday: record.runs.filter((at) => now - Date.parse(at) < DAY_MS).length,
     };
+  }
+
+  private async waitingForApproval(agentId: string): Promise<boolean> {
+    const snapshot = await this.host.paseo?.agents.ref(agentId).refresh().catch(() => null);
+    return (snapshot?.agent.pendingPermissions?.length ?? 0) > 0;
   }
 
   async runNow(botId: string): Promise<TidyStatus> {
@@ -172,7 +181,10 @@ export class MemoryTidy {
   private async consider(bot: Bot, force: boolean): Promise<TidyDecision> {
     const record = (await this.readAll())[bot.id] ?? EMPTY;
     const now = Date.now();
-    if (record.last?.status === "running" && now - Date.parse(record.last.at) < STALE_RUN_MS) return { run: false, reason: "busy" };
+    if (record.last?.status === "running") {
+      if (now - Date.parse(record.last.at) < STALE_RUN_MS) return { run: false, reason: "busy" };
+      await this.abandon(bot.id, record.last);
+    }
     const usage = await memoryUsage(bot.id);
     const logs = await newLogLines(bot.id, record.lastRunAt ? new Date(record.lastRunAt) : null);
     const decision = tidyDecision({
@@ -216,13 +228,36 @@ export class MemoryTidy {
       inboxPath: inboxPath(bot.id),
       logPaths,
     });
-    const agentId = await this.startChat(this.host, this.relay, tidyBot(bot, pick, modes), { prompt, title: "Memory tidy", labels: { [TIDY_LABEL]: bot.id } });
+    // The run is recorded before the chat exists: a chat that fails at once can report its end
+    // before startChat returns, and that end must find the run.
+    const agentId = newUuid();
     const at = new Date().toISOString();
     await this.update(bot.id, (record) => {
       record.lastRunAt = at;
       record.runs = [...record.runs.filter((entry) => Date.now() - Date.parse(entry) < DAY_MS), at];
       record.last = { at, status: "running", agentId, reason, note: null, flags: [], before };
     });
+    try {
+      await this.startChat(this.host, this.relay, tidyBot(bot, pick, modes), { prompt, title: "Memory tidy", labels: { [TIDY_LABEL]: bot.id }, agentId });
+    } catch (error) {
+      // Visible on the Status row, and counted as a run so it waits an interval instead of retrying every minute.
+      const note = error instanceof Error ? error.message : String(error);
+      await this.update(bot.id, (record) => {
+        if (record.last?.agentId === agentId) Object.assign(record.last, { status: "failed", note });
+      });
+      console.error("paseo-bots: couldn't start a memory tidy chat", error);
+    }
+  }
+
+  /** A run that never reported its end: mark it failed, and close its chat so stuck ones do not pile up. */
+  private async abandon(botId: string, last: LastRun): Promise<void> {
+    await this.update(botId, (record) => {
+      if (record.last?.agentId !== last.agentId || record.last.status !== "running") return;
+      Object.assign(record.last, { status: "failed", note: "It never finished." });
+      // A stuck forced run counts as not having helped.
+      if (record.last.reason === "over-budget") record.blockedUntil = new Date(Date.now() + FORCE_BACKOFF_MS).toISOString();
+    });
+    if (last.agentId) await this.host.paseo?.agents.ref(last.agentId).archive().catch(() => null);
   }
 
   /** A tidy chat's turn ended: check what it left, record it, and archive the chat when all is well. */

@@ -71,6 +71,12 @@ describe("asking other bots", () => {
     asked.attach(fakePaseo(chats));
     expect(await askBot.available!({ ...caller, host: asked })).toBe(false);
     expect(await askBot.available!({ ...caller, bot: { ...scout, contactBots: "off" } })).toBe(false);
+    // A memory tidy chat reads untrusted text unattended, so it can't ask other bots either.
+    delete chats["caller-chat"]!.labels[ASKED_BY_LABEL];
+    chats["caller-chat"]!.labels["paseo-bots.tidy"] = "bot-scout";
+    const tidying = fakeHost([scout]);
+    tidying.attach(fakePaseo(chats));
+    expect(await askBot.available!({ ...caller, host: tidying })).toBe(false);
   });
 
   it("checks only the bot's own chats and the ones it asked", async () => {
