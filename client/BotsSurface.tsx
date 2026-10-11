@@ -21,6 +21,7 @@ import { botMenuEntries, chatMenuEntries, ExportDialog, NewBotDialog, RenameDial
 import { BotSidebar, type ChatMenuContext, type MenuSource, type Selection } from "./BotSidebar";
 import { ChatPane, type OutgoingMessage } from "./ChatPane";
 import { useBotHost, useChatInvalidation, useHostResolver, useProviders, type LocalHost } from "./data";
+import { pendingAutoStart } from "./auto-start";
 import { takeIntent } from "./intent";
 import { LibraryView } from "./library/LibraryView";
 import { onLibraryTarget, type LibraryTarget } from "./navigation";
@@ -790,14 +791,15 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
     // Only the name matters here.
   }, [bot.name, host.api]);
 
-  // "Set up with the bot" opens a new chat that sends its first message straight away.
-  const autoStarted = useRef(false);
+  // "Set up with the bot" opens a new chat that sends its first message straight away. It runs for
+  // each such selection, including a click while the new-chat pane is already open (no remount).
+  const handledSelection = useRef<unknown>(null);
   useEffect(() => {
-    if (selection.chatId !== null || !selection.prompt || autoStarted.current || !host.api) return;
-    autoStarted.current = true;
-    start({ text: selection.prompt, messageId: newMessageId(), images: [], attachments: [] }).catch((error: unknown) => toast.error(`Couldn't start: ${errorText(error)}`));
-    // Runs once for the selection that carries the prompt.
-  }, [host.api]);
+    if (!pendingAutoStart(selection, handledSelection.current, Boolean(host.api))) return;
+    handledSelection.current = selection;
+    start({ text: selection.prompt!, messageId: newMessageId(), images: [], attachments: [] }).catch((error: unknown) => toast.error(`Couldn't start: ${errorText(error)}`));
+    // Runs for the selection that carries the prompt, once the host is ready.
+  }, [host.api, selection]);
 
   return (
     <ChatPane
