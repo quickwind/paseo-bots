@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_BOT_MEMORY } from "../shared/memory-maintenance";
 import { pixelAvatar, SPRITE_NAMES, SPRITE_SIZE } from "../shared/avatar";
 import { botProblems, botSettings, buildAgentConfig, defaultModelId, EMPTY_LIBRARY, migrateV2, promptSections, formatPairs, joinArgs, parseMcpJson, parsePairs, splitArgs, type Bot, type Library, type LibraryMcpServer } from "../shared/bot";
 import { BOT_TEMPLATES } from "../shared/templates";
@@ -22,6 +23,7 @@ function bot(patch: Partial<Bot> = {}): Bot {
     skillIds: [],
     voice: { name: null, readReplies: false },
     contactBots: "ask",
+    memory: DEFAULT_BOT_MEMORY,
     playbooks: [],
     routines: [],
     pinned: false,

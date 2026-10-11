@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { DEFAULT_BOT_MEMORY } from "../shared/memory-maintenance";
 import { mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +27,7 @@ function bot(id: string, patch: Partial<Bot> = {}): Bot {
     skillIds: [],
     voice: { name: null, readReplies: false },
     contactBots: "ask",
+    memory: DEFAULT_BOT_MEMORY,
     routines: [],
     playbooks: [],
     cwd: null,

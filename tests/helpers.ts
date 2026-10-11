@@ -1,4 +1,5 @@
 import { BotsHost } from "../server/host";
+import { DEFAULT_BOT_MEMORY } from "../shared/memory-maintenance";
 import { EMPTY_LIBRARY, type Bot, type BotSettingsValues, type Library } from "../shared/bot";
 
 export const NOW = "2026-09-27T00:00:00.000Z";
@@ -21,6 +22,7 @@ export function makeBot(patch: Partial<Bot> = {}): Bot {
     skillIds: [],
     voice: { name: null, readReplies: false },
     contactBots: "ask",
+    memory: DEFAULT_BOT_MEMORY,
     routines: [],
     playbooks: [],
     cwd: null,

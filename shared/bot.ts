@@ -1,5 +1,6 @@
 import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
+import { BotMemorySchema, DEFAULT_BOT_MEMORY } from "./memory-maintenance";
 import { botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 import { renderPlaybooks } from "./playbooks";
@@ -184,6 +185,8 @@ export const BotSchema = z.object({
   voice: BotVoiceSchema.default({ name: null, readReplies: false }),
   /** Whether the bot may ask other bots for help: after the user approves each request, freely, or not at all. */
   contactBots: z.enum(["ask", "allow", "off"]).default("ask"),
+  /** Saving notes when a chat fills up, and tidying MEMORY.md on an interval. */
+  memory: BotMemorySchema.default(DEFAULT_BOT_MEMORY),
   routines: z.array(RoutineSchema).default([]),
   playbooks: z.array(PlaybookSchema).default([]),
   /** Working folder. Null means the shared managed folder on the storing host. */

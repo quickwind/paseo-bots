@@ -1,4 +1,5 @@
 import { randomSeed } from "./avatar";
+import { NEW_BOT_MEMORY } from "./memory-maintenance";
 import { newBotId, type Bot, type Preset } from "./bot";
 
 // Starting points for a new bot, from OpenMausBot's New bot roles
@@ -54,6 +55,7 @@ export function newBot(provider: string, template?: BotTemplate): Bot {
     skillIds: [],
     voice: { name: null, readReplies: false },
     contactBots: "ask",
+    memory: NEW_BOT_MEMORY,
     routines: [],
     playbooks: [],
     cwd: null,
