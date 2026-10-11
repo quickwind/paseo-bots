@@ -9,6 +9,7 @@ import { parseTriggers } from "../../shared/playbooks";
 import { memoryDeleteRpc, memoryListRpc, memoryReadRpc, memoryWriteRpc } from "../../shared/rpc";
 import { useBotHost } from "../data";
 import { confirmDialog, errorText } from "../native";
+import { MaintenanceSection } from "./MaintenanceSection";
 import type { PanelProps } from "./BotPanel";
 import { LibraryPicker } from "./LibraryPicker";
 import { Alert, Button, CardNote, DrillRow, FormTextArea, InputField, SectionLink, SectionMeta, SheetActions, TextAreaField } from "./controls";
@@ -106,7 +107,8 @@ const TOPIC_NAME = /^[A-Za-z0-9 ._-]+$/;
 const MEMORY_LINES = 200;
 const MEMORY_BYTES = 24_000;
 
-export function MemorySection({ colors, bot, localHost }: PanelProps) {
+export function MemorySection(props: PanelProps) {
+  const { colors, bot, localHost } = props;
   const host = useBotHost(bot.hostId, localHost);
   const list = useRpc(memoryListRpc);
   const queryClient = useQueryClient();
@@ -154,6 +156,7 @@ export function MemorySection({ colors, bot, localHost }: PanelProps) {
           ) : null}
         </SettingsCard>
       </SettingsSection>
+      <MaintenanceSection {...props} />
       <SettingsSection title="Activity">
         <SettingsCard>
           <DrillRow colors={colors} label="Changes" hint={journal.isLoading ? "Loading..." : changes ? `${changes} ${changes === 1 ? "change" : "changes"}, with undo` : "No changes yet"} onPress={() => setSheet("changes")} />

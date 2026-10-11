@@ -533,3 +533,25 @@ describe("the tidy service", () => {
     await expect(tidy.runNow("tb")).rejects.toThrow("A chat of this bot is working");
   });
 });
+
+import { describeTidy, intervalLabel } from "../client/panel/maintenance-text";
+
+describe("maintenance texts", () => {
+  it("names intervals", () => {
+    expect(intervalLabel(60)).toBe("Every hour");
+    expect(intervalLabel(240)).toBe("Every 4 hours");
+    expect(intervalLabel(30)).toBe("Every 30 minutes");
+    expect(intervalLabel(1440)).toBe("Every day");
+  });
+
+  const status = (patch = {}) => ({ running: false, last: null, blockedUntil: null, ...patch });
+  const now = new Date("2026-10-11T12:00:00.000Z");
+  it("says what tidy last did", () => {
+    expect(describeTidy(status(), now)).toBe("Not run yet");
+    expect(describeTidy(status({ running: true }), now)).toBe("Tidying now...");
+    expect(describeTidy(status({ last: { at: "2026-10-11T09:00:00.000Z", status: "succeeded", reason: "new-material", note: "Merged.", flags: [] } }), now)).toBe("Last run 3 hours ago: Merged.");
+    expect(describeTidy(status({ last: { at: "2026-10-11T09:00:00.000Z", status: "failed", reason: "manual", note: "boom", flags: [] } }), now)).toContain("failed: boom");
+    expect(describeTidy(status({ last: { at: "2026-10-11T11:59:30.000Z", status: "succeeded", reason: "manual", note: null, flags: ["MEMORY.md shrank by more than half"] } }), now)).toContain("Please review: MEMORY.md shrank by more than half");
+    expect(describeTidy(status({ blockedUntil: "2026-10-12T09:00:00.000Z" }), now)).toContain("could not shrink");
+  });
+});
