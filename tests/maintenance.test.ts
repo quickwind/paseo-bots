@@ -32,6 +32,7 @@ describe("bot memory settings", () => {
 import {
   checkTidyResult,
   contextPercent,
+  editApprovingMode,
   FORCE_BACKOFF_MS,
   nextSaveState,
   overBudget,
@@ -373,5 +374,162 @@ describe("saving when the context fills up", () => {
     expect(m.activity.busy("bot-s")).toBe(true);
     await turnEnded(host, new MemoryJournal(), { finished: async () => {} }, ended("chat-3"), m);
     expect(m.activity.busy("bot-s")).toBe(false);
+  });
+});
+
+describe("a mode that lets a tidy chat edit memory without asking", () => {
+  const claude = [{ id: "plan" }, { id: "default" }, { id: "acceptEdits" }, { id: "bypassPermissions" }];
+  it("picks the edit-approving mode over a stricter one", () => {
+    expect(editApprovingMode("default", claude)).toBe("acceptEdits");
+    expect(editApprovingMode(null, claude)).toBe("acceptEdits");
+  });
+  it("keeps a mode that already approves edits", () => {
+    expect(editApprovingMode("bypassPermissions", claude)).toBe("bypassPermissions");
+    expect(editApprovingMode("acceptEdits", claude)).toBe("acceptEdits");
+  });
+  it("keeps the current mode when the provider has no such mode", () => {
+    expect(editApprovingMode("ask", [{ id: "ask" }, { id: "plan" }])).toBe("ask");
+    expect(editApprovingMode(null, [])).toBeNull();
+  });
+});
+
+import { MemoryTidy, tidyBot } from "../server/tidy";
+
+describe("the bot a tidy chat runs as", () => {
+  const bot = makeBot({ id: "b", provider: "claude", model: "opus", modeId: "default", skillIds: ["s"], mcpServerIds: ["m"], cwd: "/work", contactBots: "allow", alwaysAllow: ["a/b"], playbooks: [{ id: "p", name: "p", triggers: ["x"], instructions: "i" }] });
+  const modes = [{ id: "default" }, { id: "acceptEdits" }];
+  it("keeps the bot's own model and drops everything but memory access", () => {
+    const tidy = tidyBot(bot, null, modes);
+    expect(tidy).toMatchObject({ provider: "claude", model: "opus", modeId: "acceptEdits", skillIds: [], mcpServerIds: [], cwd: null, contactBots: "off", alwaysAllow: [], playbooks: [], routines: [] });
+  });
+  it("uses another provider's model with that provider's own edit mode", () => {
+    expect(tidyBot(bot, { provider: "devin", model: "swe-free" }, [{ id: "ask" }, { id: "auto-edit" }])).toMatchObject({ provider: "devin", model: "swe-free", modeId: "auto-edit", thinkingOptionId: null });
+    expect(tidyBot(bot, { provider: "devin", model: "swe-free" }, [])).toMatchObject({ modeId: null });
+  });
+  it("uses a model of the bot's own provider", () => {
+    expect(tidyBot(bot, { provider: "claude", model: "haiku" }, modes)).toMatchObject({ provider: "claude", model: "haiku", modeId: "acceptEdits" });
+  });
+});
+
+describe("the tidy service", () => {
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "paseo-bots-tidy-"));
+    process.env.PASEO_HOME = home;
+  });
+  afterEach(async () => {
+    delete process.env.PASEO_HOME;
+    await rm(home, { recursive: true, force: true });
+  });
+
+  async function setup(patch: Partial<ReturnType<typeof makeBot>> = {}) {
+    const bot = makeBot({ id: "tb", memory: { ...NEW_BOT_MEMORY, tidy: { ...NEW_BOT_MEMORY.tidy, source: "bot" } }, ...patch });
+    const host = fakeHost([bot]);
+    const archived: string[] = [];
+    const activity = new ChatActivity();
+    const tidy = new MemoryTidy(host, { mountTools: async () => ({}) } as never, activity);
+    const started: { bot: ReturnType<typeof makeBot>; prompt: string; labels: Record<string, string> }[] = [];
+    (tidy as unknown as { startChat: (...args: unknown[]) => Promise<string> }).startChat = async (_host, _relay, chatBot, input) => {
+      started.push({ bot: chatBot as never, prompt: (input as { prompt: string }).prompt, labels: (input as { labels: Record<string, string> }).labels });
+      return `tidy-chat-${started.length}`;
+    };
+    // Attaching starts the service, so the stand-in for starting a chat is in place first.
+    host.attach({
+      agents: { ref: (id: string) => ({ refresh: async () => ({ agent: { status: "idle", labels: {} } }), archive: async () => void archived.push(id) }) },
+      providers: { snapshot: async () => ({ entries: [{ provider: "claude", enabled: true, status: "ready", modes: [{ id: "default", label: "Ask" }, { id: "acceptEdits", label: "Edits" }] }] }) },
+      config: { get: async () => ({ config: {} }) },
+    } as never);
+    tidy.stop();
+    await tidy.tick();
+    const { botDataPath } = await import("../server/bot-home");
+    const folder = botDataPath("tb");
+    await mkdir(join(folder, "memory"), { recursive: true });
+    await writeFile(join(folder, "MEMORY.md"), "# Memory\n- a fact\n");
+    return { bot, host, tidy, activity, started, archived, folder };
+  }
+
+  it("does not run when there is nothing new, and runs when the inbox has notes", async () => {
+    const { tidy, started, folder } = await setup();
+    await tidy.tick();
+    expect(started).toHaveLength(0);
+    await writeFile(join(folder, "memory", "inbox.md"), "- remember Acme\n");
+    await tidy.tick();
+    expect(started).toHaveLength(1);
+    expect(started[0]!.labels).toEqual({ "paseo-bots.tidy": "tb" });
+    expect(started[0]!.prompt).toContain("inbox.md");
+    expect(started[0]!.bot.cwd).toBeNull();
+    expect(started[0]!.bot.modeId).toBe("acceptEdits");
+    expect((await tidy.status("tb")).running).toBe(true);
+  });
+
+  it("waits for a working chat, and does not start a second run while one is going", async () => {
+    const { tidy, activity, started, folder } = await setup();
+    await writeFile(join(folder, "memory", "inbox.md"), "- note\n");
+    activity.started("tb", "chat-x");
+    await tidy.tick();
+    expect(started).toHaveLength(0);
+    activity.ended("tb", "chat-x");
+    await tidy.tick();
+    expect(started).toHaveLength(1);
+    await tidy.tick();
+    expect(started).toHaveLength(1);
+  });
+
+  it("finishes a run: records it, flags a big shrink, and keeps a flagged chat", async () => {
+    const { tidy, archived, folder } = await setup();
+    await writeFile(join(folder, "MEMORY.md"), "x\n".repeat(100));
+    await writeFile(join(folder, "memory", "inbox.md"), "- note\n");
+    await tidy.runNow("tb");
+    await writeFile(join(folder, "MEMORY.md"), "# Memory\n- a\n");
+    await tidy.finished("tb", "tidy-chat-1", { kind: "completed" }, "Merged.");
+    const status = await tidy.status("tb");
+    expect(status.running).toBe(false);
+    expect(status.last).toMatchObject({ status: "succeeded", note: "Merged.", flags: ["MEMORY.md shrank by more than half"] });
+    expect(archived).toEqual([]);
+  });
+
+  it("archives the chat of a clean run", async () => {
+    const { tidy, archived, folder } = await setup();
+    await writeFile(join(folder, "memory", "inbox.md"), "- note\n");
+    await tidy.runNow("tb");
+    await tidy.finished("tb", "tidy-chat-1", { kind: "completed" }, "Done.");
+    expect(archived).toEqual(["tidy-chat-1"]);
+  });
+
+  it("ignores the end of a chat it did not start", async () => {
+    const { tidy, folder } = await setup();
+    await writeFile(join(folder, "memory", "inbox.md"), "- note\n");
+    await tidy.runNow("tb");
+    await tidy.finished("tb", "someone-else", { kind: "completed" }, "x");
+    expect((await tidy.status("tb")).running).toBe(true);
+  });
+
+  it("backs off for a day when a forced run leaves memory over budget", async () => {
+    const { tidy, started, folder } = await setup();
+    await writeFile(join(folder, "MEMORY.md"), "line\n".repeat(190));
+    await tidy.tick();
+    expect(started).toHaveLength(1);
+    await tidy.finished("tb", "tidy-chat-1", { kind: "completed" }, "Tried.");
+    expect((await tidy.status("tb")).blockedUntil).not.toBeNull();
+    await tidy.forgetLastRun("tb");
+    await tidy.tick();
+    expect(started).toHaveLength(1);
+  });
+
+  it("does nothing for a bot with tidy off or on another host", async () => {
+    const off = await setup({ memory: DEFAULT_BOT_MEMORY });
+    await writeFile(join(off.folder, "memory", "inbox.md"), "- note\n");
+    await off.tidy.tick();
+    expect(off.started).toHaveLength(0);
+    const remote = await setup({ hostId: "other" });
+    await writeFile(join(remote.folder, "memory", "inbox.md"), "- note\n");
+    await remote.tidy.tick();
+    expect(remote.started).toHaveLength(0);
+  });
+
+  it("run now refuses while a chat of the bot is working", async () => {
+    const { tidy, activity } = await setup();
+    activity.started("tb", "chat-x");
+    await expect(tidy.runNow("tb")).rejects.toThrow("A chat of this bot is working");
   });
 });

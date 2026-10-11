@@ -147,3 +147,15 @@ export function publicModelFrom(config: unknown): { provider: string; model: str
   }
   return [];
 }
+
+const APPROVES_EDITS = /bypass|full|yolo|dangerous|accept[-_ ]?edits|auto[-_ ]?edit/i;
+
+/**
+ * The mode a tidy chat runs in: one that approves file edits without asking, since nobody is
+ * there to answer a prompt. A mode that already does is kept; a provider with no such mode keeps
+ * `current` (a prompt will then wait for the user).
+ */
+export function editApprovingMode(current: string | null, modes: readonly { id: string }[]): string | null {
+  if (current && APPROVES_EDITS.test(current)) return current;
+  return modes.find((mode) => /^(accept[-_ ]?edits|auto[-_ ]?edit)/i.test(mode.id))?.id ?? current;
+}

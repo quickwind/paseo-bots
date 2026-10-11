@@ -42,6 +42,29 @@ export const memoryListRpc = defineRpc({
   output: z.object({ folder: z.string(), files: z.array(MemoryFileSchema), injectedLines: z.number(), injectedBytes: z.number() }),
 });
 
+const TidyStatusSchema = z.object({
+  enabled: z.boolean(),
+  running: z.boolean(),
+  lastRunAt: z.string().nullable(),
+  last: z.object({ at: z.string(), status: z.enum(["running", "succeeded", "failed"]), reason: z.string(), note: z.string().nullable(), flags: z.array(z.string()) }).nullable(),
+  nextDueAt: z.string().nullable(),
+  blockedUntil: z.string().nullable(),
+  runsToday: z.number(),
+});
+export type TidyStatus = z.infer<typeof TidyStatusSchema>;
+
+export const tidyStatusRpc = defineRpc({
+  name: "bots.tidy.status",
+  input: z.object({ botId: BotId }),
+  output: TidyStatusSchema,
+});
+
+export const tidyRunRpc = defineRpc({
+  name: "bots.tidy.run",
+  input: z.object({ botId: BotId }),
+  output: TidyStatusSchema,
+});
+
 export const memoryReadRpc = defineRpc({
   name: "bots.memory.read",
   input: z.object({ botId: BotId, name: MemoryFileName }),

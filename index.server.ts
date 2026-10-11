@@ -3,9 +3,11 @@ import { ensureBotHome, ensureBotsHome, migrateRenamedPluginData } from "./serve
 import { turnEnded, turnStarted } from "./server/activity";
 import { CommandAllowlist } from "./server/commands";
 import { MemoryJournal } from "./server/journal";
+import { ChatActivity, SaveTracker } from "./server/maintenance";
 import { deleteLogDay, listLogDays, listMemory, readLogDay, readMemory } from "./server/memory";
 import { systemPrompt } from "./server/prompt";
 import { RoutineScheduler } from "./server/scheduler";
+import { MemoryTidy } from "./server/tidy";
 import { exportBot, exportTeam, importBot, importTeam } from "./server/share";
 import { deleteSkill, importSkills, migrateBotSkills, readSkill, writeSkill } from "./server/library";
 import { probeMcpServer } from "./server/mcp-probe";
@@ -34,6 +36,8 @@ import {
   memoryLogRpc,
   memoryReadRpc,
   memoryUndoRpc,
+  tidyRunRpc,
+  tidyStatusRpc,
   memoryWriteRpc,
   mountRpc,
   mcpProbeRpc,
@@ -73,6 +77,9 @@ export default function contribute(server: PluginServerContext) {
   void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the relay", error));
   const scheduler = new RoutineScheduler(host, relay);
   const journal = new MemoryJournal();
+  const chatActivity = new ChatActivity();
+  const tidy = new MemoryTidy(host, relay, chatActivity);
+  const maintenance = { activity: chatActivity, saves: new SaveTracker(), tidy };
   const commands = new CommandAllowlist();
   // Every handler and hook receives the plugin's Paseo API; features that start chats need it.
   const attach = ({ paseo }: PluginHandlerContext) => host.attach(paseo);
@@ -87,6 +94,11 @@ export default function contribute(server: PluginServerContext) {
   });
   server.handle(systemPromptRpc, async (input, context) => systemPrompt(input, await library(), context.paseo, await host.values()));
   server.handle(memoryListRpc, ({ botId }) => listMemory(botId));
+  server.handle(tidyStatusRpc, ({ botId }) => tidy.status(botId));
+  server.handle(tidyRunRpc, ({ botId }, context) => {
+    attach(context);
+    return tidy.runNow(botId);
+  });
   server.handle(memoryReadRpc, ({ botId, name }) => readMemory(botId, name));
   server.handle(memoryWriteRpc, async ({ botId, name, text }) => {
     await journal.write(botId, name, text);
@@ -134,7 +146,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(uploadRpc, saveUpload);
   server.on("agent.turn_started", async (event, context) => {
     host.attach(context.paseo);
-    await turnStarted(host, journal, event).catch((error: unknown) => console.error("paseo-bots: couldn't check memory before a turn", error));
+    await turnStarted(host, journal, event, maintenance).catch((error: unknown) => console.error("paseo-bots: couldn't check memory before a turn", error));
   });
   // A bot's saved commands (exact command, exact folder) are approved here instead of asking.
   server.on("agent.permission_requested", async ({ agent, request }, context) => {
@@ -150,11 +162,12 @@ export default function contribute(server: PluginServerContext) {
   });
   server.on("agent.turn_ended", async (event, context) => {
     host.attach(context.paseo);
-    await turnEnded(host, journal, scheduler, event).catch((error: unknown) => console.error("paseo-bots: couldn't record a turn", error));
+    await turnEnded(host, journal, scheduler, event, maintenance).catch((error: unknown) => console.error("paseo-bots: couldn't record a turn", error));
   });
 
   return () => {
     scheduler.stop();
+    tidy.stop();
     relay.stop();
   };
 }
