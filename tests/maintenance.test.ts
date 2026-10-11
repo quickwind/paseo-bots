@@ -276,3 +276,102 @@ describe("the Memory part of the prompt", () => {
     expect(text).toContain("when you learn it");
   });
 });
+
+import { turnEnded, turnStarted } from "../server/activity";
+import { MemoryJournal } from "../server/journal";
+import { fakeHost } from "./helpers";
+
+function fakePaseo(chat: { status?: string; used?: number; max?: number; labels?: Record<string, string> }) {
+  const sent: { agentId: string; text: string }[] = [];
+  const api = {
+    agents: {
+      ref: (agentId: string) => ({
+        refresh: async () => ({
+          agent: {
+            id: agentId,
+            status: chat.status ?? "idle",
+            title: "Planning",
+            labels: { "paseo-bots.bot": "bot-s", ...(chat.labels ?? {}) },
+            lastUsage: chat.used === undefined ? null : { contextWindowUsedTokens: chat.used, contextWindowMaxTokens: chat.max ?? 100 },
+          },
+        }),
+        send: async (text: string) => void sent.push({ agentId, text }),
+      }),
+    },
+  };
+  return { api, sent };
+}
+
+const ended = (agentId: string) =>
+  ({ agent: { id: agentId, workspaceId: null, parentAgentId: null, provider: "claude", cwd: "/", title: "Planning" }, turnId: "t", outcome: { kind: "completed" }, timeline: [{ type: "assistant_message", text: "Done." }] }) as never;
+
+describe("saving when the context fills up", () => {
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "paseo-bots-save-"));
+    process.env.PASEO_HOME = home;
+  });
+  afterEach(async () => {
+    delete process.env.PASEO_HOME;
+    await rm(home, { recursive: true, force: true });
+  });
+
+  async function run(chat: Parameters<typeof fakePaseo>[0], botPatch = {}) {
+    const bot = makeBot({ id: "bot-s", memory: NEW_BOT_MEMORY, ...botPatch });
+    const host = fakeHost([bot]);
+    const { api, sent } = fakePaseo(chat);
+    host.attach(api as never);
+    const m = { activity: new ChatActivity(), saves: new SaveTracker(), tidy: null };
+    await turnEnded(host, new MemoryJournal(), { finished: async () => {} }, ended("chat-1"), m);
+    return { sent, m, host };
+  }
+
+  it("sends one save message when usage is over the threshold", async () => {
+    const { sent } = await run({ used: 75 });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain("Memory save");
+    expect(sent[0]!.text).toContain("inbox.md");
+  });
+
+  it("sends nothing under the threshold, with no usage reported, or with the feature off", async () => {
+    expect((await run({ used: 40 })).sent).toHaveLength(0);
+    expect((await run({})).sent).toHaveLength(0);
+    expect((await run({ used: 90 }, { memory: DEFAULT_BOT_MEMORY })).sent).toHaveLength(0);
+  });
+
+  it("does not interrupt a chat that is already working again, and asks after that turn", async () => {
+    expect((await run({ used: 90, status: "running" })).sent).toHaveLength(0);
+  });
+
+  it("leaves maintenance and routine chats alone", async () => {
+    expect((await run({ used: 90, labels: { "paseo-bots.tidy": "bot-s" } })).sent).toHaveLength(0);
+    expect((await run({ used: 90, labels: { "paseo-bots.routine": "rt-1" } })).sent).toHaveLength(0);
+  });
+
+  it("does not log the save turn, or ask again from it", async () => {
+    const bot = makeBot({ id: "bot-s", memory: NEW_BOT_MEMORY });
+    const host = fakeHost([bot]);
+    const { api, sent } = fakePaseo({ used: 80 });
+    host.attach(api as never);
+    const journal = new MemoryJournal();
+    const m = { activity: new ChatActivity(), saves: new SaveTracker(), tidy: null };
+    await turnEnded(host, journal, { finished: async () => {} }, ended("chat-2"), m); // the real turn: logged, then asks
+    expect(sent).toHaveLength(1);
+    await turnEnded(host, journal, { finished: async () => {} }, ended("chat-2"), m); // the save turn: not logged, no second ask
+    expect(sent).toHaveLength(1);
+    const { botDataPath } = await import("../server/bot-home");
+    const { localDay } = await import("../shared/activity");
+    const log = await readFile(join(botDataPath("bot-s"), "memory", "log", `${localDay(new Date())}.md`), "utf8");
+    expect(log.trim().split("\n")).toHaveLength(1);
+  });
+
+  it("tracks running turns for the tidy service", async () => {
+    const host = fakeHost([makeBot({ id: "bot-s" })]);
+    host.attach(fakePaseo({}).api as never);
+    const m = { activity: new ChatActivity(), saves: new SaveTracker(), tidy: null };
+    await turnStarted(host, new MemoryJournal(), { agent: { id: "chat-3" }, turnId: "t" } as never, m);
+    expect(m.activity.busy("bot-s")).toBe(true);
+    await turnEnded(host, new MemoryJournal(), { finished: async () => {} }, ended("chat-3"), m);
+    expect(m.activity.busy("bot-s")).toBe(false);
+  });
+});
