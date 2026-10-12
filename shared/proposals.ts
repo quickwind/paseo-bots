@@ -39,6 +39,11 @@ export function proposalReply(id: string, what: string): string {
   return `Proposal ${id}: the user sees ${what} as a card in this chat and decides whether to save it. Don't save it yourself.`;
 }
 
+/** The proposal named in a propose_* tool's reply, if it names one. */
+export function proposalIdInText(text: string): string | null {
+  return PROPOSAL_ID.exec(text)?.[1] ?? null;
+}
+
 /** The proposal a propose_* tool call made, from its output (text or MCP content blocks). */
 function proposalIdIn(output: unknown): string | null {
   const text = typeof output === "string" ? output : JSON.stringify(output ?? null);
