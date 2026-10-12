@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { botSettings } from "../shared/bot";
-import { DEFAULT_SETUP_PROMPT, setupPromptText, shouldAutoSetup } from "../shared/setup";
+import { DEFAULT_SETUP_PROMPT, DEFAULT_SETUP_PROMPT_FILES, setupPromptText, shouldAutoSetup } from "../shared/setup";
 
 describe("the setup interview prompt", () => {
   it("is the built-in text unless one is configured", () => {
@@ -39,5 +39,20 @@ describe("the setup settings", () => {
     expect(parsed.setup).toBeUndefined();
     expect(botSettings.schema.parse({ bots: [], setup: {} }).setup).toEqual({ prompt: "", autoStart: true });
     expect(botSettings.schema.parse({ bots: [], setup: { prompt: "x", autoStart: false } }).setup).toEqual({ prompt: "x", autoStart: false });
+  });
+});
+
+describe("the setup interview for a bot whose tools are files", () => {
+  it("writes a proposal file instead of calling a tool, and leaves the model and mode alone", () => {
+    expect(setupPromptText(undefined, true)).toBe(DEFAULT_SETUP_PROMPT_FILES);
+    for (const part of ["one short question at a time", "setup/overview.md", "proposal file", "MEMORY.md", "provider, model, approval mode or thinking"]) expect(DEFAULT_SETUP_PROMPT_FILES).toContain(part);
+    expect(DEFAULT_SETUP_PROMPT_FILES).not.toContain("propose_changes");
+    expect(DEFAULT_SETUP_PROMPT_FILES).not.toContain("get_setup");
+  });
+  it("uses a configured prompt as it is, whatever the tools", () => {
+    expect(setupPromptText({ prompt: "Ask about my team.", autoStart: true }, true)).toBe("Ask about my team.");
+  });
+  it("keeps the tool version for a bot with tools", () => {
+    expect(setupPromptText(undefined, false)).toBe(DEFAULT_SETUP_PROMPT);
   });
 });

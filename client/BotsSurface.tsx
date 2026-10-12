@@ -600,7 +600,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
           setPanelVersion((version) => version + 1);
           toast.show("Restored. Undo it from History if needed.", { variant: "success" });
         }}
-        onSetup={() => select({ botId: selectedBot.id, chatId: null, prompt: setupPromptText(settings.status === "ready" ? settings.values.setup : undefined) })}
+        onSetup={() => select({ botId: selectedBot.id, chatId: null, prompt: setupPromptText(settings.status === "ready" ? settings.values.setup : undefined, usesFiles(settings.status === "ready" ? settings.values.toolMode : undefined, selectedBot.provider)) })}
         onOpenChat={(chatId) => {
           select({ botId: selectedBot.id, chatId });
           // On phones the panel covers the chat.
@@ -693,7 +693,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
             const defaults = (settings.status === "ready" ? settings.values.defaults : undefined) ?? DEFAULT_BOT_DEFAULTS;
             const created = applyDefaults(bot, defaults, defaultProvider());
             const setup = settings.status === "ready" ? settings.values.setup : undefined;
-            void addBot(created, start ? "overview" : "identity", shouldAutoSetup(start, setup, created.provider) ? setupPromptText(setup) : undefined);
+            void addBot(created, start ? "overview" : "identity", shouldAutoSetup(start, setup, created.provider) ? setupPromptText(setup, usesFiles(settings.status === "ready" ? settings.values.toolMode : undefined, created.provider)) : undefined);
           }}
           onImport={async (json) => {
             const { bots, teams } = await importTeam({ json });

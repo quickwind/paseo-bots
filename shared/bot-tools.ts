@@ -35,7 +35,21 @@ export function botToolsPrompt(canAsk: boolean): string {
   return `Your own tools come from the MCP server "bots". Use propose_routine for your own recurring or webhook-started work (rather than Paseo schedules) and propose_skill to keep a way of working for next time. When the user asks you to set up or change bots, teams, skills, MCP servers or defaults, read get_setup and put all the changes in one propose_changes call. The user confirms proposals on a card in the chat. Use search_chats to look through your past chats and daily log, and ${others}.`;
 }
 
-/** The prompt section for a bot whose tools are files in its folder (no MCP server). */
+/**
+ * The prompt section for a bot whose tools are files in its folder (no MCP server): what to read,
+ * where to write what the user should confirm, and the shapes of those files.
+ */
 export function botFilesPrompt(_bot: { contactBots: string }, home: string): string {
-  return `The plugin's tools are files in your folder ${home}: setup/ describes the bots and the setup, proposals/ is where you write what the user should confirm, outbox/ is where you ask another bot, history/ holds your past chats.`;
+  return [
+    `Your own tools are files in your folder ${home}. Use your file tools to read and write them.`,
+    "",
+    `Read the setup: ${home}/setup/overview.md lists the bots (name, role, provider, whether they may contact others), the teams, the library\'s skills and external servers, what new bots start with, and the providers with their model and mode ids. ${home}/setup/bots/<bot id>.md describes one bot in full. They are kept up to date for you; do not edit them. Read ${home}/setup/proposal-format.md before writing a proposal that is more than a few fields.`,
+    "",
+    `Search your past chats: ${home}/history/ has a transcript of each recent chat of yours, and your memory is ${home}/MEMORY.md and ${home}/memory/. Search them with your file search.`,
+    "",
+    `Propose something for the user to confirm (changes to the setup, a routine, a skill): write ONE JSON file into ${home}/proposals/. Name it <kind>-<YYYYMMDD-HHMM>-<4 random letters>.json so the name is unique every time, and write it as the last step of your turn. The user sees a card in this chat and decides. Do not apply anything yourself. If a file is not accepted you are told here, and the reason is in ${home}/proposals/done/<name>.result.txt; write a corrected file under a new name. The shapes:`,
+    '{"kind":"changes","summary":"one line for the card","changes":[{"type":"update_bot","bot":"<a bot name>","title":"...","description":"...","instructions":"..."}]}',
+    '{"kind":"routine","name":"Morning check","instructions":"what to do on each run","schedule":{"type":"daily","time":"08:30"}}',
+    '{"kind":"skill","name":"weekly-report","description":"when to use it","instructions":"markdown steps"}',
+  ].join("\n");
 }

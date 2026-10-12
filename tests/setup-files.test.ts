@@ -61,7 +61,7 @@ describe("the setup files a bot with file tools reads", () => {
     await writeSetupFiles({ ...scout, soul: "v2" }, valuesOf([{ ...scout, soul: "v2" }]), providers as never);
     const dir = await dirOf("scout");
     expect(await readFile(join(dir, "bots", "scout.md"), "utf8")).toContain("v2");
-    expect((await readdir(dir)).sort()).toEqual(["bots", "overview.md"]);
+    expect((await readdir(dir)).sort()).toEqual(["bots", "overview.md", "proposal-format.md"]);
     expect(await readdir(join(dir, "bots"))).toEqual(["scout.md"]);
   });
 
@@ -69,5 +69,12 @@ describe("the setup files a bot with file tools reads", () => {
     const scout = makeBot({ id: "scout", provider: "devin" });
     await writeSetupFiles(scout, valuesOf([scout]), null);
     expect(await readFile(join(await dirOf("scout"), "overview.md"), "utf8")).toContain("Bots (1)");
+  });
+
+  it("also describes the three proposal formats with the fields the tools take", async () => {
+    const scout = makeBot({ id: "scout", provider: "devin" });
+    await writeSetupFiles(scout, valuesOf([scout]), providers as never);
+    const text = await readFile(join(await dirOf("scout"), "proposal-format.md"), "utf8");
+    for (const part of ["changes", "summary", "instructions", "schedule", "description", "update_bot"]) expect(text).toContain(part);
   });
 });

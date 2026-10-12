@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { botSettings, EMPTY_LIBRARY, promptSections, type PromptContext } from "../shared/bot";
+import { botFilesPrompt } from "../shared/bot-tools";
 import { usesFiles } from "../shared/tools-mode";
 import { makeBot } from "./helpers";
 
@@ -63,5 +64,24 @@ describe("the prompt context of a bot", () => {
     const forced = await promptContext(makeBot({ id: "c2", provider: "claude" }), true, EMPTY_LIBRARY, false, { toolMode: "files" });
     expect(forced.botTools).toBe(false);
     expect(forced.botFiles?.home).toContain("c2");
+  });
+});
+
+describe("the files prompt", () => {
+  const text = botFilesPrompt({ contactBots: "ask" }, "/data/bots/scout");
+  it("names the folders with their full paths", () => {
+    for (const part of ["/data/bots/scout/setup/overview.md", "/data/bots/scout/setup/proposal-format.md", "/data/bots/scout/proposals/", "/data/bots/scout/history/"]) expect(text).toContain(part);
+  });
+  it("shows the three proposal shapes", () => {
+    for (const kind of ['"kind":"changes"', '"kind":"routine"', '"kind":"skill"']) expect(text).toContain(kind);
+  });
+  it("asks for a unique file name and for the file to be written last, and says not to apply anything", () => {
+    expect(text).toMatch(/unique/i);
+    expect(text).toContain("last step");
+    expect(text).toContain("done/");
+    expect(text).toMatch(/do not apply/i);
+  });
+  it("does not mention an MCP server or tool calls", () => {
+    expect(text).not.toMatch(/MCP|tool server|tool call/i);
   });
 });
