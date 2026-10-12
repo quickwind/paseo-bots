@@ -11,7 +11,7 @@ describe("the setup interview prompt", () => {
   });
 
   it("interviews, then proposes the configuration on one card, and leaves the model and approval mode alone", () => {
-    for (const part of ["one short question at a time", "get_setup", "propose_changes", "MEMORY.md", "provider, model, approval mode or thinking", "Model and Permissions settings"]) {
+    for (const part of ["one short question at a time", "get_setup", "propose_changes", "MEMORY.md", "provider, model, approval mode or thinking", "Model and Permissions settings", "If you do not have get_setup or propose_changes", "Identity and Soul"]) {
       expect(DEFAULT_SETUP_PROMPT).toContain(part);
     }
   });

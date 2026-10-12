@@ -13,7 +13,7 @@ export const DEFAULT_SETUP_PROMPT =
   "Stop asking once you know enough; eight questions is plenty.\n\n" +
   "Then call get_setup to see your current settings, and call propose_changes once, as an update to yourself, with a name, a one-line title, a short description and standing instructions for yourself, " +
   "plus any library skills that fit. Do not change your provider, model, approval mode or thinking setting; if I want those changed, tell me to use the Model and Permissions settings. " +
-  "I apply the changes from the card you propose.\n\n" +
+  "I apply the changes from the card you propose. If you do not have get_setup or propose_changes, do not stop there: give me the name, one-line title, description and standing instructions as a short block to paste into the Identity and Soul settings.\n\n" +
   "Write a starting MEMORY.md once I confirm, and tell me when everything is in place.";
 
 /** The prompt a setup chat opens with: the configured one, or the built-in. */
