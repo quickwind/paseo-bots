@@ -7,6 +7,7 @@ import { botDataPath } from "./bot-home";
 import type { BotsHost } from "./host";
 import type { PaseoApi } from "./paseo";
 import { identitySections } from "./prompt";
+import { writeSetupFiles } from "./setup-files";
 
 const locks = new Map<string, Promise<unknown>>();
 
@@ -38,6 +39,8 @@ export async function writeIdentity(bot: Bot, library: Library, context: { paseo
   }
   const keep = new Set(plan.files.map((file) => file.name));
   for (const name of await readdir(dir)) if (OWN_FILE.test(name) && !keep.has(name)) await rm(join(dir, name), { force: true });
+  // A bot with file tools reads the setup from files kept beside its identity.
+  if (context.settings) await writeSetupFiles(bot, context.settings, context.paseo);
   return plan;
 }
 

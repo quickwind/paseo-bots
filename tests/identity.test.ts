@@ -169,4 +169,15 @@ describe("writing a bot's identity to its folder", () => {
     expect(await identityStatus(host, "s2")).toEqual({ files: 1, note: null });
     expect(await identityStatus(host, "nobody")).toEqual({ files: 0, note: null });
   });
+
+  it("also writes the setup files for a bot whose tools are files", async () => {
+    const devin = makeBot({ id: "dv", name: "Dev", provider: "devin" });
+    const settings = { bots: [devin], history: [], library: EMPTY_LIBRARY };
+    await writeIdentity(devin, EMPTY_LIBRARY, { paseo: null, settings });
+    const { botDataPath } = await import("../server/bot-home");
+    expect(await readFile(join(botDataPath("dv"), "setup", "overview.md"), "utf8")).toContain("Dev");
+    const claude = makeBot({ id: "cl2", provider: "claude" });
+    await writeIdentity(claude, EMPTY_LIBRARY, { paseo: null, settings: { bots: [claude], history: [], library: EMPTY_LIBRARY } });
+    expect(await readdir(join(botDataPath("cl2"))).then((names) => names.includes("setup"), () => false)).toBe(false);
+  });
 });
