@@ -88,9 +88,9 @@ the bot's `proposals/` and `outbox/`:
 
 1. **Which files belong to this chat: the ones this turn wrote.** The event carries the turn's tool
    calls (`timeline`, as `lastTurn` already reads it). A file belongs to the chat if a call in it wrote
-   that file: a `write` or `edit` call whose `filePath` is the file (compared as paths, absolute or
-   relative to the chat's working folder; Devin's ACP edits are mapped this way,
-   `acp-agent.ts` `buildEditToolDetail`), or a `shell` call whose command names the file. This is
+   that file: a `write` or `edit` call whose `filePath` names the file, or a `shell` call whose command
+   names it. Devin's `filePath` is the tool title ("Wrote ./proposals/x.json"), so the match is on the
+   file's unique base name inside that string (see the spike results). This is
    evidence from the chat itself, so two chats of one bot never take each other's files. The prompt asks
    for a unique file name (a time and a short random suffix) so two chats never write the same path.
 2. A file with no evidence in this turn is left alone: it may belong to a chat whose turn has not ended.
@@ -196,3 +196,27 @@ and no files prompt.
 1. Tool mode, `setup/`, `proposals/`, the card, the prompt: setup interview, routines and skills work
    on Devin.
 2. `history/` (search) and `outbox/` (asking another bot).
+
+## Spike results (2026-10-13, real Devin 3000.11.3 through Wukong, isolated instance)
+
+Six Devin turns in total (swe-1-6-slow).
+
+1. **File tool write.** The turn's tool call is `{ type: "edit", filePath: "Wrote ./proposals/a1.json",
+   newString: "{}" }`. The `filePath` is the tool's *title* ("Wrote " plus the path, relative to the
+   working folder), not a clean path, because Devin sends no `locations`. Attribution therefore matches
+   the file's **unique base name** inside the written string (after dropping a leading verb such as
+   "Wrote"/"Edited"), and compares full paths only when the string is a clean path. File names must be
+   unique per chat (the prompt asks for a time and a random suffix).
+2. **Shell write.** `{ type: "shell", command: "echo {} > proposals/a2.json" }`: the command contains the
+   path, so the same base-name match works.
+3. **Approvals.** In Devin's default mode (`accept-edits`, "Code") a write **inside** the working folder
+   is not asked about; a write **outside** it (an absolute path to another folder) leaves a pending
+   `edit` permission. So a bot with its own working folder (`bot.cwd`) needs the user's approval for every
+   proposal file unless it runs in `bypass`. Devin's modes are `accept-edits`, `smart`, `ask`, `plan`,
+   `bypass`; the tidy chat's mode choice (`editApprovingMode`) already matches `accept-edits`.
+4. **Send into an idle chat.** `agents.ref(id).send(...)` from the `agent.turn_ended` hook started a new
+   turn in an idle Devin chat and Devin answered. Replies pushed into a chat (errors, answers from
+   another bot) work on Devin.
+
+Design consequences: attribution by base name (section 4 updated), and bots with their own working
+folder are documented as needing approval for the files.
