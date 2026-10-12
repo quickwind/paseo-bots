@@ -6,6 +6,7 @@ import { IDENTITY_FILE, planIdentityFiles, RULES_DIR, type IdentityPlan } from "
 import { botDataPath } from "./bot-home";
 import type { BotsHost } from "./host";
 import type { PaseoApi } from "./paseo";
+import { realDir } from "./managed-files";
 import { identitySections } from "./prompt";
 import { writeSetupFiles } from "./setup-files";
 
@@ -31,7 +32,7 @@ const OWN_FILE = new RegExp(`^${IDENTITY_FILE}(-\\d+)?\\.md(\\.tmp-.*)?$`);
 export async function writeIdentity(bot: Bot, library: Library, context: { paseo: PaseoApi | null; settings: BotSettingsValues | null }): Promise<IdentityPlan> {
   const plan = planIdentityFiles(await identitySections(bot, library, context.paseo, context.settings));
   const dir = join(botDataPath(bot.id), RULES_DIR);
-  await mkdir(dir, { recursive: true });
+  await realDir(dir);
   for (const file of plan.files) {
     const temporary = join(dir, `${file.name}.tmp-${randomBytes(4).toString("hex")}`);
     await writeFile(temporary, file.text, "utf8");

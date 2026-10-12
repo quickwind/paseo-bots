@@ -21,6 +21,8 @@ import { ASKED_BY_LABEL, askPrompt } from "./tools/bots";
 export const ASK_REQUEST_LABEL = "paseo-bots.ask-request";
 const CLOSE_AFTER_MS = 30 * 60_000;
 const KEEP = 200;
+/** A chat may ask this many times an hour: bots that keep answering each other would otherwise never stop. */
+const MAX_ASKS_PER_CHAT_PER_HOUR = 5;
 const REPLY_MAX = 8_000;
 
 interface AskRequest {
@@ -34,6 +36,8 @@ interface AskRequest {
   createdAt: string;
   /** "waiting": for the user's approval. "running": the other bot is working. */
   status: "waiting" | "running" | "answered" | "closed";
+  /** When the question was sent; the half hour is counted from here. */
+  startedAt?: string;
   /** Messages for the asking chat that have not been sent yet (it was busy). */
   unsent: string[];
 }
@@ -50,6 +54,7 @@ export class Asks {
   private queue: Promise<unknown> = Promise.resolve();
   /** Replaceable in tests. */
   private startChat = startChat;
+  private now = () => Date.now();
 
   constructor(
     private readonly host: BotsHost,
@@ -83,11 +88,13 @@ export class Asks {
     const fail = (text: string): AskResult => ({ ok: false, text, proposalId: null });
     if (bot.contactBots === "off") return fail("Asking other bots is not allowed for you; the setting for this bot is Off.");
     if (from.labels[ASKED_BY_LABEL]) return fail("You were asked by another bot, so you can't ask another bot yourself. Answer the question.");
+    const recent = (await this.load()).filter((entry) => entry.fromChat === from.agentId && this.now() - Date.parse(entry.createdAt) < 3_600_000).length;
+    if (recent >= MAX_ASKS_PER_CHAT_PER_HOUR) return fail(`This chat has asked too many times in the last hour (${MAX_ASKS_PER_CHAT_PER_HOUR}). Wait for the user before asking again.`);
     const others = (await this.host.bots()).filter((entry) => entry.id !== bot.id && !entry.archived && !entry.hostId);
     const key = args.to.trim().toLowerCase();
     const target = others.find((entry) => entry.id === args.to.trim()) ?? others.find((entry) => entry.name.trim().toLowerCase() === key);
     if (!target) return fail(others.length ? `There's no other bot called "${args.to}". Ask one of: ${others.map((entry) => entry.name).join(", ")}.` : "There are no other bots to ask.");
-    const request: AskRequest = { id: `r-${randomBytes(4).toString("hex")}`, fromBot: bot.id, fromChat: from.agentId, toBot: target.id, toName: target.name, toChat: null, message: args.message, createdAt: new Date().toISOString(), status: "waiting", unsent: [] };
+    const request: AskRequest = { id: `r-${randomBytes(4).toString("hex")}`, fromBot: bot.id, fromChat: from.agentId, toBot: target.id, toName: target.name, toChat: null, message: args.message, createdAt: new Date(this.now()).toISOString(), status: "waiting", unsent: [] };
     await this.update((requests) => void requests.push(request));
     if (bot.contactBots === "ask") {
       const proposal = await createProposal({ botId: bot.id, agentId: from.agentId, kind: "ask", data: { requestId: request.id, toBotId: target.id, toName: target.name, message: args.message } });
@@ -112,16 +119,21 @@ export class Asks {
     if (!request || request.status !== "waiting") return;
     const [target, asker] = [await this.host.bot(request.toBot), await this.host.bot(request.fromBot)];
     if (!target || target.archived || !asker) return this.close(requestId, `[Bots] Your request ${requestId} could not be sent: that bot is gone.`);
+    // Recorded before the chat exists: a chat that ends its turn at once reports it before startChat returns, and that answer must find the request.
+    const agentId = newUuid();
+    const started = await this.update((requests) => {
+      const found = requests.find((entry) => entry.id === requestId);
+      if (!found || found.status !== "waiting") return false;
+      Object.assign(found, { status: "running", toChat: agentId, startedAt: new Date(this.now()).toISOString() });
+      return true;
+    });
+    if (!started) return;
     try {
-      const chat = await this.startChat(this.host, this.relay, target, {
+      await this.startChat(this.host, this.relay, target, {
         prompt: askPrompt(asker.name, request.message),
         title: `${asker.name}: ${foldText(request.message, 60)}`,
         labels: { [ASKED_BY_LABEL]: asker.id, [ASK_REQUEST_LABEL]: request.id },
-        agentId: newUuid(),
-      });
-      await this.update((requests) => {
-        const found = requests.find((entry) => entry.id === requestId);
-        if (found) Object.assign(found, { status: "running", toChat: chat });
+        agentId,
       });
     } catch (error) {
       await this.close(requestId, `[Bots] Your request ${requestId} could not be sent to ${request.toName}: ${error instanceof Error ? error.message : String(error)}`);
@@ -146,21 +158,34 @@ export class Asks {
     if (message) await this.deliver(message);
   }
 
-  /** Sends what is waiting for a chat, once it is idle. */
+  /** Sends what is waiting for a chat, once it is idle. What is taken is taken in one step, so two deliveries never send the same message. */
   async deliver(fromChat: string): Promise<void> {
-    const waiting = (await this.load()).filter((entry) => entry.fromChat === fromChat && entry.unsent.length > 0);
-    if (waiting.length === 0) return;
+    if (!(await this.load()).some((entry) => entry.fromChat === fromChat && entry.unsent.length > 0)) return;
     const snapshot = await this.host.paseo?.agents.ref(fromChat).refresh().catch(() => null);
     const status = snapshot?.agent.status;
     if (!snapshot || status === "running" || status === "initializing") return;
-    const text = waiting.flatMap((entry) => entry.unsent).join("\n\n");
-    await this.update((requests) => {
-      for (const entry of requests) if (entry.fromChat === fromChat) entry.unsent = [];
+    const taken = await this.update((requests) => {
+      const out: { id: string; messages: string[] }[] = [];
+      for (const entry of requests) {
+        if (entry.fromChat === fromChat && entry.unsent.length > 0) {
+          out.push({ id: entry.id, messages: entry.unsent });
+          entry.unsent = [];
+        }
+      }
+      return out;
     });
-    await this.host.paseo!.agents
-      .ref(fromChat)
-      .send(text, { messageId: newUuid() } as never)
-      .catch((error: unknown) => console.error("paseo-bots: couldn't deliver a bot's answer", error));
+    if (taken.length === 0) return;
+    try {
+      await this.host.paseo!.agents.ref(fromChat).send(taken.flatMap((entry) => entry.messages).join("\n\n"), { messageId: newUuid() } as never);
+    } catch (error) {
+      console.error("paseo-bots: couldn't deliver a bot's answer; it stays waiting", error);
+      await this.update((requests) => {
+        for (const { id, messages } of taken) {
+          const entry = requests.find((candidate) => candidate.id === id);
+          if (entry) entry.unsent = [...messages, ...entry.unsent];
+        }
+      });
+    }
   }
 
   private async close(requestId: string, text: string): Promise<void> {
@@ -174,9 +199,9 @@ export class Asks {
     if (chat) await this.deliver(chat);
   }
 
-  /** Closes requests nobody answered in half an hour. */
-  async sweep(now = Date.now()): Promise<void> {
-    const stale = (await this.load()).filter((entry) => (entry.status === "waiting" || entry.status === "running") && now - Date.parse(entry.createdAt) > CLOSE_AFTER_MS);
+  /** Closes questions nobody answered in half an hour, counted from when they were sent. One waiting for the user's approval stays until the user decides. */
+  async sweep(now = this.now()): Promise<void> {
+    const stale = (await this.load()).filter((entry) => entry.status === "running" && now - Date.parse(entry.startedAt ?? entry.createdAt) > CLOSE_AFTER_MS);
     for (const entry of stale) await this.close(entry.id, `[Bots] Your request ${entry.id} to ${entry.toName} got no answer in 30 minutes and was closed.`);
   }
 }

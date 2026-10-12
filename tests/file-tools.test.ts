@@ -21,6 +21,18 @@ describe("what a turn wrote", () => {
   });
 });
 
+describe("what the last turn wrote", () => {
+  it("leaves out earlier turns, so a name an earlier turn used is not claimed again", () => {
+    const written = writtenStrings([
+      call({ type: "edit", filePath: "Wrote ./proposals/skill-old.json" }),
+      { type: "assistant_message", text: "ok" },
+      { type: "user_message", text: "next" },
+      call({ type: "edit", filePath: "Wrote ./proposals/skill-new.json" }),
+    ] as never);
+    expect(written).toEqual(["Wrote ./proposals/skill-new.json"]);
+  });
+});
+
 describe("whether a file belongs to a turn", () => {
   const written = ["Wrote ./proposals/changes-1.json", "echo {} > proposals/routine-3.json", "/bots/b1/proposals/skill-2.json"];
   it("matches the file's name inside what was written", () => {
@@ -365,5 +377,151 @@ describe("the outbox, for a bot whose tools are files", () => {
     await turn(["Wrote ./proposals/ask-c6.json"]);
     expect(calls).toEqual([]);
     expect(sent.join("\n")).toContain("changes, routine or skill");
+  });
+});
+
+import { symlink } from "node:fs/promises";
+
+describe("scanning safely", () => {
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "paseo-bots-safe-"));
+    process.env.PASEO_HOME = home;
+  });
+  afterEach(async () => {
+    delete process.env.PASEO_HOME;
+    await rm(home, { recursive: true, force: true });
+  });
+
+  const scout = makeBot({ id: "scout", name: "Scout", provider: "devin" });
+  const skillBody = JSON.stringify({ kind: "skill", name: "n", description: "d", instructions: "i" });
+  async function prepare() {
+    const { botDataPath } = await import("../server/bot-home");
+    const bot = join(botDataPath("scout"));
+    await mkdir(join(bot, "proposals"), { recursive: true });
+    return { bot, dir: join(bot, "proposals"), host: fakeHost([scout]) };
+  }
+  const scanOf = (host: ReturnType<typeof fakeHost>, written: string[]) => scanToolFiles({ host, relay: null as never, bot: scout, agentId: "chat-1", written });
+
+  it("lets only one of two scans that race for a file process it", async () => {
+    const { dir, host } = await prepare();
+    await writeFile(join(dir, "skill-race.json"), skillBody);
+    const [first, second] = await Promise.all([scanOf(host, ["Wrote ./proposals/skill-race.json"]), scanOf(host, ["Wrote ./proposals/skill-race.json"])]);
+    expect(first.done.length + second.done.length).toBe(1);
+    const { pluginDataPath } = await import("../server/bot-home");
+    expect(JSON.parse(await readFile(join(pluginDataPath(), "proposals.json"), "utf8")).proposals).toHaveLength(1);
+  });
+
+  it("never follows a proposals folder that is a link to somewhere else", async () => {
+    const { bot, host } = await prepare();
+    const elsewhere = join(home, "elsewhere");
+    await mkdir(elsewhere, { recursive: true });
+    await writeFile(join(elsewhere, "mine.json"), skillBody);
+    await rm(join(bot, "proposals"), { recursive: true, force: true });
+    await symlink(elsewhere, join(bot, "proposals"));
+    const result = await scanOf(host, ["Wrote ./proposals/mine.json"]);
+    expect(result.done).toEqual([]);
+    expect(await readdir(elsewhere)).toEqual(["mine.json"]);
+  });
+
+  it("does not write through a done folder that is a link, nor delete what it points at", async () => {
+    const { dir, host } = await prepare();
+    const elsewhere = join(home, "elsewhere");
+    await mkdir(elsewhere, { recursive: true });
+    for (let index = 0; index < 120; index++) await writeFile(join(elsewhere, `keep-${index}.txt`), "x");
+    await symlink(elsewhere, join(dir, "done"));
+    await writeFile(join(dir, "skill-link.json"), skillBody);
+    await scanOf(host, ["Wrote ./proposals/skill-link.json"]);
+    expect(await readdir(elsewhere)).toHaveLength(120);
+  });
+
+  it("does not overwrite a file that a link in done/ points to", async () => {
+    const { dir, host } = await prepare();
+    const target = join(home, "precious.txt");
+    await writeFile(target, "precious");
+    await mkdir(join(dir, "done"), { recursive: true });
+    await symlink(target, join(dir, "done", "skill-over.json.result.txt"));
+    await writeFile(join(dir, "skill-over.json"), skillBody);
+    await scanOf(host, ["Wrote ./proposals/skill-over.json"]);
+    expect(await readFile(target, "utf8")).toBe("precious");
+  });
+
+  it("prunes done/ by age and survives a folder inside it", async () => {
+    const { dir, host } = await prepare();
+    const done = join(dir, "done");
+    await mkdir(join(done, "sub"), { recursive: true });
+    for (let index = 0; index < 110; index++) {
+      const name = `z-${String(index).padStart(3, "0")}.txt`;
+      await writeFile(join(done, name), "x");
+      const at = new Date(Date.now() - (200 - index) * 60_000);
+      await utimes(join(done, name), at, at);
+    }
+    await writeFile(join(dir, "skill-new.json"), skillBody);
+    await scanOf(host, ["Wrote ./proposals/skill-new.json"]);
+    const names = await readdir(done);
+    expect(names).toContain("skill-new.json.result.txt");
+    expect(names).toContain("sub");
+    expect(names.some((name) => name === "z-000.txt")).toBe(false);
+    expect(names.some((name) => name === "z-109.txt")).toBe(true);
+  });
+
+  it("removes a file it could not move, so it is not processed again", async () => {
+    const { dir, host } = await prepare();
+    await writeFile(join(dir, "done"), "a file where the folder should be");
+    await writeFile(join(dir, "skill-stuck.json"), skillBody);
+    const first = await scanOf(host, ["Wrote ./proposals/skill-stuck.json"]);
+    const second = await scanOf(host, ["Wrote ./proposals/skill-stuck.json"]);
+    expect(first.done.length + second.done.length).toBeLessThanOrEqual(1);
+    expect(await readdir(dir)).not.toContain("skill-stuck.json");
+  });
+});
+
+describe("guessing which chat a file belongs to", () => {
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "paseo-bots-guess-"));
+    process.env.PASEO_HOME = home;
+  });
+  afterEach(async () => {
+    delete process.env.PASEO_HOME;
+    await rm(home, { recursive: true, force: true });
+  });
+
+  async function setup(busy: boolean) {
+    const bot = makeBot({ id: "chief", name: "Chief", provider: "devin", contactBots: "allow" });
+    const host = fakeHost([bot]);
+    const appended: unknown[] = [];
+    const sent: string[] = [];
+    host.attach({ agents: { ref: () => ({ refresh: async () => ({ agent: { status: "idle", labels: {}, title: "Chat", cwd: "/x" } }), timeline: { append: async (item: unknown) => void appended.push(item) }, send: async (text: string) => void sent.push(text) }) } } as never);
+    const calls: unknown[] = [];
+    const asks = { request: async (...args: unknown[]) => (calls.push(args), { ok: true, text: "sent", proposalId: null }), deliver: async () => {} };
+    const activity = new ChatActivity();
+    if (busy) activity.started("chief", "other-chat");
+    const { botDataPath } = await import("../server/bot-home");
+    const proposals = join(botDataPath("chief"), "proposals");
+    const outbox = join(botDataPath("chief"), "outbox");
+    await mkdir(proposals, { recursive: true });
+    await mkdir(outbox, { recursive: true });
+    const old = new Date(Date.now() - 11 * 60_000);
+    const files = new FileTools(host, null as never, asks as never, activity);
+    return { bot, proposals, outbox, old, calls, appended, sent, turn: () => files.afterTurn({ bot, agentId: "chat-9", timeline: [] }) };
+  }
+
+  it("does not guess while another chat of the bot is working", async () => {
+    const { proposals, old, appended, turn } = await setup(true);
+    await writeFile(join(proposals, "skill-w1.json"), JSON.stringify({ kind: "skill", name: "w", description: "d", instructions: "i" }));
+    await utimes(join(proposals, "skill-w1.json"), old, old);
+    await turn();
+    expect(appended).toEqual([]);
+    expect(await readdir(proposals)).toContain("skill-w1.json");
+  });
+
+  it("never guesses an ask, which would send a question for a chat that was not the one that wrote it", async () => {
+    const { outbox, old, calls, turn } = await setup(false);
+    await writeFile(join(outbox, "ask-g2.json"), JSON.stringify({ kind: "ask", to: "Scout", message: "hi" }));
+    await utimes(join(outbox, "ask-g2.json"), old, old);
+    await turn();
+    expect(calls).toEqual([]);
+    expect(await readFile(join(outbox, "done", "ask-g2.json.result.txt"), "utf8")).toContain("which chat wrote");
   });
 });

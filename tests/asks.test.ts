@@ -25,11 +25,11 @@ describe("asking another bot through a file", () => {
     const status: Record<string, string> = {};
     host.attach({ agents: { ref: (agentId: string) => ({ refresh: async () => ({ agent: { status: status[agentId] ?? "idle", labels: {} } }), send: async (text: string) => void sent.push({ agentId, text }) }) } } as never);
     const asks = new Asks(host, null as never);
-    const started: { bot: string; prompt: string; labels: Record<string, string> }[] = [];
+    const started: { bot: string; prompt: string; labels: Record<string, string>; agentId: string }[] = [];
     (asks as unknown as { startChat: (...args: unknown[]) => Promise<string> }).startChat = async (_host, _relay, bot, input) => {
-      const given = input as { prompt: string; labels: Record<string, string> };
-      started.push({ bot: (bot as { id: string }).id, prompt: given.prompt, labels: given.labels });
-      return `target-${started.length}`;
+      const given = input as { prompt: string; labels: Record<string, string>; agentId: string };
+      started.push({ bot: (bot as { id: string }).id, prompt: given.prompt, labels: given.labels, agentId: given.agentId });
+      return given.agentId;
     };
     const from = { bot: chief, agentId: "asker-chat", labels: {} as Record<string, string> };
     return { chief, scout, host, asks, sent, status, started, from };
@@ -86,13 +86,13 @@ describe("asking another bot through a file", () => {
     const { asks, sent, started, from } = await setup();
     await asks.request(from, { to: "Scout", message: "How many?" });
     const labels = { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) };
-    await asks.answered({ agentId: "target-1", labels, outcome: { kind: "completed" }, reply: "Three unread, one urgent." });
+    await asks.answered({ agentId: started[0]!.agentId, labels, outcome: { kind: "completed" }, reply: "Three unread, one urgent." });
     expect(sent).toHaveLength(1);
     expect(sent[0]!.agentId).toBe("asker-chat");
     expect(sent[0]!.text).toContain("Three unread, one urgent.");
     expect(sent[0]!.text).toContain("Scout");
     expect(sent[0]!.text).toMatch(/not the user|not from the user/i);
-    await asks.answered({ agentId: "target-1", labels, outcome: { kind: "completed" }, reply: "later chatter" });
+    await asks.answered({ agentId: started[0]!.agentId, labels, outcome: { kind: "completed" }, reply: "later chatter" });
     expect(sent).toHaveLength(1);
   });
 
@@ -100,7 +100,7 @@ describe("asking another bot through a file", () => {
     const { asks, sent, status, started, from } = await setup();
     await asks.request(from, { to: "Scout", message: "How many?" });
     status["asker-chat"] = "running";
-    await asks.answered({ agentId: "target-1", labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "Three." });
+    await asks.answered({ agentId: started[0]!.agentId, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "Three." });
     expect(sent).toEqual([]);
     await asks.deliver("asker-chat");
     expect(sent).toEqual([]);
@@ -114,7 +114,7 @@ describe("asking another bot through a file", () => {
   it("says so when the other bot could not answer", async () => {
     const { asks, sent, started, from } = await setup();
     await asks.request(from, { to: "Scout", message: "How many?" });
-    await asks.answered({ agentId: "target-1", labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "failed", error: { message: "not signed in" } }, reply: "" });
+    await asks.answered({ agentId: started[0]!.agentId, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "failed", error: { message: "not signed in" } }, reply: "" });
     expect(sent[0]!.text).toContain("could not answer");
     expect(sent[0]!.text).toContain("not signed in");
   });
@@ -136,5 +136,65 @@ describe("asking another bot through a file", () => {
     expect(sent[0]!.text).toContain("no answer");
     await asks.sweep(Date.now() + 90 * 60_000);
     expect(sent).toHaveLength(1);
+  });
+
+  it("keeps the answer of a chat whose turn ends before it has even been started", async () => {
+    const { asks, sent, from } = await setup();
+    (asks as unknown as { startChat: (...args: unknown[]) => Promise<string> }).startChat = async (_host, _relay, _bot, input) => {
+      const given = input as { labels: Record<string, string>; agentId: string };
+      await asks.answered({ agentId: given.agentId, labels: given.labels, outcome: { kind: "completed" }, reply: "fast answer" });
+      return given.agentId;
+    };
+    await asks.request(from, { to: "Scout", message: "How many?" });
+    expect(sent.map((message) => message.text).join("\n")).toContain("fast answer");
+  });
+
+  it("counts the half hour from when the question was sent, and never closes one that waits for the user", async () => {
+    const { asks, sent, from } = await setup({ contactBots: "ask" });
+    const t0 = Date.now();
+    let now = t0;
+    (asks as unknown as { now: () => number }).now = () => now;
+    const result = await asks.request(from, { to: "Scout", message: "Check the invoices" });
+    now = t0 + 3 * 3_600_000;
+    await asks.sweep(now);
+    expect(sent).toEqual([]);
+    await asks.approved((await getProposal(result.proposalId!))! as never);
+    await asks.sweep(now + 10 * 60_000);
+    expect(sent).toEqual([]);
+    await asks.sweep(now + 31 * 60_000);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("delivers a waiting answer exactly once even when two deliveries run together, and keeps it if sending fails", async () => {
+    const { asks, sent, status, started, from, host } = await setup();
+    await asks.request(from, { to: "Scout", message: "How many?" });
+    status["asker-chat"] = "running";
+    await asks.answered({ agentId: started[0]!.agentId, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "Three." });
+    status["asker-chat"] = "idle";
+    await Promise.all([asks.deliver("asker-chat"), asks.deliver("asker-chat")]);
+    expect(sent).toHaveLength(1);
+
+    const second = await setup();
+    await second.asks.request(second.from, { to: "Scout", message: "again" });
+    second.status["asker-chat"] = "running";
+    await second.asks.answered({ agentId: second.started[0]!.agentId, labels: { [ASK_REQUEST_LABEL]: labelsOf(second.started[0]!) }, outcome: { kind: "completed" }, reply: "Four." });
+    second.status["asker-chat"] = "idle";
+    let fail = true;
+    second.host.attach({ agents: { ref: () => ({ refresh: async () => ({ agent: { status: "idle", labels: {} } }), send: async (text: string) => { if (fail) throw new Error("offline"); second.sent.push({ agentId: "asker-chat", text }); } }) } } as never);
+    await second.asks.deliver("asker-chat");
+    expect(second.sent).toEqual([]);
+    fail = false;
+    await second.asks.deliver("asker-chat");
+    expect(second.sent).toHaveLength(1);
+    expect(host).toBeTruthy();
+  });
+
+  it("stops a chat from asking more than five times an hour, so two bots cannot keep each other busy", async () => {
+    const { asks, started, from } = await setup();
+    for (let index = 0; index < 5; index++) expect((await asks.request(from, { to: "Scout", message: `q${index}` })).ok).toBe(true);
+    const sixth = await asks.request(from, { to: "Scout", message: "q5" });
+    expect(sixth.ok).toBe(false);
+    expect(sixth.text).toContain("too many");
+    expect(started).toHaveLength(5);
   });
 });

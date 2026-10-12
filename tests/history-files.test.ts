@@ -93,4 +93,37 @@ describe("the history files a bot with file tools can search", () => {
     await writeHistory(hostWith({ "c2-cccccccc": { title: "Chat", messages: say("a", "b") } }, claude), claude, "c2-cccccccc");
     expect(await readdir(await dirOf()).catch(() => [])).toEqual([]);
   });
+
+  it("does not call a message from the plugin or another bot a message from the user", async () => {
+    const host = hostWith({
+      "d1-dddddddd": {
+        title: "Asked",
+        messages: [
+          { type: "user_message", text: "[Message from Chief, another bot on this Paseo, not from your user.]\n\nHow many?" },
+          { type: "assistant_message", text: "Three." },
+          { type: "user_message", text: "[Reply from Scout to your request r-1. It comes from another bot, not from the user]\n\nTANGERINE" },
+          { type: "user_message", text: "[Bots, not from the user] Your proposal file x.json was not accepted" },
+          { type: "user_message", text: "a real question" },
+        ],
+      },
+    });
+    await writeHistory(host, scout, "d1-dddddddd");
+    const text = await readFile(join(await dirOf(), (await readdir(await dirOf()))[0]!), "utf8");
+    expect(text).toContain("another bot\n[Message from Chief");
+    expect(text).toContain("another bot\n[Reply from Scout");
+    expect(text).toContain("the plugin\n[Bots, not from the user]");
+    expect(text).toContain("the user\na real question");
+  });
+
+  it("does not follow a history folder that is a link to somewhere else", async () => {
+    const { symlink } = await import("node:fs/promises");
+    const elsewhere = join(home, "elsewhere");
+    await mkdir(elsewhere, { recursive: true });
+    for (let index = 0; index < 60; index++) await writeFile(join(elsewhere, `keep-${index}.md`), "x");
+    const dir = await dirOf();
+    await mkdir(join(dir, ".."), { recursive: true });
+    await symlink(elsewhere, dir);
+    await writeHistory(hostWith({ "e1-eeeeeeee": { title: "Chat", messages: say("a", "b") } }), scout, "e1-eeeeeeee");
+    expect(await readdir(elsewhere)).toHaveLength(60);
+  });
 });

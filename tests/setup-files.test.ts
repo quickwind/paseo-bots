@@ -77,4 +77,18 @@ describe("the setup files a bot with file tools reads", () => {
     const text = await readFile(join(await dirOf("scout"), "proposal-format.md"), "utf8");
     for (const part of ["changes", "summary", "instructions", "schedule", "description", "update_bot"]) expect(text).toContain(part);
   });
+
+  it("does not delete what a link in place of the setup folder points at", async () => {
+    const { symlink } = await import("node:fs/promises");
+    const elsewhere = join(home, "elsewhere");
+    await mkdir(elsewhere, { recursive: true });
+    await writeFile(join(elsewhere, "keep.txt"), "x");
+    const dir = await dirOf("scout");
+    await mkdir(join(dir, ".."), { recursive: true });
+    await symlink(elsewhere, dir);
+    const scout = makeBot({ id: "scout", provider: "devin" });
+    await writeSetupFiles(scout, valuesOf([scout]), providers as never);
+    expect(await readdir(elsewhere)).toEqual(["keep.txt"]);
+    expect(await readdir(dir)).toContain("overview.md");
+  });
 });

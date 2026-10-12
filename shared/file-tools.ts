@@ -19,7 +19,9 @@ type Item = { type?: string; detail?: { type?: string; filePath?: unknown; comma
  */
 export function writtenStrings(timeline: readonly unknown[]): string[] {
   const out: string[] = [];
-  for (const raw of timeline) {
+  // Only the last turn: a name an earlier turn used must not let this chat claim a file written since by another.
+  const lastUser = timeline.map((raw) => (raw as Item).type).lastIndexOf("user_message");
+  for (const raw of timeline.slice(lastUser + 1)) {
     const item = raw as Item;
     if (item.type !== "tool_call" || !item.detail) continue;
     if ((item.detail.type === "write" || item.detail.type === "edit") && typeof item.detail.filePath === "string") out.push(item.detail.filePath);

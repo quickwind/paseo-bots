@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { redactSecrets } from "../shared/activity";
@@ -7,7 +7,7 @@ import { TIDY_LABEL } from "../shared/memory-maintenance";
 import { usesFiles } from "../shared/tools-mode";
 import { botDataPath } from "./bot-home";
 import type { BotsHost } from "./host";
-import { clearManaged } from "./managed-files";
+import { clearManaged, realDir } from "./managed-files";
 
 export const HISTORY_DIR = "history";
 export const MAX_CHATS = 40;
@@ -17,6 +17,14 @@ const MESSAGE_CAP = 4_000;
 const PAGE = 400;
 
 const slugOf = (title: string) => title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/g, "") || "chat";
+
+/** Who said a message: a message that starts with the marker the plugin or another bot puts on it is not from the user. */
+function speaker(type: string, text: string): string {
+  if (type === "assistant_message") return "you";
+  if (/^\[(Message from|Reply from)\b/.test(text)) return "another bot";
+  if (text.startsWith("[Bots")) return "the plugin";
+  return "the user";
+}
 
 /**
  * For a bot whose tools are files: keeps a transcript of the chat that just ended (what was said, not
@@ -38,11 +46,11 @@ export async function writeHistory(host: BotsHost, bot: Bot, agentId: string): P
   const lines = [`# ${title}`, `Chat ${agentId} of ${bot.name}, started ${agent.createdAt ?? "unknown"}. A transcript of what was said; written by the Bots plugin.`, ""];
   for (const { item, at } of messages) {
     const text = redactSecrets(String(item.text));
-    lines.push(`### ${at.slice(0, 16).replace("T", " ")} · ${item.type === "assistant_message" ? "you" : "the user"}`, text.length > MESSAGE_CAP ? `${text.slice(0, MESSAGE_CAP)}\n[cut at ${MESSAGE_CAP} characters]` : text, "");
+    lines.push(`### ${at.slice(0, 16).replace("T", " ")} · ${speaker(item.type, text)}`, text.length > MESSAGE_CAP ? `${text.slice(0, MESSAGE_CAP)}\n[cut at ${MESSAGE_CAP} characters]` : text, "");
   }
   const id = agentId.slice(0, 8);
   const name = `${(agent.createdAt ?? new Date().toISOString()).slice(0, 10)}-${slugOf(title)}-${id}.md`;
-  await mkdir(dir, { recursive: true });
+  await realDir(dir);
   const temporary = join(dir, `${name}.tmp-${randomBytes(4).toString("hex")}`);
   await writeFile(temporary, `${lines.join("\n")}\n`, "utf8");
   await rename(temporary, join(dir, name));

@@ -1,11 +1,21 @@
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 
 // Folders the plugin owns inside a bot's folder (setup/, history/): they hold exactly the files the
 // plugin last wrote, so a sync both writes what is wanted and removes what is not.
 
-async function writeAtomic(path: string, text: string): Promise<void> {
+/**
+ * Makes sure `dir` is a real folder: a link in its place (a bot can make one with its shell) is
+ * removed rather than followed, so the plugin never writes into or deletes from somewhere else.
+ */
+export async function realDir(dir: string): Promise<void> {
+  const info = await lstat(dir).catch(() => null);
+  if (info?.isSymbolicLink()) await unlink(dir);
+  await mkdir(dir, { recursive: true });
+}
+
+export async function writeAtomic(path: string, text: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.tmp-${randomBytes(4).toString("hex")}`;
   await writeFile(temporary, text, "utf8");
@@ -24,6 +34,7 @@ async function listFiles(dir: string, prefix = ""): Promise<string[]> {
 
 /** Makes `dir` hold exactly `files` (paths relative to it, with "/" separators). Unchanged text is not rewritten. */
 export async function syncManaged(dir: string, files: readonly { path: string; text: string }[]): Promise<void> {
+  await realDir(dir);
   const wanted = new Set(files.map((file) => file.path));
   for (const file of files) {
     const target = join(dir, ...file.path.split("/"));
