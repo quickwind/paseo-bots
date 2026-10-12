@@ -9,6 +9,7 @@ import { newUuid } from "../shared/uuid";
 import { proposalIdInText } from "../shared/proposals";
 import { botDataPath } from "./bot-home";
 import type { BotsHost } from "./host";
+import { writeHistory } from "./history-files";
 import type { Relay } from "./relay";
 import { proposeRoutine } from "./tools/routines";
 import { proposeChanges } from "./tools/setup";
@@ -122,6 +123,7 @@ export class FileTools {
       }
     }
     await this.flush(agentId);
+    await writeHistory(this.host, bot, agentId).catch((error: unknown) => console.error("paseo-bots: couldn't write the chat history", error));
   }
 
   private async card(agentId: string, proposalId: string): Promise<void> {
