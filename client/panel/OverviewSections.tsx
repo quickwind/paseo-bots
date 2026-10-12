@@ -7,7 +7,7 @@ import { Text, View } from "react-native";
 import { botLimits, botMcpServers, botSkills, estimateTokens, utf8Bytes, type Bot } from "../../shared/bot";
 import { teamOf } from "../../shared/groups";
 import { describeSchedule } from "../../shared/routines";
-import { systemPromptRpc } from "../../shared/rpc";
+import { identityStatusRpc, systemPromptRpc } from "../../shared/rpc";
 import { relativeTime } from "../../shared/time";
 import { useBotChats, useBotHost } from "../data";
 import { MONO_FONT, MONO_PROPS } from "../native";
@@ -50,6 +50,13 @@ export function OverviewSection({ colors, bot, library, groups, localHost, onSet
     placeholderData: (previous) => previous,
   });
   const [sheet, setSheet] = useState<"summary" | "prompt" | null>(null);
+  // Devin reads the identity from rule files that it cuts at 32 KB; say so when this one is long.
+  const identityRpc = useRpc(identityStatusRpc);
+  const identity = useQuery({
+    queryKey: ["paseo-bots", "identity", bot.id, prompt.dataUpdatedAt],
+    queryFn: () => identityRpc({ botId: bot.id }),
+    enabled: host.isLocal && /^devin(\b|$)/.test(bot.provider) && prompt.isSuccess,
+  });
 
   const tools = [
     ...botMcpServers(bot, library).map((server) => server.name),
@@ -64,6 +71,13 @@ export function OverviewSection({ colors, bot, library, groups, localHost, onSet
           <SettingsAction label="Set up with the bot" hint="Starts a chat where the bot interviews you and proposes its own instructions and memory" actionLabel="Start" onPress={onSetup} />
         </SettingsCard>
       </SettingsSection>
+      {identity.data?.note ? (
+        <SettingsSection title="Devin rules">
+          <SettingsCard>
+            <CardNote colors={colors} text={identity.data.note} />
+          </SettingsCard>
+        </SettingsSection>
+      ) : null}
       <SettingsSection title="About this bot">
         <SettingsCard>
           <DrillRow colors={colors} label="Summary" hint="What it does, reaches and won't do" onPress={() => setSheet("summary")} />

@@ -2,6 +2,7 @@ import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin
 import { ensureBotHome, ensureBotsHome, migrateRenamedPluginData } from "./server/bot-home";
 import { turnEnded, turnStarted } from "./server/activity";
 import { CommandAllowlist } from "./server/commands";
+import { identityStatus, refreshIdentities, refreshIdentity, withBotLock, writeIdentity } from "./server/identity";
 import { MemoryJournal } from "./server/journal";
 import { ChatActivity, SaveTracker } from "./server/maintenance";
 import { deleteLogDay, listLogDays, listMemory, readLogDay, readMemory } from "./server/memory";
@@ -35,6 +36,7 @@ import {
   memoryLogDeleteRpc,
   memoryLogRpc,
   memoryReadRpc,
+  identityStatusRpc,
   memoryUndoRpc,
   tidyRunRpc,
   tidyStatusRpc,
@@ -72,6 +74,14 @@ export default function contribute(server: PluginServerContext) {
     return state.status === "ready" ? (state.values.library ?? EMPTY_LIBRARY) : EMPTY_LIBRARY;
   };
   const host = new BotsHost(settings);
+  // Devin reads each bot's identity from a rules file in its folder: write them at start and whenever the settings change.
+  let identityTimer: ReturnType<typeof setTimeout> | null = null;
+  const refreshSoon = () => {
+    if (identityTimer) clearTimeout(identityTimer);
+    identityTimer = setTimeout(() => void refreshIdentities(host), 1000);
+  };
+  const stopWatchingSettings = settings.subscribe(refreshSoon);
+  host.onAttach(refreshSoon);
   // Bots' tools go through this relay; it reads the saved settings on every call.
   const relay = new Relay(host, BOT_TOOLS);
   void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the relay", error));
@@ -92,8 +102,16 @@ export default function contribute(server: PluginServerContext) {
     attach(context);
     return ensureBotHome(input);
   });
-  server.handle(systemPromptRpc, async (input, context) => systemPrompt(input, await library(), context.paseo, await host.values()));
+  server.handle(systemPromptRpc, async (input, context) => {
+    const [saved, settings] = [await library(), await host.values()];
+    // The app creates its chats itself, right after asking for the prompt: Devin finds the identity in the bot's folder.
+    if (input.local && !input.bot.hostId) {
+      await withBotLock(input.bot.id, () => writeIdentity(input.bot, saved, { paseo: context.paseo, settings })).catch((error: unknown) => console.error(`paseo-bots: couldn't write ${input.bot.name}'s identity`, error));
+    }
+    return systemPrompt(input, saved, context.paseo, settings);
+  });
   server.handle(memoryListRpc, ({ botId }) => listMemory(botId));
+  server.handle(identityStatusRpc, ({ botId }) => identityStatus(host, botId));
   server.handle(tidyStatusRpc, ({ botId }) => tidy.status(botId));
   server.handle(tidyRunRpc, ({ botId }, context) => {
     attach(context);
@@ -163,11 +181,16 @@ export default function contribute(server: PluginServerContext) {
   server.on("agent.turn_ended", async (event, context) => {
     host.attach(context.paseo);
     await turnEnded(host, journal, scheduler, event, maintenance).catch((error: unknown) => console.error("paseo-bots: couldn't record a turn", error));
+    // The memory may have changed in this turn, and a chat created next reads it from the identity file.
+    const botId = await host.botIdOf(event.agent.id).catch(() => null);
+    if (botId) void refreshIdentity(host, botId);
   });
 
   return () => {
     scheduler.stop();
     tidy.stop();
+    stopWatchingSettings();
+    if (identityTimer) clearTimeout(identityTimer);
     relay.stop();
   };
 }

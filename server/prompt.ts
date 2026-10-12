@@ -48,7 +48,7 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
 }
 
 /** Whether this host gives the provider's agents Paseo's tools. Assumes yes when the config can't be read. */
-async function paseoToolsOn(paseo: PaseoApi | null, provider: string): Promise<boolean> {
+export async function paseoToolsOn(paseo: PaseoApi | null, provider: string): Promise<boolean> {
   if (!paseo) return true;
   try {
     const { config } = await paseo.config.get();
@@ -65,4 +65,15 @@ export async function systemPrompt({ bot, local, message }: { bot: Bot; local: b
   // Another host's config isn't readable from here; Paseo gives agents its tools by default.
   const context = await promptContext(bot, local, library, local ? await paseoToolsOn(paseo, bot.provider) : true, start);
   return { systemPrompt: composeSystemPrompt(bot, context), sections: promptSections(bot, context) };
+}
+
+/**
+ * The prompt sections that belong to the bot rather than to one chat: no playbooks, which are
+ * picked by a chat's first message. This is what the Devin rules file carries.
+ */
+export async function identitySections(bot: Bot, library: Library, paseo: PaseoApi | null, settings?: BotSettingsValues | null) {
+  const group = teamOf(bot.id, settings?.groups ?? []);
+  const start: ChatStart = group && settings ? { team: { group, bots: settings.bots } } : {};
+  const context = await promptContext(bot, true, library, await paseoToolsOn(paseo, bot.provider), start);
+  return promptSections(bot, { ...context, playbooks: [] });
 }

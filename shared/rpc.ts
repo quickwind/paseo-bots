@@ -67,6 +67,12 @@ export const tidyRunRpc = defineRpc({
   output: TidyStatusSchema,
 });
 
+export const identityStatusRpc = defineRpc({
+  name: "bots.identity.status",
+  input: z.object({ botId: BotId }),
+  output: z.object({ files: z.number(), note: z.string().nullable() }),
+});
+
 export const memoryReadRpc = defineRpc({
   name: "bots.memory.read",
   input: z.object({ botId: BotId, name: MemoryFileName }),

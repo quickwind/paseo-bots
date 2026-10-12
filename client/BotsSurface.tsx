@@ -18,6 +18,7 @@ import { ensureBotHomeRpc, mountRpc, exportBotRpc, importBotRpc, importTeamRpc, 
 import { botFromPreset, newBot } from "../shared/templates";
 import { AvatarTheme } from "./Avatar";
 import { botMenuEntries, chatMenuEntries, ExportDialog, NewBotDialog, RenameDialog } from "./BotDialogs";
+import { sendsPromptInChat } from "../shared/identity";
 import { setupPromptText, shouldAutoSetup } from "../shared/setup";
 import { BotSidebar, type ChatMenuContext, type MenuSource, type Selection } from "./BotSidebar";
 import { ChatPane, type OutgoingMessage } from "./ChatPane";
@@ -769,7 +770,8 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
       plugin,
       placement,
       prompt: message.text,
-      systemPrompt,
+      // A Devin chat in the bot's own folder reads its identity from the rules file the server just wrote.
+      systemPrompt: sendsPromptInChat(bot.provider, placement.path, home.path) ? systemPrompt : "",
       images: message.images,
       attachments: message.attachments,
       clientMessageId: message.messageId,

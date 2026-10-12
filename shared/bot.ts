@@ -626,7 +626,7 @@ export function buildAgentConfig(bot: Bot, library: Library, model: string, syst
     provider: `${bot.provider}/${model}`,
     ...(bot.modeId ? { modeId: bot.modeId } : {}),
     ...(bot.thinkingOptionId ? { thinkingOptionId: bot.thinkingOptionId } : {}),
-    systemPrompt,
+    ...(systemPrompt ? { systemPrompt } : {}),
     ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
     ...(preapproved.length > 0 ? { toolPolicy: { preapproved } } : {}),
   };
