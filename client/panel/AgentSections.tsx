@@ -275,7 +275,7 @@ export function PermissionsSection({ colors, bot, localHost, onPatch }: PanelPro
           <SettingsCard>
             <SettingsSelect
               label="Contact other bots"
-              hint={bot.contactBots === "ask" ? "You approve each request, when the mode asks before using tools" : bot.contactBots === "allow" ? "Without asking you first" : "Never"}
+              hint={bot.contactBots === "ask" ? "You approve each request, on a card in the chat or as a tool permission" : bot.contactBots === "allow" ? "Without asking you first" : "Never"}
               value={bot.contactBots}
               options={[
                 { label: "Ask first", value: "ask" },
