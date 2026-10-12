@@ -2,7 +2,8 @@ import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
 import { BotMemorySchema, DEFAULT_BOT_MEMORY, MEMORY_MAX_BYTES, MEMORY_MAX_LINES } from "./memory-maintenance";
 import { SetupSettingsSchema } from "./setup";
-import { botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
+import { ToolModeSchema } from "./tools-mode";
+import { botFilesPrompt, botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 import { renderPlaybooks } from "./playbooks";
 
@@ -310,6 +311,8 @@ export const botSettings = defineSettings({
     groups: z.array(BotGroupSchema).optional(),
     /** The setup interview ("Set up with the bot"). Optional like the other later additions. */
     setup: SetupSettingsSchema.optional(),
+    /** Whether bots get the plugin's tools as an MCP server or as files; automatic when unset. */
+    toolMode: ToolModeSchema.optional(),
   }),
   migrate: (values, fromVersion) => {
     let migrated = values;
@@ -468,8 +471,10 @@ export interface PromptContext {
   skills: { name: string; description: string; path: string }[];
   /** Whether the host gives this bot's provider Paseo's own tools. */
   paseoTools: boolean;
-  /** Whether chats get the plugin's own tools (bots on the plugin's host). */
+  /** Whether chats get the plugin's own tools as an MCP server (bots on the plugin's host). */
   botTools: boolean;
+  /** The bot's folder, when its tools are files in it instead (no MCP server). */
+  botFiles?: { home: string } | null;
   /** The topic files under memory/ with their first line, so the agent knows what it can read. */
   topics?: { name: string; firstLine: string }[];
   /** How much of the injection budget MEMORY.md uses. */
@@ -535,6 +540,7 @@ export function promptSections(bot: Bot, context: PromptContext): PromptSection[
   }
   if (context.playbooks.length > 0) sections.push({ title: "Playbooks", text: renderPlaybooks(context.playbooks) });
   if (context.botTools) sections.push({ title: "Bot tools", text: botToolsPrompt(bot.contactBots !== "off") });
+  else if (context.botFiles) sections.push({ title: "Bot tools", text: botFilesPrompt(bot, context.botFiles.home) });
   if (context.paseoTools) sections.push({ title: "Paseo tools", text: PASEO_TOOLS_PROMPT });
   return sections;
 }

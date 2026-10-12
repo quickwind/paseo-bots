@@ -12,6 +12,7 @@ import { Button, CardNote, FormTextArea, SheetActions } from "../panel/controls"
 import { SearchableSelect } from "../ui/SearchableSelect";
 import { useBotSettings } from "../useBotSettings";
 import { DEFAULT_SETUP_PROMPT, type SetupSettings } from "../../shared/setup";
+import type { ToolMode } from "../../shared/tools-mode";
 
 type Colors = PluginSurfaceProps["theme"]["colors"];
 
@@ -29,6 +30,7 @@ export function BotsSettings({ theme, host }: PluginSurfaceProps) {
         defaults={values.defaults ?? DEFAULT_BOT_DEFAULTS}
         onChange={(patch) => void commit((current) => ({ ...current, defaults: { ...(current.defaults ?? DEFAULT_BOT_DEFAULTS), ...patch } }))}
       />
+      <ToolsSection mode={values.toolMode} onChange={(toolMode) => void commit((current) => ({ ...current, toolMode }))} />
       <SetupSection colors={colors} setup={values.setup} onChange={(setup) => void commit((current) => ({ ...current, setup }))} />
       <SettingsSection title="Presets" info="Bots you saved with Save as preset in their menu: their identity, instructions, playbooks and skills. They're listed under New bot.">
         <SettingsCard>
@@ -50,6 +52,26 @@ export function BotsSettings({ theme, host }: PluginSurfaceProps) {
       </SettingsSection>
       <TeamSection colors={colors} bots={values.bots.filter((bot) => !bot.archived)} groups={values.groups ?? []} commit={commit} />
     </>
+  );
+}
+
+/** How bots get the plugin's tools: as an MCP server, or as files in their folder (for Devin, where MCP is not allowed). */
+function ToolsSection({ mode, onChange }: { mode: ToolMode | undefined; onChange(mode: ToolMode): void }) {
+  return (
+    <SettingsSection title="Bot tools" info="The plugin's tools let a bot read the setup, propose changes, routines and skills, ask other bots and search its chats. They come as an MCP server, or as files in the bot's folder for providers that cannot use MCP.">
+      <SettingsCard>
+        <SettingsSelect
+          label="Tools come as"
+          value={mode ?? "auto"}
+          options={[
+            { label: "Automatic (files for Devin, MCP for the rest)", value: "auto" },
+            { label: "Files for every provider", value: "files" },
+            { label: "MCP for every provider", value: "mcp" },
+          ]}
+          onValueChange={(value) => onChange(value as ToolMode)}
+        />
+      </SettingsCard>
+    </SettingsSection>
   );
 }
 

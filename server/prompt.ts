@@ -5,6 +5,8 @@ import { selectPlaybooks } from "../shared/playbooks";
 import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
 import { botSkills, composeSystemPrompt, promptSections, type Bot, type BotGroup, type BotSettingsValues, type Library, type PromptContext } from "../shared/bot";
 import { teamOf, teamPrompt } from "../shared/groups";
+import { usesFiles, type ToolMode } from "../shared/tools-mode";
+import { botDataPath } from "./bot-home";
 import { linkBotSkills, skillSha } from "./library";
 import { injectedMemory, MAIN_MEMORY, memoryFolder, memoryUsage, recentLogEntries, topicIndex } from "./memory";
 
@@ -13,6 +15,8 @@ export interface ChatStart {
   message?: string;
   /** The bot's team and every bot, when it's on one. */
   team?: { group: BotGroup; bots: Bot[] };
+  /** How bots get the plugin's tools; automatic when unset. */
+  toolMode?: ToolMode;
 }
 
 /**
@@ -24,6 +28,7 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
   const playbooks = selectPlaybooks(start.message ?? "", bot.playbooks);
   const team = start.team ? teamPrompt(start.team.group, bot, start.team.bots) : null;
   if (!local) return { memory: "", memoryPath: null, recentWork: [], playbooks, team, skills: [], paseoTools, botTools: false };
+  const files = usesFiles(start.toolMode, bot.provider);
   // Only skills whose SKILL.md is still what the user reviewed.
   const skills: typeof library.skills = [];
   for (const skill of botSkills(bot, library)) {
@@ -41,7 +46,8 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
     team,
     skills: skills.map((skill) => ({ name: skill.id, description: skill.description, path: paths.get(skill.id)! })),
     paseoTools,
-    botTools: true,
+    botTools: !files,
+    botFiles: files ? { home: botDataPath(bot.id) } : null,
     topics: await topicIndex(bot.id),
     memoryUsage: await memoryUsage(bot.id),
   };
@@ -61,7 +67,7 @@ export async function paseoToolsOn(paseo: PaseoApi | null, provider: string): Pr
 /** The system prompt for a new chat; `settings` supplies the bot's team. */
 export async function systemPrompt({ bot, local, message }: { bot: Bot; local: boolean; message?: string }, library: Library, paseo: PaseoApi | null, settings?: BotSettingsValues | null) {
   const group = teamOf(bot.id, settings?.groups ?? []);
-  const start: ChatStart = { ...(message !== undefined ? { message } : {}), ...(group && settings ? { team: { group, bots: settings.bots } } : {}) };
+  const start: ChatStart = { ...(message !== undefined ? { message } : {}), ...(group && settings ? { team: { group, bots: settings.bots } } : {}), ...(settings?.toolMode ? { toolMode: settings.toolMode } : {}) };
   // Another host's config isn't readable from here; Paseo gives agents its tools by default.
   const context = await promptContext(bot, local, library, local ? await paseoToolsOn(paseo, bot.provider) : true, start);
   return { systemPrompt: composeSystemPrompt(bot, context), sections: promptSections(bot, context) };
@@ -73,7 +79,7 @@ export async function systemPrompt({ bot, local, message }: { bot: Bot; local: b
  */
 export async function identitySections(bot: Bot, library: Library, paseo: PaseoApi | null, settings?: BotSettingsValues | null) {
   const group = teamOf(bot.id, settings?.groups ?? []);
-  const start: ChatStart = group && settings ? { team: { group, bots: settings.bots } } : {};
+  const start: ChatStart = { ...(group && settings ? { team: { group, bots: settings.bots } } : {}), ...(settings?.toolMode ? { toolMode: settings.toolMode } : {}) };
   const context = await promptContext(bot, true, library, await paseoToolsOn(paseo, bot.provider), start);
   return promptSections(bot, { ...context, playbooks: [] });
 }

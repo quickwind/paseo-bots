@@ -19,6 +19,7 @@ import { botFromPreset, newBot } from "../shared/templates";
 import { AvatarTheme } from "./Avatar";
 import { botMenuEntries, chatMenuEntries, ExportDialog, NewBotDialog, RenameDialog } from "./BotDialogs";
 import { sendsPromptInChat } from "../shared/identity";
+import { usesFiles } from "../shared/tools-mode";
 import { setupPromptText, shouldAutoSetup } from "../shared/setup";
 import { BotSidebar, type ChatMenuContext, type MenuSource, type Selection } from "./BotSidebar";
 import { ChatPane, type OutgoingMessage } from "./ChatPane";
@@ -753,6 +754,7 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
   const mountServers = useRpc(mountRpc);
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { settings } = useBotSettings();
 
   const start = async (message: OutgoingMessage) => {
     if (!host.api) throw new Error(`${host.label} is offline.`);
@@ -762,7 +764,7 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
     const { systemPrompt } = await compose({ bot, local: host.isLocal, message: message.text });
     // The plugin's tools go through this host's relay, so only bots here get them.
     const agentId = newUuid();
-    const plugin = host.isLocal ? await mountServers({ botId: bot.id, agentId }) : {};
+    const plugin = host.isLocal && !usesFiles(settings.status === "ready" ? settings.values.toolMode : undefined, bot.provider) ? await mountServers({ botId: bot.id, agentId }) : {};
     const id = await startBotChat(host.api, {
       bot,
       library,

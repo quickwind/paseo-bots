@@ -34,3 +34,8 @@ export function botToolsPrompt(canAsk: boolean): string {
   const others = canAsk ? "list_bots to see the other bots and ask_bot to ask one for help (check_chat follows up)" : "list_bots to see the other bots";
   return `Your own tools come from the MCP server "bots". Use propose_routine for your own recurring or webhook-started work (rather than Paseo schedules) and propose_skill to keep a way of working for next time. When the user asks you to set up or change bots, teams, skills, MCP servers or defaults, read get_setup and put all the changes in one propose_changes call. The user confirms proposals on a card in the chat. Use search_chats to look through your past chats and daily log, and ${others}.`;
 }
+
+/** The prompt section for a bot whose tools are files in its folder (no MCP server). */
+export function botFilesPrompt(_bot: { contactBots: string }, home: string): string {
+  return `The plugin's tools are files in your folder ${home}: setup/ describes the bots and the setup, proposals/ is where you write what the user should confirm, outbox/ is where you ask another bot, history/ holds your past chats.`;
+}
