@@ -4,6 +4,7 @@ import { contextPercent, savePrompt, TIDY_LABEL } from "../shared/memory-mainten
 import { newUuid } from "../shared/uuid";
 import type { BotsHost } from "./host";
 import type { MemoryJournal } from "./journal";
+import { ASK_REQUEST_LABEL, type Asks } from "./asks";
 import type { FileTools } from "./file-tools";
 import type { ChatActivity, SaveTracker } from "./maintenance";
 import { appendDailyLog, inboxPath } from "./memory";
@@ -20,6 +21,8 @@ export interface Maintenance {
   tidy: { finished(botId: string, agentId: string, outcome: PluginTurnOutcome, reply: string): Promise<void> } | null;
   /** For bots whose tools are files: reads their proposal files after a turn. */
   fileTools?: Pick<FileTools, "afterTurn"> | null;
+  /** For a chat started to answer another bot: its reply goes back to the asking chat. */
+  asks?: Pick<Asks, "answered"> | null;
 }
 
 export async function turnStarted(host: BotsHost, journal: MemoryJournal, { agent }: PluginLifecycleEvents["agent.turn_started"], maintenance?: Maintenance): Promise<void> {
@@ -38,6 +41,7 @@ export async function turnEnded(host: BotsHost, journal: MemoryJournal, schedule
   await journal.end(botId, { id: agent.id, title });
   const { reply, tools } = lastTurn(timeline);
   const isTidy = Boolean(chat.labels[TIDY_LABEL]);
+  if (chat.labels[ASK_REQUEST_LABEL]) await maintenance?.asks?.answered({ agentId: agent.id, labels: chat.labels, outcome, reply }).catch((error: unknown) => console.error("paseo-bots: couldn't pass on a bot's answer", error));
   const wasSave = maintenance?.saves.consume(agent.id) ?? false;
   if (isTidy) {
     // A tidy turn is the app's own work; logging it would look like new material to the next tidy.
@@ -54,7 +58,7 @@ export async function turnEnded(host: BotsHost, journal: MemoryJournal, schedule
   if (maintenance && !wasSave && !chat.routineId && outcome.kind === "completed") await askToSave(host, maintenance, botId, agent.id);
   if (maintenance?.fileTools) {
     const bot = await host.bot(botId);
-    if (bot && !bot.hostId) await maintenance.fileTools.afterTurn({ bot, agentId: agent.id, timeline }).catch((error: unknown) => console.error("paseo-bots: couldn't read the bot's proposal files", error));
+    if (bot && !bot.hostId) await maintenance.fileTools.afterTurn({ bot, agentId: agent.id, timeline, labels: chat.labels }).catch((error: unknown) => console.error("paseo-bots: couldn't read the bot's proposal files", error));
   }
 }
 

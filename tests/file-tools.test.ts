@@ -38,6 +38,14 @@ describe("whether a file belongs to a turn", () => {
   });
 });
 
+describe("reading an ask file", () => {
+  it("returns the question when ask is allowed, and refuses other kinds there", () => {
+    expect(parseToolFile('{"kind":"ask","to":"Scout","message":"hi"}', ["ask"])).toEqual({ kind: "ask", args: { to: "Scout", message: "hi" } });
+    expect(parseToolFile('{"kind":"skill"}', ["ask"])).toEqual({ error: expect.stringContaining("must be ask") });
+    expect(parseToolFile('{"kind":"ask","to":"Scout","message":"hi"}')).toEqual({ error: expect.stringContaining("changes, routine or skill") });
+  });
+});
+
 describe("reading a tool file", () => {
   it("returns the kind and the arguments the matching tool takes", () => {
     expect(parseToolFile('{"kind":"changes","summary":"s","changes":[]}')).toEqual({ kind: "changes", args: { summary: "s", changes: [] } });
@@ -289,5 +297,73 @@ describe("a chat in a bot's own folder", () => {
     await turnEnded(host, new MemoryJournal(), { finished: async () => {} }, event as never, { activity: new ChatActivity(), saves: new SaveTracker(), tidy: null, fileTools: files });
     expect(appended).toHaveLength(1);
     expect(bot.id).toBe("scout");
+  });
+});
+
+describe("the outbox, for a bot whose tools are files", () => {
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "paseo-bots-outbox-"));
+    process.env.PASEO_HOME = home;
+  });
+  afterEach(async () => {
+    delete process.env.PASEO_HOME;
+    await rm(home, { recursive: true, force: true });
+  });
+
+  async function setup(result = { ok: true, text: "Request r-1: sent to Scout.", proposalId: null as string | null }) {
+    const bot = makeBot({ id: "chief", name: "Chief", provider: "devin", contactBots: "allow" });
+    const host = fakeHost([bot]);
+    const appended: unknown[] = [];
+    const sent: string[] = [];
+    host.attach({ agents: { ref: () => ({ refresh: async () => ({ agent: { status: "idle", labels: {}, title: "Chat", cwd: "/x" } }), timeline: { append: async (item: unknown) => void appended.push(item) }, send: async (text: string) => void sent.push(text) }) } } as never);
+    const calls: { from: { agentId: string; labels: Record<string, string> }; args: { to: string; message: string } }[] = [];
+    const asks = { request: async (from: never, args: never) => (calls.push({ from, args } as never), result), deliver: async () => {} };
+    const { botDataPath } = await import("../server/bot-home");
+    const outbox = join(botDataPath("chief"), "outbox");
+    const proposals = join(botDataPath("chief"), "proposals");
+    await mkdir(outbox, { recursive: true });
+    await mkdir(proposals, { recursive: true });
+    const files = new FileTools(host, null as never, asks as never);
+    const turn = (written: string[], labels: Record<string, string> = {}) => files.afterTurn({ bot, agentId: "chat-1", labels, timeline: written.map((filePath) => ({ type: "tool_call", detail: { type: "edit", filePath } })) });
+    return { outbox, proposals, calls, appended, sent, turn };
+  }
+
+  it("sends an ask file's question to the asks service, from the chat that wrote it", async () => {
+    const { outbox, calls, turn } = await setup();
+    await writeFile(join(outbox, "ask-a1.json"), JSON.stringify({ kind: "ask", to: "Scout", message: "How many unread?" }));
+    await turn(["Wrote ./outbox/ask-a1.json"], { x: "y" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.args).toEqual({ to: "Scout", message: "How many unread?" });
+    expect(calls[0]!.from).toMatchObject({ agentId: "chat-1", labels: { x: "y" } });
+    expect(await readdir(outbox)).toEqual(["done"]);
+    expect(await readFile(join(outbox, "done", "ask-a1.json.result.txt"), "utf8")).toContain("sent to Scout");
+  });
+
+  it("posts the approval card when the question waits for the user", async () => {
+    const { outbox, appended, turn } = await setup({ ok: true, text: "Request r-2: waiting.", proposalId: "p-abcdef1234" });
+    await writeFile(join(outbox, "ask-b2.json"), JSON.stringify({ kind: "ask", to: "Scout", message: "hi" }));
+    await turn(["echo > outbox/ask-b2.json"]);
+    expect(appended).toMatchObject([{ type: "plugin", kind: "proposal", data: { proposalId: "p-abcdef1234" } }]);
+  });
+
+  it("tells the chat when the question was refused, and rejects files of the wrong kind or shape", async () => {
+    const { outbox, proposals, calls, sent, turn } = await setup({ ok: false, text: "Asking other bots is not allowed for you.", proposalId: null });
+    await writeFile(join(outbox, "ask-c3.json"), JSON.stringify({ kind: "ask", to: "Scout", message: "hi" }));
+    await writeFile(join(outbox, "skill-c4.json"), JSON.stringify({ kind: "skill", name: "x" }));
+    await writeFile(join(outbox, "ask-c5.json"), JSON.stringify({ kind: "ask", to: "Scout" }));
+    await turn(["Wrote ./outbox/ask-c3.json", "Wrote ./outbox/skill-c4.json", "Wrote ./outbox/ask-c5.json"]);
+    expect(calls).toHaveLength(1);
+    const text = sent.join("\n");
+    for (const part of ["ask-c3.json", "not allowed", "skill-c4.json", "must be ask", "ask-c5.json", "message"]) expect(text).toContain(part);
+    expect(proposals).toBeTruthy();
+  });
+
+  it("does not take an ask file from the proposals folder", async () => {
+    const { proposals, calls, sent, turn } = await setup();
+    await writeFile(join(proposals, "ask-c6.json"), JSON.stringify({ kind: "ask", to: "Scout", message: "hi" }));
+    await turn(["Wrote ./proposals/ask-c6.json"]);
+    expect(calls).toEqual([]);
+    expect(sent.join("\n")).toContain("changes, routine or skill");
   });
 });

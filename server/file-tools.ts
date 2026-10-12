@@ -1,8 +1,8 @@
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { z } from "zod";
+import { z } from "zod";
 import type { Bot } from "../shared/bot";
-import { DONE_DIR, FILE_NAME, fileBelongsToTurn, MAX_FILE_BYTES, MAX_FILES_PER_SCAN, parseToolFile, PROPOSALS_DIR, UNCLAIMED_AFTER_MS, writtenStrings, type ToolFileKind } from "../shared/file-tools";
+import { DONE_DIR, FILE_NAME, fileBelongsToTurn, MAX_FILE_BYTES, MAX_FILES_PER_SCAN, OUTBOX_DIR, parseToolFile, PROPOSALS_DIR, UNCLAIMED_AFTER_MS, writtenStrings, type ToolFileKind } from "../shared/file-tools";
 import { PROPOSAL_CARD } from "../shared/rpc";
 import { usesFiles } from "../shared/tools-mode";
 import { newUuid } from "../shared/uuid";
@@ -10,14 +10,30 @@ import { proposalIdInText } from "../shared/proposals";
 import { botDataPath } from "./bot-home";
 import type { BotsHost } from "./host";
 import { writeHistory } from "./history-files";
+import type { Asks } from "./asks";
 import type { Relay } from "./relay";
 import { proposeRoutine } from "./tools/routines";
 import { proposeChanges } from "./tools/setup";
 import { proposeSkill } from "./tools/skills";
 import type { BotTool } from "./tools/mcp";
 
-const TOOLS: Record<ToolFileKind, BotTool> = { changes: proposeChanges, routine: proposeRoutine, skill: proposeSkill };
+const TOOLS: Partial<Record<ToolFileKind, BotTool>> = { changes: proposeChanges, routine: proposeRoutine, skill: proposeSkill };
+const AskFile = z.object({ to: z.string().min(1).max(100), message: z.string().min(1).max(20_000) });
 const KEEP_DONE = 100;
+
+export interface ScanInput {
+  host: BotsHost;
+  relay: Relay;
+  bot: Bot;
+  agentId: string;
+  written: readonly string[];
+  now?: number;
+  /** proposals (the default) or the outbox, where a bot asks another bot. */
+  folder?: typeof PROPOSALS_DIR | typeof OUTBOX_DIR;
+  /** The asks service and the chat's labels, for the outbox. */
+  asks?: Pick<Asks, "request"> | null;
+  labels?: Record<string, string>;
+}
 
 export interface ScanResult {
   name: string;
@@ -48,8 +64,8 @@ async function settle(dir: string, name: string, text: string): Promise<void> {
  * Each is run through the tool it stands for, so the checks, the dry run and the card are the ones
  * the MCP tools have. Files no chat accounts for are returned as `unclaimed` once they are old.
  */
-export async function scanToolFiles(input: { host: BotsHost; relay: Relay; bot: Bot; agentId: string; written: readonly string[]; now?: number }): Promise<{ done: ScanResult[]; unclaimed: string[] }> {
-  const dir = join(botDataPath(input.bot.id), PROPOSALS_DIR);
+export async function scanToolFiles(input: ScanInput): Promise<{ done: ScanResult[]; unclaimed: string[] }> {
+  const dir = join(botDataPath(input.bot.id), input.folder ?? PROPOSALS_DIR);
   const now = input.now ?? Date.now();
   const names = (await readdir(dir).catch(() => [] as string[])).filter((name) => FILE_NAME.test(name)).sort();
   const done: ScanResult[] = [];
@@ -67,15 +83,25 @@ export async function scanToolFiles(input: { host: BotsHost; relay: Relay; bot: 
   return { done, unclaimed };
 }
 
-async function handleFile(input: { host: BotsHost; relay: Relay; bot: Bot; agentId: string }, dir: string, name: string, size: number): Promise<ScanResult> {
+async function handleFile(input: ScanInput, dir: string, name: string, size: number): Promise<ScanResult> {
   const fail = async (kind: ToolFileKind | null, text: string): Promise<ScanResult> => {
     await settle(dir, name, text).catch(() => {});
     return { name, kind, ok: false, text, proposalId: null };
   };
   if (size > MAX_FILE_BYTES) return fail(null, `The file is too large (over ${MAX_FILE_BYTES / 1024} KB). Write a smaller one.`);
-  const parsed = parseToolFile(await readFile(join(dir, name), "utf8").catch(() => ""));
+  const outbox = input.folder === OUTBOX_DIR;
+  const parsed = parseToolFile(await readFile(join(dir, name), "utf8").catch(() => ""), outbox ? ["ask"] : undefined);
   if ("error" in parsed) return fail(null, parsed.error);
-  const tool = TOOLS[parsed.kind];
+  if (parsed.kind === "ask") {
+    const question = AskFile.safeParse(parsed.args);
+    if (!question.success) return fail("ask", `Not accepted: ${issues(question.error)}`);
+    if (!input.asks) return fail("ask", "Not accepted: asking other bots is not available here.");
+    const result = await input.asks.request({ bot: input.bot, agentId: input.agentId, labels: input.labels ?? {} }, question.data);
+    if (!result.ok) return fail("ask", result.text);
+    await settle(dir, name, result.text).catch(() => {});
+    return { name, kind: "ask", ok: true, text: result.text, proposalId: result.proposalId };
+  }
+  const tool = TOOLS[parsed.kind]!;
   const valid = tool.input.safeParse(parsed.args);
   if (!valid.success) return fail(parsed.kind, `Not accepted: ${issues(valid.error)}`);
   try {
@@ -99,18 +125,23 @@ export class FileTools {
   constructor(
     private readonly host: BotsHost,
     private readonly relay: Relay,
+    private readonly asks: Pick<Asks, "request" | "deliver"> | null = null,
   ) {}
 
-  async afterTurn(input: { bot: Bot; agentId: string; timeline: readonly unknown[] }): Promise<void> {
+  async afterTurn(input: { bot: Bot; agentId: string; timeline: readonly unknown[]; labels?: Record<string, string> }): Promise<void> {
     const { bot, agentId } = input;
     if (!usesFiles((await this.host.values())?.toolMode, bot.provider)) return;
-    const base = { host: this.host, relay: this.relay, bot, agentId };
-    const first = await scanToolFiles({ ...base, written: writtenStrings(input.timeline) });
-    let results = first.done;
-    if (first.unclaimed.length) {
-      // No chat's tool calls account for these and they are old: this chat takes them. A guess, so it is logged.
-      console.warn(`paseo-bots: giving ${first.unclaimed.join(", ")} to chat ${agentId}; no turn accounted for them`);
-      results = [...results, ...(await scanToolFiles({ ...base, written: first.unclaimed })).done];
+    const written = writtenStrings(input.timeline);
+    let results: ScanResult[] = [];
+    for (const folder of this.asks ? ([PROPOSALS_DIR, OUTBOX_DIR] as const) : ([PROPOSALS_DIR] as const)) {
+      const base = { host: this.host, relay: this.relay, bot, agentId, folder, asks: this.asks, labels: input.labels ?? {} };
+      const first = await scanToolFiles({ ...base, written });
+      results = [...results, ...first.done];
+      if (first.unclaimed.length) {
+        // No chat's tool calls account for these and they are old: this chat takes them. A guess, so it is logged.
+        console.warn(`paseo-bots: giving ${first.unclaimed.join(", ")} to chat ${agentId}; no turn accounted for them`);
+        results = [...results, ...(await scanToolFiles({ ...base, written: first.unclaimed })).done];
+      }
     }
     for (const result of results) {
       if (result.ok) {
@@ -123,6 +154,7 @@ export class FileTools {
       }
     }
     await this.flush(agentId);
+    await this.asks?.deliver(agentId).catch((error: unknown) => console.error("paseo-bots: couldn't deliver a bot's answer", error));
     await writeHistory(this.host, bot, agentId).catch((error: unknown) => console.error("paseo-bots: couldn't write the chat history", error));
   }
 

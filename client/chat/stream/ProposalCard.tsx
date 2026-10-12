@@ -55,11 +55,18 @@ export function ProposalCard({ colors, compact, proposalId }: { colors: Colors; 
       ? skillView(proposal, bot, !!values?.library?.skills.some((skill) => skill.id === proposal.data.name))
       : proposal.kind === "routine"
         ? routineView(proposal, bot)
-        : changesView(proposal);
+        : proposal.kind === "ask"
+          ? askView(proposal, bot)
+          : changesView(proposal);
 
   const save = async () => {
     setBusy("save");
     try {
+      if (proposal.kind === "ask") {
+        // The server sends the question when it accepts; nothing is saved in the settings.
+        queryClient.setQueryData(proposalQueryKey(proposal.id), await accept({ id: proposal.id }));
+        return;
+      }
       if (proposal.kind === "changes") {
         // Applied before the proposal counts as accepted: a change that no longer fits leaves the card pending.
         const context = { now: new Date().toISOString(), provider: proposal.data.provider };
@@ -160,6 +167,18 @@ function routineView(proposal: Extract<Proposal, { kind: "routine" }>, bot: Bot 
     warnings: [],
     notes: [timing, `Each run starts a new chat${bot ? ` with ${bot.name}` : ""} and posts its result here.`],
     action: "Create routine",
+  };
+}
+
+function askView(proposal: Extract<Proposal, { kind: "ask" }>, bot: Bot | undefined): ProposalView {
+  const { toName, message } = proposal.data;
+  return {
+    titles: { pending: `Ask ${toName}?`, accepted: `Asked ${toName}`, dismissed: `Did not ask ${toName}` },
+    description: `${bot?.name ?? "A bot"} wants help from ${toName}`,
+    text: message,
+    warnings: [],
+    notes: [`${toName} works in a chat of its own, with its own tools and settings. Its answer comes back to this chat.`],
+    action: "Send the question",
   };
 }
 

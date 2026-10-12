@@ -25,10 +25,14 @@ const RoutineProposalSchema = z.object({ name: z.string(), prompt: z.string(), s
 /** Changes to the setup, applied together (shared/changes.ts); `provider` is the host's pick for new bots the defaults leave open. */
 const ChangesProposalSchema = z.object({ summary: z.string(), changes: z.array(ChangeSchema), provider: z.string().default("") });
 
+/** A bot asking another bot for help; the user decides before the question is sent (unless the bot may ask freely). */
+const AskProposalSchema = z.object({ requestId: z.string(), toBotId: z.string(), toName: z.string(), message: z.string() });
+
 export const ProposalSchema = z.discriminatedUnion("kind", [
   ProposalBase.extend({ kind: z.literal("skill"), data: SkillProposalSchema }),
   ProposalBase.extend({ kind: z.literal("routine"), data: RoutineProposalSchema }),
   ProposalBase.extend({ kind: z.literal("changes"), data: ChangesProposalSchema }),
+  ProposalBase.extend({ kind: z.literal("ask"), data: AskProposalSchema }),
 ]);
 export type Proposal = z.infer<typeof ProposalSchema>;
 

@@ -84,4 +84,17 @@ describe("the files prompt", () => {
   it("does not mention an MCP server or tool calls", () => {
     expect(text).not.toMatch(/MCP|tool server|tool call/i);
   });
+
+  it("tells a bot that may contact others how to ask one, and leaves it out for one that may not", () => {
+    const asks = botFilesPrompt({ contactBots: "ask" }, "/data/bots/scout");
+    expect(asks).toContain("/data/bots/scout/outbox/");
+    expect(asks).toContain('"kind":"ask"');
+    expect(asks).toContain("end your turn");
+    expect(asks).toMatch(/user (is asked|decides)/i);
+    const allowed = botFilesPrompt({ contactBots: "allow" }, "/data/bots/scout");
+    expect(allowed).toContain("/data/bots/scout/outbox/");
+    expect(allowed).not.toMatch(/user (is asked|decides)/i);
+    const off = botFilesPrompt({ contactBots: "off" }, "/data/bots/scout");
+    expect(off).not.toContain("outbox");
+  });
 });

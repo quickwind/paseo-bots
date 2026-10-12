@@ -2,6 +2,7 @@
 // file into its proposals/ folder; the plugin reads it when the chat's turn ends.
 
 export const PROPOSALS_DIR = "proposals";
+export const OUTBOX_DIR = "outbox";
 export const DONE_DIR = "done";
 export const MAX_FILES_PER_SCAN = 20;
 export const MAX_FILE_BYTES = 256 * 1024;
@@ -35,11 +36,11 @@ export function fileBelongsToTurn(fileName: string, written: readonly string[]):
   return written.some((text) => pattern.test(text));
 }
 
-export type ToolFileKind = "changes" | "routine" | "skill";
-const KINDS: readonly string[] = ["changes", "routine", "skill"];
+export type ToolFileKind = "changes" | "routine" | "skill" | "ask";
+const PROPOSAL_KINDS: readonly ToolFileKind[] = ["changes", "routine", "skill"];
 
-/** The kind of a tool file and the arguments of the tool it stands for. */
-export function parseToolFile(text: string): { kind: ToolFileKind; args: Record<string, unknown> } | { error: string } {
+/** The kind of a tool file and the arguments of the tool it stands for; `allowed` is what the folder it was found in takes. */
+export function parseToolFile(text: string, allowed: readonly ToolFileKind[] = PROPOSAL_KINDS): { kind: ToolFileKind; args: Record<string, unknown> } | { error: string } {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -49,6 +50,9 @@ export function parseToolFile(text: string): { kind: ToolFileKind; args: Record<
   if (!value || typeof value !== "object" || Array.isArray(value)) return { error: "The file must be one JSON object." };
   const { kind, ...args } = value as Record<string, unknown>;
   if (typeof kind !== "string") return { error: 'The file needs a "kind" field.' };
-  if (!KINDS.includes(kind)) return { error: `"kind" must be changes, routine or skill (got "${kind}").` };
+  if (!allowed.includes(kind as ToolFileKind)) {
+    const list = allowed.length === 1 ? allowed[0]! : `${allowed.slice(0, -1).join(", ")} or ${allowed.at(-1)}`;
+    return { error: `"kind" must be ${list} in this folder (got "${kind}").` };
+  }
   return { kind: kind as ToolFileKind, args };
 }

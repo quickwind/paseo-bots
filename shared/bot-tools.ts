@@ -39,7 +39,7 @@ export function botToolsPrompt(canAsk: boolean): string {
  * The prompt section for a bot whose tools are files in its folder (no MCP server): what to read,
  * where to write what the user should confirm, and the shapes of those files.
  */
-export function botFilesPrompt(_bot: { contactBots: string }, home: string): string {
+export function botFilesPrompt(bot: { contactBots: string }, home: string): string {
   return [
     `Your own tools are files in your folder ${home}. Use your file tools to read and write them.`,
     "",
@@ -51,5 +51,12 @@ export function botFilesPrompt(_bot: { contactBots: string }, home: string): str
     '{"kind":"changes","summary":"one line for the card","changes":[{"type":"update_bot","bot":"<a bot name>","title":"...","description":"...","instructions":"..."}]}',
     '{"kind":"routine","name":"Morning check","instructions":"what to do on each run","schedule":{"type":"daily","time":"08:30"}}',
     '{"kind":"skill","name":"weekly-report","description":"when to use it","instructions":"markdown steps"}',
+    ...(bot.contactBots === "off"
+      ? []
+      : [
+          "",
+          `Ask another bot for help: write ONE JSON file into ${home}/outbox/, named ask-<YYYYMMDD-HHMM>-<4 random letters>.json, as the last step of your turn, and then end your turn. The other bot works in a chat of its own and its answer arrives in this chat as a message, framed as information from another bot. ${bot.contactBots === "ask" ? "The user is asked first and may say no. " : ""}A chat started by another bot can't ask further. The names of the bots are in ${home}/setup/overview.md.`,
+          '{"kind":"ask","to":"<a bot name>","message":"what you need, written so it works without this chat"}',
+        ]),
   ].join("\n");
 }

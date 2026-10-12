@@ -2,6 +2,8 @@ import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin
 import { ensureBotHome, ensureBotsHome, migrateRenamedPluginData } from "./server/bot-home";
 import { turnEnded, turnStarted } from "./server/activity";
 import { CommandAllowlist } from "./server/commands";
+import { Asks } from "./server/asks";
+import { FileTools } from "./server/file-tools";
 import { identityStatus, refreshIdentities, refreshIdentity, withBotLock, writeIdentity } from "./server/identity";
 import { MemoryJournal } from "./server/journal";
 import { ChatActivity, SaveTracker } from "./server/maintenance";
@@ -89,7 +91,10 @@ export default function contribute(server: PluginServerContext) {
   const journal = new MemoryJournal();
   const chatActivity = new ChatActivity();
   const tidy = new MemoryTidy(host, relay, chatActivity);
-  const maintenance = { activity: chatActivity, saves: new SaveTracker(), tidy };
+  const asks = new Asks(host, relay);
+  const maintenance = { activity: chatActivity, saves: new SaveTracker(), tidy, fileTools: new FileTools(host, relay, asks), asks };
+  // A question nobody answered is closed after half an hour.
+  const asksTimer = setInterval(() => void asks.sweep().catch((error: unknown) => console.error("paseo-bots: couldn't close old requests", error)), 5 * 60_000);
   const commands = new CommandAllowlist();
   // Every handler and hook receives the plugin's Paseo API; features that start chats need it.
   const attach = ({ paseo }: PluginHandlerContext) => host.attach(paseo);
@@ -143,8 +148,22 @@ export default function contribute(server: PluginServerContext) {
   server.handle(mcpSourcesRpc, () => mcpSources());
   server.handle(mountRpc, async ({ botId, agentId }) => ({ tools: await relay.mountTools(botId, agentId) }));
   server.handle(proposalGetRpc, async ({ id }) => ({ proposal: await getProposal(id) }));
-  server.handle(proposalAcceptRpc, ({ id }) => acceptProposal(id));
-  server.handle(proposalDismissRpc, async ({ id }) => ({ proposal: await dismissProposal(id) }));
+  server.handle(proposalAcceptRpc, async ({ id }, context) => {
+    const accepted = await acceptProposal(id);
+    if (accepted.proposal.kind === "ask") {
+      attach(context);
+      await asks.approved(accepted.proposal);
+    }
+    return accepted;
+  });
+  server.handle(proposalDismissRpc, async ({ id }, context) => {
+    const proposal = await dismissProposal(id);
+    if (proposal.kind === "ask") {
+      attach(context);
+      await asks.refused(proposal);
+    }
+    return { proposal };
+  });
   server.handle(routineStatusRpc, (_input, context) => {
     attach(context);
     return scheduler.status();
@@ -190,6 +209,7 @@ export default function contribute(server: PluginServerContext) {
     scheduler.stop();
     tidy.stop();
     stopWatchingSettings();
+    clearInterval(asksTimer);
     if (identityTimer) clearTimeout(identityTimer);
     relay.stop();
   };
