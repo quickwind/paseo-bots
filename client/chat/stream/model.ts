@@ -14,7 +14,7 @@ import {
   type ToolCallDetail,
   type ToolCallStatus,
 } from "../../../shared/tools";
-import { ROUTINE_RUN_CARD, RoutineRunCardSchema, type RoutineRunCard } from "../../../shared/rpc";
+import { PROPOSAL_CARD, ProposalCardSchema, ROUTINE_RUN_CARD, RoutineRunCardSchema, type RoutineRunCard } from "../../../shared/rpc";
 import { PLUGIN_ID } from "../../../shared/version";
 
 /** The fields of a projected timeline entry the stream reads. */
@@ -50,7 +50,9 @@ export type StreamRow =
   | (RowBase & { kind: "todo"; items: TaskEntry[]; activity: TaskActivity })
   | (RowBase & { kind: "notification"; level: "info" | "warning" | "error"; message: string })
   | (RowBase & { kind: "compaction"; status: "loading" | "completed"; trigger?: "auto" | "manual"; preTokens?: number })
-  | (RowBase & { kind: "routine-run"; card: RoutineRunCard });
+  | (RowBase & { kind: "routine-run"; card: RoutineRunCard })
+  /** A proposal the plugin posted for a file a bot wrote (providers without the MCP tools). */
+  | (RowBase & { kind: "proposal"; proposalId: string });
 
 export interface TurnFooterInfo {
   /** Key of the assistant row the footer belongs to. */
@@ -199,10 +201,15 @@ export function buildRows(entries: readonly StreamEntry[], running: boolean): St
         });
         break;
       case "plugin": {
-        // This plugin's routine result cards; other plugins' items belong to their renderers.
-        if (item.pluginId !== PLUGIN_ID || item.kind !== ROUTINE_RUN_CARD.kind) break;
-        const card = RoutineRunCardSchema.safeParse(item.data);
-        if (card.success) rows.push({ ...base, key: `plugin:${String(item.id ?? entry.seqStart)}`, kind: "routine-run", card: card.data });
+        // This plugin's cards (routine results, proposals from files); other plugins' items belong to their renderers.
+        if (item.pluginId !== PLUGIN_ID) break;
+        if (item.kind === ROUTINE_RUN_CARD.kind) {
+          const card = RoutineRunCardSchema.safeParse(item.data);
+          if (card.success) rows.push({ ...base, key: `plugin:${String(item.id ?? entry.seqStart)}`, kind: "routine-run", card: card.data });
+        } else if (item.kind === PROPOSAL_CARD.kind) {
+          const card = ProposalCardSchema.safeParse(item.data);
+          if (card.success) rows.push({ ...base, key: `plugin:${String(item.id ?? entry.seqStart)}`, kind: "proposal", proposalId: card.data.proposalId });
+        }
         break;
       }
       default:

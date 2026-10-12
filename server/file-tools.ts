@@ -2,7 +2,10 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/p
 import { join } from "node:path";
 import type { z } from "zod";
 import type { Bot } from "../shared/bot";
-import { DONE_DIR, FILE_NAME, fileBelongsToTurn, MAX_FILE_BYTES, MAX_FILES_PER_SCAN, parseToolFile, PROPOSALS_DIR, UNCLAIMED_AFTER_MS, type ToolFileKind } from "../shared/file-tools";
+import { DONE_DIR, FILE_NAME, fileBelongsToTurn, MAX_FILE_BYTES, MAX_FILES_PER_SCAN, parseToolFile, PROPOSALS_DIR, UNCLAIMED_AFTER_MS, writtenStrings, type ToolFileKind } from "../shared/file-tools";
+import { PROPOSAL_CARD } from "../shared/rpc";
+import { usesFiles } from "../shared/tools-mode";
+import { newUuid } from "../shared/uuid";
 import { proposalIdInText } from "../shared/proposals";
 import { botDataPath } from "./bot-home";
 import type { BotsHost } from "./host";
@@ -80,5 +83,69 @@ async function handleFile(input: { host: BotsHost; relay: Relay; bot: Bot; agent
     return { name, kind: parsed.kind, ok: true, text, proposalId: proposalIdInText(text) };
   } catch (error) {
     return fail(parsed.kind, `Not accepted: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+const MAX_NOTICES_IN_A_ROW = 3;
+
+/** What follows a chat's turn for a bot whose tools are files: read its proposal files, show the cards, report mistakes back. */
+export class FileTools {
+  /** Files in a row that were not accepted, per chat; after a few the bot stops being told (the result files stay). */
+  private readonly failures = new Map<string, number>();
+  /** Notices waiting for a chat that was busy. */
+  private readonly pending = new Map<string, string[]>();
+
+  constructor(
+    private readonly host: BotsHost,
+    private readonly relay: Relay,
+  ) {}
+
+  async afterTurn(input: { bot: Bot; agentId: string; timeline: readonly unknown[] }): Promise<void> {
+    const { bot, agentId } = input;
+    if (!usesFiles((await this.host.values())?.toolMode, bot.provider)) return;
+    const base = { host: this.host, relay: this.relay, bot, agentId };
+    const first = await scanToolFiles({ ...base, written: writtenStrings(input.timeline) });
+    let results = first.done;
+    if (first.unclaimed.length) {
+      // No chat's tool calls account for these and they are old: this chat takes them. A guess, so it is logged.
+      console.warn(`paseo-bots: giving ${first.unclaimed.join(", ")} to chat ${agentId}; no turn accounted for them`);
+      results = [...results, ...(await scanToolFiles({ ...base, written: first.unclaimed })).done];
+    }
+    for (const result of results) {
+      if (result.ok) {
+        this.failures.set(agentId, 0);
+        if (result.proposalId) await this.card(agentId, result.proposalId);
+      } else {
+        const count = (this.failures.get(agentId) ?? 0) + 1;
+        this.failures.set(agentId, count);
+        if (count <= MAX_NOTICES_IN_A_ROW) this.queue(agentId, `Your proposal file ${result.name} was not accepted: ${result.text.replace(/^Not accepted:\s*/, "")} Fix it and write it again as a new file.`);
+      }
+    }
+    await this.flush(agentId);
+  }
+
+  private async card(agentId: string, proposalId: string): Promise<void> {
+    await this.host.paseo?.agents
+      .ref(agentId)
+      .timeline.append({ type: "plugin", id: proposalId, ...PROPOSAL_CARD, data: { proposalId } } as never)
+      .catch((error: unknown) => console.error("paseo-bots: couldn't post a proposal card", error));
+  }
+
+  private queue(agentId: string, text: string): void {
+    this.pending.set(agentId, [...(this.pending.get(agentId) ?? []), text]);
+  }
+
+  /** Sends the waiting notices as one message once the chat is idle. */
+  private async flush(agentId: string): Promise<void> {
+    const waiting = this.pending.get(agentId);
+    if (!waiting?.length) return;
+    const snapshot = await this.host.paseo?.agents.ref(agentId).refresh().catch(() => null);
+    const status = snapshot?.agent.status;
+    if (!snapshot || status === "running" || status === "initializing") return;
+    this.pending.delete(agentId);
+    await this.host.paseo!.agents
+      .ref(agentId)
+      .send(`[Bots, not from the user] ${waiting.join("\n")}`, { messageId: newUuid() } as never)
+      .catch((error: unknown) => console.error("paseo-bots: couldn't tell a chat about a proposal file", error));
   }
 }

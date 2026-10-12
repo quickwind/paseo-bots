@@ -4,6 +4,7 @@ import { contextPercent, savePrompt, TIDY_LABEL } from "../shared/memory-mainten
 import { newUuid } from "../shared/uuid";
 import type { BotsHost } from "./host";
 import type { MemoryJournal } from "./journal";
+import type { FileTools } from "./file-tools";
 import type { ChatActivity, SaveTracker } from "./maintenance";
 import { appendDailyLog, inboxPath } from "./memory";
 import type { RoutineScheduler } from "./scheduler";
@@ -17,6 +18,8 @@ export interface Maintenance {
   activity: ChatActivity;
   saves: SaveTracker;
   tidy: { finished(botId: string, agentId: string, outcome: PluginTurnOutcome, reply: string): Promise<void> } | null;
+  /** For bots whose tools are files: reads their proposal files after a turn. */
+  fileTools?: Pick<FileTools, "afterTurn"> | null;
 }
 
 export async function turnStarted(host: BotsHost, journal: MemoryJournal, { agent }: PluginLifecycleEvents["agent.turn_started"], maintenance?: Maintenance): Promise<void> {
@@ -49,6 +52,10 @@ export async function turnEnded(host: BotsHost, journal: MemoryJournal, schedule
     if (line) await appendDailyLog(botId, line);
   }
   if (maintenance && !wasSave && !chat.routineId && outcome.kind === "completed") await askToSave(host, maintenance, botId, agent.id);
+  if (maintenance?.fileTools) {
+    const bot = await host.bot(botId);
+    if (bot && !bot.hostId) await maintenance.fileTools.afterTurn({ bot, agentId: agent.id, timeline }).catch((error: unknown) => console.error("paseo-bots: couldn't read the bot's proposal files", error));
+  }
 }
 
 /** Over the bot's threshold and idle: put one save request into the chat. */

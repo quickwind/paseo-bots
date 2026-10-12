@@ -94,9 +94,9 @@ the bot's `proposals/` and `outbox/`:
    evidence from the chat itself, so two chats of one bot never take each other's files. The prompt asks
    for a unique file name (a time and a short random suffix) so two chats never write the same path.
 2. A file with no evidence in this turn is left alone: it may belong to a chat whose turn has not ended.
-   Such a file older than 10 minutes with no evidence anywhere is handed to the bot's chat that ended a
-   turn most recently before the file was written, and the plugin logs that it guessed. This is the only
-   guess, and only for a tool call the plugin could not read.
+   Such a file older than 10 minutes with no evidence anywhere is taken by the next chat of the bot whose
+   turn ends, and the plugin logs that it guessed. This is the only guess, and only for a tool call the
+   plugin could not read.
 3. At most 20 files per scan; each at most 256 KB; names must match `^[\w.-]+\.json$`.
 4. Parse and validate with the schemas the tools already export (`ChangesSchema`,
    `ScheduleInput`, the skill input). For changes, run the existing dry run (`applyChanges`).
@@ -217,6 +217,10 @@ Six Devin turns in total (swe-1-6-slow).
 4. **Send into an idle chat.** `agents.ref(id).send(...)` from the `agent.turn_ended` hook started a new
    turn in an idle Devin chat and Devin answered. Replies pushed into a chat (errors, answers from
    another bot) work on Devin.
+
+Also: a plain new chat in a bot's folder carries no bot label, so the plugin counts any chat that runs
+in a bot's own folder as that bot's chat (`host.chatOf`). Such chats now also get the bot's memory log,
+journal and upkeep, like its other chats.
 
 Design consequences: attribution by base name (section 4 updated), and bots with their own working
 folder are documented as needing approval for the files.

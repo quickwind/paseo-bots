@@ -140,3 +140,154 @@ describe("scanning a bot's proposals folder", () => {
     expect(await stat(join(dir, "bad name.json")).then(() => true)).toBe(true);
   });
 });
+
+import { FileTools } from "../server/file-tools";
+
+describe("after a turn ends, for a bot whose tools are files", () => {
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "paseo-bots-afterturn-"));
+    process.env.PASEO_HOME = home;
+  });
+  afterEach(async () => {
+    delete process.env.PASEO_HOME;
+    await rm(home, { recursive: true, force: true });
+  });
+
+  const skillFile = (name: string) => JSON.stringify({ kind: "skill", name, description: "d", instructions: "i" });
+  async function setup(botPatch: Partial<ReturnType<typeof makeBot>> = {}, status = "idle") {
+    const bot = makeBot({ id: "scout", name: "Scout", provider: "devin", ...botPatch });
+    const host = fakeHost([bot]);
+    const appended: { agentId: string; item: Record<string, unknown> }[] = [];
+    const sent: { agentId: string; text: string }[] = [];
+    const state = { status };
+    host.attach({
+      agents: {
+        ref: (agentId: string) => ({
+          refresh: async () => ({ agent: { status: state.status, labels: {}, title: "Chat", cwd: "/x" } }),
+          timeline: { append: async (item: Record<string, unknown>) => void appended.push({ agentId, item }) },
+          send: async (text: string) => void sent.push({ agentId, text }),
+        }),
+      },
+    } as never);
+    const { botDataPath } = await import("../server/bot-home");
+    const dir = join(botDataPath("scout"), "proposals");
+    await mkdir(dir, { recursive: true });
+    const files = new FileTools(host, null as never);
+    const turn = (agentId: string, written: string[]) => files.afterTurn({ bot, agentId, timeline: written.map((filePath) => ({ type: "tool_call", detail: { type: "edit", filePath } })) });
+    return { bot, host, dir, files, appended, sent, state, turn };
+  }
+
+  it("posts a card for each proposal the turn wrote, and says nothing", async () => {
+    const { dir, appended, sent, turn } = await setup();
+    await writeFile(join(dir, "skill-a1.json"), skillFile("a"));
+    await turn("chat-1", ["Wrote ./proposals/skill-a1.json"]);
+    expect(appended).toHaveLength(1);
+    expect(appended[0]).toMatchObject({ agentId: "chat-1", item: { type: "plugin", kind: "proposal", version: 1, data: { proposalId: expect.stringMatching(/^p-/) } } });
+    expect(appended[0]!.item.id).toBe((appended[0]!.item.data as { proposalId: string }).proposalId);
+    expect(sent).toEqual([]);
+  });
+
+  it("tells the chat when a file was not accepted, naming the file and the reason", async () => {
+    const { dir, appended, sent, turn } = await setup();
+    await writeFile(join(dir, "skill-b2.json"), JSON.stringify({ kind: "skill", name: "b" }));
+    await turn("chat-1", ["Wrote ./proposals/skill-b2.json"]);
+    expect(appended).toEqual([]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain("skill-b2.json");
+    expect(sent[0]!.text).toContain("description");
+    expect(sent[0]!.text).toContain("not accepted");
+  });
+
+  it("waits to tell a chat that is already working again, and tells it after its next turn", async () => {
+    const { dir, sent, state, turn } = await setup({}, "running");
+    await writeFile(join(dir, "skill-c3.json"), "nope");
+    await turn("chat-1", ["Wrote ./proposals/skill-c3.json"]);
+    expect(sent).toEqual([]);
+    state.status = "idle";
+    await turn("chat-1", []);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain("skill-c3.json");
+  });
+
+  it("stops sending notices after three failures in a row, and starts again after a success", async () => {
+    const { dir, sent, turn } = await setup();
+    for (let index = 0; index < 4; index++) {
+      await writeFile(join(dir, `bad-${index}.json`), "nope");
+      await turn("chat-1", [`Wrote ./proposals/bad-${index}.json`]);
+    }
+    expect(sent).toHaveLength(3);
+    await writeFile(join(dir, "skill-ok.json"), skillFile("ok"));
+    await turn("chat-1", ["Wrote ./proposals/skill-ok.json"]);
+    await writeFile(join(dir, "bad-9.json"), "nope");
+    await turn("chat-1", ["Wrote ./proposals/bad-9.json"]);
+    expect(sent).toHaveLength(4);
+  });
+
+  it("leaves a bot whose tools are an MCP server alone", async () => {
+    const { dir, appended, turn } = await setup({ provider: "claude" });
+    await writeFile(join(dir, "skill-d4.json"), skillFile("d"));
+    await turn("chat-1", ["Wrote ./proposals/skill-d4.json"]);
+    expect(appended).toEqual([]);
+    expect(await readdir(dir)).toEqual(["skill-d4.json"]);
+  });
+
+  it("gives a file nobody claimed to the chat whose turn ends, after ten minutes", async () => {
+    const { dir, appended, turn } = await setup();
+    await writeFile(join(dir, "skill-e5.json"), skillFile("e"));
+    const old = new Date(Date.now() - 11 * 60_000);
+    await utimes(join(dir, "skill-e5.json"), old, old);
+    await turn("chat-2", []);
+    expect(appended).toHaveLength(1);
+    expect(appended[0]!.agentId).toBe("chat-2");
+  });
+});
+
+import { turnEnded } from "../server/activity";
+import { MemoryJournal } from "../server/journal";
+import { ChatActivity, SaveTracker } from "../server/maintenance";
+
+describe("a chat in a bot's own folder", () => {
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "paseo-bots-folderchat-"));
+    process.env.PASEO_HOME = home;
+  });
+  afterEach(async () => {
+    delete process.env.PASEO_HOME;
+    await rm(home, { recursive: true, force: true });
+  });
+
+  async function hostWith(cwd: string, labels: Record<string, string> = {}) {
+    const bot = makeBot({ id: "scout", name: "Scout", provider: "devin" });
+    const host = fakeHost([bot]);
+    const appended: unknown[] = [];
+    host.attach({ agents: { ref: () => ({ refresh: async () => ({ agent: { status: "idle", labels, title: "New chat", cwd } }), timeline: { append: async (item: unknown) => void appended.push(item) }, send: async () => {} }) } } as never);
+    return { bot, host, appended };
+  }
+
+  it("is the bot's chat even without the label the plugin gives its own chats", async () => {
+    const { botDataPath } = await import("../server/bot-home");
+    const { host } = await hostWith(botDataPath("scout"));
+    expect(await host.chatOf("plain")).toMatchObject({ botId: "scout" });
+    expect(await host.botIdOf("plain")).toBe("scout");
+  });
+
+  it("is nobody's chat when it runs somewhere else", async () => {
+    const { host } = await hostWith("/work/project");
+    expect(await host.chatOf("elsewhere")).toBeNull();
+  });
+
+  it("gets its proposal cards after a turn, like the bot's other chats", async () => {
+    const { botDataPath } = await import("../server/bot-home");
+    const { bot, host, appended } = await hostWith(botDataPath("scout"));
+    const dir = join(botDataPath("scout"), "proposals");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "skill-f6.json"), JSON.stringify({ kind: "skill", name: "f", description: "d", instructions: "i" }));
+    const files = new FileTools(host, null as never);
+    const event = { agent: { id: "plain", workspaceId: null, parentAgentId: null, provider: "devin", cwd: botDataPath("scout"), title: "New chat" }, turnId: "t", outcome: { kind: "completed" }, timeline: [{ type: "tool_call", detail: { type: "edit", filePath: "Wrote ./proposals/skill-f6.json" } }] };
+    await turnEnded(host, new MemoryJournal(), { finished: async () => {} }, event as never, { activity: new ChatActivity(), saves: new SaveTracker(), tidy: null, fileTools: files });
+    expect(appended).toHaveLength(1);
+    expect(bot.id).toBe("scout");
+  });
+});

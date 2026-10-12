@@ -2,6 +2,8 @@ import type { PaseoApi } from "./paseo";
 import type { PluginSettings } from "@getpaseo/plugin/server";
 import { BOT_LABEL, EMPTY_LIBRARY, type Bot, type BotSettingsValues, type botSettings, type Library } from "../shared/bot";
 import { ROUTINE_LABEL } from "../shared/chat";
+import { samePath } from "../shared/identity";
+import { botDataPath } from "./bot-home";
 
 // What every server feature needs: the saved settings (read-only on the
 // server), and the plugin's Paseo API. The SDK only hands the API out inside
@@ -61,14 +63,21 @@ export class BotsHost {
     if (this.chatBots.get(agentId) === null) return null;
     const snapshot = await this.paseo?.agents.ref(agentId).refresh().catch(() => null);
     if (!snapshot) return null;
-    const botId = snapshot.agent.labels?.[BOT_LABEL] ?? null;
+    // A chat the plugin started carries the label. One opened in the bot's own folder (a plain new chat in
+    // the Bots project) does not, but it is the bot's chat all the same.
+    const botId = snapshot.agent.labels?.[BOT_LABEL] ?? (await this.botInFolder(snapshot.agent.cwd));
     if (this.chatBots.size > 500) this.chatBots.clear();
     this.chatBots.set(agentId, botId);
     const labels = snapshot.agent.labels ?? {};
     return botId ? { botId, title: snapshot.agent.title ?? null, routineId: labels[ROUTINE_LABEL] ?? null, labels } : null;
   }
 
-  /** The bot a chat belongs to, from the label it was created with; null for other agents. */
+  private async botInFolder(cwd: string | undefined): Promise<string | null> {
+    if (!cwd) return null;
+    return (await this.bots()).find((bot) => samePath(cwd, botDataPath(bot.id)))?.id ?? null;
+  }
+
+  /** The bot a chat belongs to, from the label it was created with or the folder it runs in; null for other agents. */
   async botIdOf(agentId: string): Promise<string | null> {
     const known = this.chatBots.get(agentId);
     return known !== undefined ? known : ((await this.chatOf(agentId))?.botId ?? null);

@@ -80,6 +80,8 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
       return <CompactionMarker colors={colors} status={row.status} trigger={row.trigger} preTokens={row.preTokens} />;
     case "routine-run":
       return <RoutineRunCard colors={colors} card={row.card} onOpenChat={context.openChat} />;
+    case "proposal":
+      return <ProposalCard colors={colors} compact={context.compact} proposalId={row.proposalId} />;
   }
 }
 

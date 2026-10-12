@@ -198,6 +198,10 @@ export const RoutineRunCardSchema = RoutineRunSchema.pick({ trigger: true, sched
 export type RoutineRunCard = z.infer<typeof RoutineRunCardSchema>;
 export const ROUTINE_RUN_CARD = { kind: "routine-run", version: 1 } as const;
 
+/** The card for a proposal: a tool call that made one, or (providers without the MCP tools) a plugin item the plugin posts after reading the bot's proposal file. */
+export const PROPOSAL_CARD = { kind: "proposal", version: 1 } as const;
+export const ProposalCardSchema = z.object({ proposalId: z.string() });
+
 const RoutineRecordSchema = z.object({
   /** The last time the schedule fired (runs, skips and misses), which the next due time counts from. */
   lastRunAt: z.string().nullable(),
