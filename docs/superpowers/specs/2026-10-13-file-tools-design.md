@@ -86,20 +86,28 @@ The bot writes one file per proposal, using the arguments of the tool it replace
 When a chat's turn ends (`agent.turn_ended`, already hooked in `server/activity.ts`) the plugin scans
 the bot's `proposals/` and `outbox/`:
 
-1. Take files modified since that chat's turn began (`ChatActivity` records the start); at most 20 per
-   scan; each at most 256 KB; names must match `^[\w.-]+\.json$`.
-2. Parse and validate with the schemas the tools already export (`ChangesSchema`,
+1. **Which files belong to this chat: the ones this turn wrote.** The event carries the turn's tool
+   calls (`timeline`, as `lastTurn` already reads it). A file belongs to the chat if a call in it wrote
+   that file: a `write` or `edit` call whose `filePath` is the file (compared as paths, absolute or
+   relative to the chat's working folder; Devin's ACP edits are mapped this way,
+   `acp-agent.ts` `buildEditToolDetail`), or a `shell` call whose command names the file. This is
+   evidence from the chat itself, so two chats of one bot never take each other's files. The prompt asks
+   for a unique file name (a time and a short random suffix) so two chats never write the same path.
+2. A file with no evidence in this turn is left alone: it may belong to a chat whose turn has not ended.
+   Such a file older than 10 minutes with no evidence anywhere is handed to the bot's chat that ended a
+   turn most recently before the file was written, and the plugin logs that it guessed. This is the only
+   guess, and only for a tool call the plugin could not read.
+3. At most 20 files per scan; each at most 256 KB; names must match `^[\w.-]+\.json$`.
+4. Parse and validate with the schemas the tools already export (`ChangesSchema`,
    `ScheduleInput`, the skill input). For changes, run the existing dry run (`applyChanges`).
-3. Success: `createProposal` (`server/proposals.ts`), post the card in the chat (section 5), move the
+5. Success: `createProposal` (`server/proposals.ts`), post the card in the chat (section 5), move the
    file to `done/`, write `<name>.result.txt` ("Proposal p-xxxx: the user sees ... as a card").
-4. Failure: move the file to `done/`, write the error to `<name>.result.txt`, and send one message
+6. Failure: move the file to `done/`, write the error to `<name>.result.txt`, and send one message
    into the chat ("[Bots] Your proposal <name> was not accepted: <error>. Fix it and write it again.")
    so the bot sees it without being asked. The message is sent when the chat is idle, the same way
    the memory save is (`server/activity.ts` `askToSave`, verified from a hook).
 
-The chat is the one whose turn ended. If two chats of one bot end turns together, a file goes to the
-chat whose turn window contains its modification time; otherwise to the first scanner. Stated in the
-prompt: write the file as the last step of a turn.
+The prompt says to write the file as the last step of a turn.
 
 ### 5. The card for a file proposal
 
@@ -151,8 +159,9 @@ files mode.
 
 ## Risks and open points
 
-- **Attribution** of a file to a chat is by turn end and modification time, not by a chat id the bot
-  knows. Acceptable for one chat per bot at a time; two overlapping chats can misplace a card.
+- **Attribution** rests on the turn's tool calls naming the file. Verified in code for ACP edits; **not
+  yet verified against a real Devin run** (spike 1 below). A file written some way the plugin cannot read
+  falls back to the 10-minute guess in section 4.
 - **Bots with their own working folder** write outside their working folder; Devin may prompt for
   approval each time. Not verified.
 - **Latency**: a card appears when the turn ends, not in the middle of it.
@@ -163,9 +172,19 @@ files mode.
 - **Untrusted text**: transcripts and other bots' replies are data; both are framed as such, and
   nothing in `history/` or a reply can approve anything.
 
+## Spikes before building
+
+1. With real Devin (a few short messages): ask it to create `proposals/x.json` with its file tool, and
+   again with a shell command; read the `agent.turn_ended` timeline. Does the call come as `write` or
+   `edit` with a usable `filePath` (absolute?), and as `shell` with the command?
+2. Can Devin write a file outside its working folder (a bot with `bot.cwd`), and does it ask?
+3. Does a message the plugin sends into an idle Devin chat start a new turn (the memory save was
+   verified on Claude only)?
+
 ## Testing
 
-Unit: file validation and result files per kind, size and name limits, attribution, the `ask`
+Unit: file validation and result files per kind, size and name limits, attribution by tool call (write,
+edit, shell, relative and absolute paths, two chats at once, no evidence), the `ask`
 lifecycle (refused, approved, answered, busy asker, timeout), transcript writer limits and redaction,
 `setup/` rendering equals `get_setup`, tool-mode choice, the card timeline item round trip. Live (real
 Devin, few short messages): the setup interview ends with a card; a routine proposal; one bot asks
