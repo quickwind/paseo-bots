@@ -3,7 +3,13 @@ import { TIDY_LABEL } from "../../shared/memory-maintenance";
 import { z } from "zod";
 import { foldText, lastTurn } from "../../shared/activity";
 import { BOT_LABEL } from "../../shared/bot";
+import { randomBytes } from "node:crypto";
+import { newUuid } from "../../shared/uuid";
+import { ASK_REQUEST_LABEL, reusableChat, updateRequests } from "../ask-store";
 import { startChat } from "../chats";
+import type { BotsHost } from "../host";
+import type { Relay } from "../relay";
+import type { Bot } from "../../shared/bot";
 import { defineTool, type ToolCaller } from "./mcp";
 
 // Other bots on this host: who they are, so a bot can hand work to the right one.
@@ -78,6 +84,44 @@ async function mayAsk({ bot, agentId, host }: ToolCaller): Promise<boolean> {
   return !chat?.labels[ASKED_BY_LABEL] && !chat?.labels[TIDY_LABEL];
 }
 
+/**
+ * Puts the question to the other bot: into the chat this chat already has with it (waiting a little
+ * if that chat is still on the last answer), else into a new chat. The question is recorded, so the
+ * next one from this chat finds the chat again, as with a question asked through a file.
+ */
+async function sendOrStart(input: { host: BotsHost; relay: Relay; paseo: PaseoApi; from: { bot: Bot; agentId: string }; target: Bot; message: string }): Promise<string> {
+  const { host, relay, paseo, from, target, message } = input;
+  const id = `r-${randomBytes(4).toString("hex")}`;
+  const record = (chat: string | null) =>
+    updateRequests((requests) => {
+      requests.push({ id, fromBot: from.bot.id, fromChat: from.agentId, toBot: target.id, toName: target.name, toChat: chat, message, createdAt: new Date().toISOString(), startedAt: new Date().toISOString(), status: "running", via: "tool", unsent: [] });
+    });
+  let reuse = await reusableChat(host, { fromChat: from.agentId, toBot: target.id, now: Date.now() });
+  if (reuse?.busy) {
+    await paseo.agents.ref(reuse.chat).waitForFinish(ASK_WAIT_MS / 2).catch(() => null);
+    reuse = await reusableChat(host, { fromChat: from.agentId, toBot: target.id, now: Date.now() });
+  }
+  if (reuse && !reuse.busy) {
+    await record(reuse.chat);
+    try {
+      await paseo.agents.ref(reuse.chat).send(askPrompt(from.bot.name, message), { messageId: newUuid() } as never);
+      return reuse.chat;
+    } catch {
+      await updateRequests((requests) => {
+        const found = requests.find((entry) => entry.id === id);
+        if (found) found.status = "closed";
+      });
+    }
+  }
+  await record(null);
+  const chatId = await startChat(host, relay, target, { prompt: askPrompt(from.bot.name, message), title: `${from.bot.name}: ${foldText(message, 60)}`, labels: { [ASKED_BY_LABEL]: from.bot.id, [ASK_REQUEST_LABEL]: id } });
+  await updateRequests((requests) => {
+    const found = requests.find((entry) => entry.id === id);
+    if (found) found.toChat = chatId;
+  });
+  return chatId;
+}
+
 export const askBot = defineTool({
   name: "ask_bot",
   description:
@@ -94,9 +138,9 @@ export const askBot = defineTool({
     const key = wanted.trim().toLowerCase();
     const target = others.find((entry) => entry.id === wanted.trim()) ?? others.find((entry) => entry.name.trim().toLowerCase() === key);
     if (!target) throw new Error(others.length ? `There's no other bot called "${wanted}". Ask one of: ${others.map((entry) => entry.name).join(", ")}.` : "There are no other bots to ask.");
-    const chatId = await startChat(host, relay, target, { prompt: askPrompt(bot.name, message), title: `${bot.name}: ${foldText(message, 60)}`, labels: { [ASKED_BY_LABEL]: bot.id } });
-    if (!wait) return `Asked ${target.name} in chat ${chatId}. Use check_chat with that id for the answer.`;
     const paseo = host.requirePaseo();
+    const chatId = await sendOrStart({ host, relay, paseo, from: { bot, agentId: caller.agentId }, target, message });
+    if (!wait) return `Asked ${target.name} in chat ${chatId}. Use check_chat with that id for the answer.`;
     await paseo.agents.ref(chatId).waitForFinish(ASK_WAIT_MS).catch(() => null);
     return describeChat(await readChat(paseo, chatId), target.name, chatId);
   },

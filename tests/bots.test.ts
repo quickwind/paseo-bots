@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildAgentConfig, EMPTY_LIBRARY } from "../shared/bot";
 import { fakeHost, makeBot } from "./helpers";
 
@@ -18,10 +21,18 @@ interface FakeChat {
   pendingPermissions?: unknown[];
 }
 
+const sentInto: { chatId: string; text: string }[] = [];
+
 function fakePaseo(chats: Record<string, FakeChat>) {
   return {
     agents: {
       ref: (id: string) => ({
+        send: async (text: string) => {
+          sentInto.push({ chatId: id, text });
+          const chat = chats[id]!;
+          chat.status = "running";
+          chat.reply = `Answer ${sentInto.length}.`;
+        },
         refresh: async () => {
           const chat = chats[id];
           return chat ? { agent: { id, status: chat.status, labels: chat.labels, title: chat.title ?? null, pendingPermissions: chat.pendingPermissions ?? [], lastError: null } } : null;
@@ -46,6 +57,18 @@ function fakePaseo(chats: Record<string, FakeChat>) {
     },
   } as never;
 }
+
+let home: string;
+beforeEach(async () => {
+  home = await mkdtemp(join(tmpdir(), "paseo-bots-askbot-"));
+  process.env.PASEO_HOME = home;
+  started.length = 0;
+  sentInto.length = 0;
+});
+afterEach(async () => {
+  delete process.env.PASEO_HOME;
+  await rm(home, { recursive: true, force: true });
+});
 
 describe("asking other bots", () => {
   it("frames the request and returns the other bot's answer", async () => {
@@ -106,5 +129,56 @@ describe("asking other bots", () => {
     expect(granted("allow")).toContain("ask_bot");
     expect(granted("ask")).not.toContain("ask_bot");
     expect(granted("ask")).toContain("check_chat");
+  });
+});
+
+describe("asking the same bot again with ask_bot", () => {
+  async function setup() {
+    const { askBot } = await import("../server/tools/bots");
+    const scout = makeBot({ id: "bot-scout", name: "Scout", contactBots: "allow" });
+    const host = fakeHost([scout, makeBot({ id: "bot-inbox", name: "Inbox" })]);
+    const chats: Record<string, FakeChat> = { "caller-chat": { status: "idle", labels: { "paseo-bots.bot": "bot-scout" } }, "chat-new": { status: "running", labels: {}, reply: "First answer." } };
+    host.attach(fakePaseo(chats));
+    const caller = { bot: scout, agentId: "caller-chat", host, relay: null as never };
+    return { askBot, chats, caller };
+  }
+
+  it("puts a follow-up into the chat it already has with that bot, and returns the answer from there", async () => {
+    const { askBot, chats, caller } = await setup();
+    expect(await askBot.run({ bot: "Inbox", message: "How many unread?" }, caller)).toContain("First answer.");
+    expect(started).toHaveLength(1);
+    chats["chat-new"]!.status = "idle";
+    const second = await askBot.run({ bot: "Inbox", message: "And how many urgent?" }, caller);
+    expect(started).toHaveLength(1);
+    expect(sentInto).toHaveLength(1);
+    expect(sentInto[0]!.chatId).toBe("chat-new");
+    expect(sentInto[0]!.text).toContain("And how many urgent?");
+    expect(sentInto[0]!.text).toContain("not from your user");
+    expect(second).toContain("Answer 1.");
+  });
+
+  it("waits for the other bot to finish its last answer before sending the follow-up", async () => {
+    const { askBot, chats, caller } = await setup();
+    await askBot.run({ bot: "Inbox", message: "first" }, caller);
+    chats["chat-new"]!.status = "running";
+    await askBot.run({ bot: "Inbox", message: "second" }, caller);
+    expect(started).toHaveLength(1);
+    expect(sentInto).toHaveLength(1);
+  });
+
+  it("starts its own chat for another asking chat, and after an hour", async () => {
+    const { askBot, chats, caller } = await setup();
+    await askBot.run({ bot: "Inbox", message: "first" }, caller);
+    chats["chat-new"]!.status = "idle";
+    chats["other-chat"] = { status: "idle", labels: { "paseo-bots.bot": "bot-scout" } };
+    await askBot.run({ bot: "Inbox", message: "from another chat" }, { ...caller, agentId: "other-chat" });
+    expect(started).toHaveLength(2);
+
+    const { updateRequests } = await import("../server/ask-store");
+    await updateRequests((requests) => {
+      for (const request of requests) Object.assign(request, { createdAt: new Date(Date.now() - 3 * 3_600_000).toISOString(), startedAt: new Date(Date.now() - 3 * 3_600_000).toISOString(), answeredAt: undefined });
+    });
+    await askBot.run({ bot: "Inbox", message: "much later" }, caller);
+    expect(started).toHaveLength(3);
   });
 });

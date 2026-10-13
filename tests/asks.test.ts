@@ -192,12 +192,11 @@ describe("asking another bot through a file", () => {
   });
 
   it("stops a chat from asking more than five times an hour, so two bots cannot keep each other busy", async () => {
-    const { asks, started, from } = await setup();
+    const { asks, from } = await setup();
     for (let index = 0; index < 5; index++) expect((await asks.request(from, { to: "Scout", message: `q${index}` })).ok).toBe(true);
     const sixth = await asks.request(from, { to: "Scout", message: "q5" });
     expect(sixth.ok).toBe(false);
     expect(sixth.text).toContain("too many");
-    expect(started).toHaveLength(5);
   });
 
   it("sends a follow-up to the same bot into the chat it already has with it, and its answer comes back", async () => {
@@ -220,14 +219,6 @@ describe("asking another bot through a file", () => {
     expect(sent[0]!.text).toContain("One.");
   });
 
-  it("starts a new chat for a follow-up when the first one is still working", async () => {
-    const { asks, status, started, from } = await setup();
-    await asks.request(from, { to: "Scout", message: "first" });
-    status[started[0]!.agentId] = "running";
-    await asks.request(from, { to: "Scout", message: "second" });
-    expect(started).toHaveLength(2);
-  });
-
   it("starts a new chat for a follow-up when the first one is gone", async () => {
     const { asks, gone, started, from } = await setup();
     await asks.request(from, { to: "Scout", message: "first" });
@@ -243,5 +234,86 @@ describe("asking another bot through a file", () => {
     await asks.answered({ agentId: started[0]!.agentId, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "x" });
     await asks.request({ ...from, agentId: "another-chat" }, { to: "Scout", message: "second" });
     expect(started).toHaveLength(2);
+  });
+
+  it("holds a follow-up while the other bot is still on the last question, and sends it when that chat is free", async () => {
+    const { asks, sent, status, started, from } = await setup();
+    await asks.request(from, { to: "Scout", message: "first question" });
+    const chat = started[0]!.agentId;
+    status[chat] = "running";
+    const second = await asks.request(from, { to: "Scout", message: "second question" });
+    expect(second.ok).toBe(true);
+    expect(started).toHaveLength(1);
+    expect(sent.filter((message) => message.agentId === chat)).toEqual([]);
+
+    status[chat] = "idle";
+    await asks.answered({ agentId: chat, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "One." });
+    expect(sent.some((message) => message.agentId === "asker-chat" && message.text.includes("One."))).toBe(true);
+    const intoChat = sent.filter((message) => message.agentId === chat);
+    expect(intoChat).toHaveLength(1);
+    expect(intoChat[0]!.text).toContain("second question");
+    expect(intoChat[0]!.text).toContain("not from your user");
+
+    sent.length = 0;
+    await asks.answered({ agentId: chat, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "Two." });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ agentId: "asker-chat" });
+    expect(sent[0]!.text).toContain("Two.");
+    expect(started).toHaveLength(1);
+  });
+
+  it("sends a held follow-up when the other chat finishes a turn that was not an answer to us", async () => {
+    const { asks, sent, status, started, from } = await setup();
+    await asks.request(from, { to: "Scout", message: "first question" });
+    const chat = started[0]!.agentId;
+    await asks.answered({ agentId: chat, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "One." });
+    status[chat] = "running";
+    await asks.request(from, { to: "Scout", message: "second question" });
+    expect(sent.filter((message) => message.agentId === chat)).toEqual([]);
+    status[chat] = "idle";
+    await asks.answered({ agentId: chat, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "someone chatted here" });
+    expect(sent.filter((message) => message.agentId === chat).map((message) => message.text).join("\n")).toContain("second question");
+  });
+
+  it("starts a new chat when the last question to that bot was over an hour ago", async () => {
+    const { asks, started, from } = await setup();
+    const t0 = Date.now();
+    let now = t0;
+    (asks as unknown as { now: () => number }).now = () => now;
+    await asks.request(from, { to: "Scout", message: "first" });
+    await asks.answered({ agentId: started[0]!.agentId, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "x" });
+    now = t0 + 59 * 60_000;
+    await asks.request(from, { to: "Scout", message: "soon after" });
+    expect(started).toHaveLength(1);
+    now = t0 + 59 * 60_000 + 61 * 60_000;
+    await asks.request(from, { to: "Scout", message: "much later" });
+    expect(started).toHaveLength(2);
+  });
+
+  it("closes a held follow-up that never got its turn, and does not send it afterwards", async () => {
+    const { asks, sent, status, started, from } = await setup();
+    const t0 = Date.now();
+    let now = t0;
+    (asks as unknown as { now: () => number }).now = () => now;
+    await asks.request(from, { to: "Scout", message: "first" });
+    const chat = started[0]!.agentId;
+    status[chat] = "running";
+    await asks.request(from, { to: "Scout", message: "held" });
+    now = t0 + 40 * 60_000;
+    await asks.sweep(now);
+    expect(sent.filter((message) => message.agentId === "asker-chat").map((message) => message.text).join("\n")).toContain("no answer");
+    status[chat] = "idle";
+    sent.length = 0;
+    await asks.answered({ agentId: chat, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "late" });
+    expect(sent.filter((message) => message.text.includes("held"))).toEqual([]);
+  });
+
+  it("does not close a question asked with ask_bot as unanswered: that tool waits for the answer itself", async () => {
+    const { asks, sent } = await setup();
+    const { updateRequests } = await import("../server/ask-store");
+    const old = new Date(Date.now() - 2 * 3_600_000).toISOString();
+    await updateRequests((requests) => void requests.push({ id: "r-tool", fromBot: "chief", fromChat: "asker-chat", toBot: "scout", toName: "Scout", toChat: "some-chat", message: "q", createdAt: old, startedAt: old, status: "running", via: "tool", unsent: [] }));
+    await asks.sweep();
+    expect(sent).toEqual([]);
   });
 });
