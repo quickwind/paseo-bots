@@ -23,7 +23,8 @@ describe("asking another bot through a file", () => {
     const host = fakeHost([chief, scout, ...others]);
     const sent: { agentId: string; text: string }[] = [];
     const status: Record<string, string> = {};
-    host.attach({ agents: { ref: (agentId: string) => ({ refresh: async () => ({ agent: { status: status[agentId] ?? "idle", labels: {} } }), send: async (text: string) => void sent.push({ agentId, text }) }) } } as never);
+    const gone = new Set<string>();
+    host.attach({ agents: { ref: (agentId: string) => ({ refresh: async () => { if (gone.has(agentId)) throw new Error("no such chat"); return { agent: { status: status[agentId] ?? "idle", labels: {} } }; }, send: async (text: string) => void sent.push({ agentId, text }) }) } } as never);
     const asks = new Asks(host, null as never);
     const started: { bot: string; prompt: string; labels: Record<string, string>; agentId: string }[] = [];
     (asks as unknown as { startChat: (...args: unknown[]) => Promise<string> }).startChat = async (_host, _relay, bot, input) => {
@@ -32,7 +33,7 @@ describe("asking another bot through a file", () => {
       return given.agentId;
     };
     const from = { bot: chief, agentId: "asker-chat", labels: {} as Record<string, string> };
-    return { chief, scout, host, asks, sent, status, started, from };
+    return { chief, scout, host, asks, sent, status, gone, started, from };
   }
   const labelsOf = (started: { labels: Record<string, string> }) => started.labels[ASK_REQUEST_LABEL]!;
 
@@ -165,28 +166,29 @@ describe("asking another bot through a file", () => {
     expect(sent).toHaveLength(1);
   });
 
-  it("delivers a waiting answer exactly once even when two deliveries run together, and keeps it if sending fails", async () => {
-    const { asks, sent, status, started, from, host } = await setup();
+  it("delivers a waiting answer exactly once even when two deliveries run together", async () => {
+    const { asks, sent, status, started, from } = await setup();
     await asks.request(from, { to: "Scout", message: "How many?" });
     status["asker-chat"] = "running";
     await asks.answered({ agentId: started[0]!.agentId, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "Three." });
     status["asker-chat"] = "idle";
     await Promise.all([asks.deliver("asker-chat"), asks.deliver("asker-chat")]);
     expect(sent).toHaveLength(1);
+  });
 
-    const second = await setup();
-    await second.asks.request(second.from, { to: "Scout", message: "again" });
-    second.status["asker-chat"] = "running";
-    await second.asks.answered({ agentId: second.started[0]!.agentId, labels: { [ASK_REQUEST_LABEL]: labelsOf(second.started[0]!) }, outcome: { kind: "completed" }, reply: "Four." });
-    second.status["asker-chat"] = "idle";
+  it("keeps an answer that could not be sent, and sends it next time", async () => {
+    const { asks, sent, status, started, from, host } = await setup();
+    await asks.request(from, { to: "Scout", message: "again" });
+    status["asker-chat"] = "running";
+    await asks.answered({ agentId: started[0]!.agentId, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "Four." });
+    status["asker-chat"] = "idle";
     let fail = true;
-    second.host.attach({ agents: { ref: () => ({ refresh: async () => ({ agent: { status: "idle", labels: {} } }), send: async (text: string) => { if (fail) throw new Error("offline"); second.sent.push({ agentId: "asker-chat", text }); } }) } } as never);
-    await second.asks.deliver("asker-chat");
-    expect(second.sent).toEqual([]);
+    host.attach({ agents: { ref: () => ({ refresh: async () => ({ agent: { status: "idle", labels: {} } }), send: async (text: string) => { if (fail) throw new Error("offline"); sent.push({ agentId: "asker-chat", text }); } }) } } as never);
+    await asks.deliver("asker-chat");
+    expect(sent).toEqual([]);
     fail = false;
-    await second.asks.deliver("asker-chat");
-    expect(second.sent).toHaveLength(1);
-    expect(host).toBeTruthy();
+    await asks.deliver("asker-chat");
+    expect(sent).toHaveLength(1);
   });
 
   it("stops a chat from asking more than five times an hour, so two bots cannot keep each other busy", async () => {
@@ -196,5 +198,50 @@ describe("asking another bot through a file", () => {
     expect(sixth.ok).toBe(false);
     expect(sixth.text).toContain("too many");
     expect(started).toHaveLength(5);
+  });
+
+  it("sends a follow-up to the same bot into the chat it already has with it, and its answer comes back", async () => {
+    const { asks, sent, started, from } = await setup();
+    await asks.request(from, { to: "Scout", message: "How many unread?" });
+    const chat = started[0]!.agentId;
+    await asks.answered({ agentId: chat, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "Three." });
+    sent.length = 0;
+    const second = await asks.request(from, { to: "Scout", message: "And how many are urgent?" });
+    expect(second.ok).toBe(true);
+    expect(started).toHaveLength(1);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.agentId).toBe(chat);
+    expect(sent[0]!.text).toContain("not from your user");
+    expect(sent[0]!.text).toContain("And how many are urgent?");
+    sent.length = 0;
+    await asks.answered({ agentId: chat, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "One." });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.agentId).toBe("asker-chat");
+    expect(sent[0]!.text).toContain("One.");
+  });
+
+  it("starts a new chat for a follow-up when the first one is still working", async () => {
+    const { asks, status, started, from } = await setup();
+    await asks.request(from, { to: "Scout", message: "first" });
+    status[started[0]!.agentId] = "running";
+    await asks.request(from, { to: "Scout", message: "second" });
+    expect(started).toHaveLength(2);
+  });
+
+  it("starts a new chat for a follow-up when the first one is gone", async () => {
+    const { asks, gone, started, from } = await setup();
+    await asks.request(from, { to: "Scout", message: "first" });
+    await asks.answered({ agentId: started[0]!.agentId, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "x" });
+    gone.add(started[0]!.agentId);
+    await asks.request(from, { to: "Scout", message: "second" });
+    expect(started).toHaveLength(2);
+  });
+
+  it("starts its own chat for another asking chat, which has not talked to that bot yet", async () => {
+    const { asks, started, from } = await setup();
+    await asks.request(from, { to: "Scout", message: "first" });
+    await asks.answered({ agentId: started[0]!.agentId, labels: { [ASK_REQUEST_LABEL]: labelsOf(started[0]!) }, outcome: { kind: "completed" }, reply: "x" });
+    await asks.request({ ...from, agentId: "another-chat" }, { to: "Scout", message: "second" });
+    expect(started).toHaveLength(2);
   });
 });

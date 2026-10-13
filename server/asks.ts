@@ -119,8 +119,10 @@ export class Asks {
     if (!request || request.status !== "waiting") return;
     const [target, asker] = [await this.host.bot(request.toBot), await this.host.bot(request.fromBot)];
     if (!target || target.archived || !asker) return this.close(requestId, `[Bots] Your request ${requestId} could not be sent: that bot is gone.`);
+    // A follow-up to a bot this chat already asked goes into the chat it already has with it.
+    const existing = await this.reusableChat(request);
+    const agentId = existing ?? newUuid();
     // Recorded before the chat exists: a chat that ends its turn at once reports it before startChat returns, and that answer must find the request.
-    const agentId = newUuid();
     const started = await this.update((requests) => {
       const found = requests.find((entry) => entry.id === requestId);
       if (!found || found.status !== "waiting") return false;
@@ -129,15 +131,40 @@ export class Asks {
     });
     if (!started) return;
     try {
+      if (existing) {
+        try {
+          await this.host.requirePaseo().agents.ref(existing).send(askPrompt(asker.name, request.message), { messageId: newUuid() } as never);
+          return;
+        } catch {
+          // The chat cannot take it after all: start a new one.
+          await this.update((requests) => {
+            const found = requests.find((entry) => entry.id === requestId);
+            if (found) found.toChat = null;
+          });
+        }
+      }
+      const fresh = existing ? newUuid() : agentId;
+      if (existing) await this.update((requests) => void Object.assign(requests.find((entry) => entry.id === requestId) ?? {}, { toChat: fresh }));
       await this.startChat(this.host, this.relay, target, {
         prompt: askPrompt(asker.name, request.message),
         title: `${asker.name}: ${foldText(request.message, 60)}`,
         labels: { [ASKED_BY_LABEL]: asker.id, [ASK_REQUEST_LABEL]: request.id },
-        agentId,
+        agentId: fresh,
       });
     } catch (error) {
       await this.close(requestId, `[Bots] Your request ${requestId} could not be sent to ${request.toName}: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /** The chat an earlier question from the same chat to the same bot started, if it is still there and not busy. */
+  private async reusableChat(request: AskRequest): Promise<string | null> {
+    const earlier = (await this.load())
+      .filter((entry) => entry.id !== request.id && entry.fromChat === request.fromChat && entry.toBot === request.toBot && entry.toChat && (entry.status === "answered" || entry.status === "closed"))
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+    if (!earlier?.toChat) return null;
+    const agent = (await this.host.paseo?.agents.ref(earlier.toChat).refresh().catch(() => null))?.agent;
+    if (!agent || (agent as { archivedAt?: string | null }).archivedAt) return null;
+    return agent.status === "running" || agent.status === "initializing" ? null : earlier.toChat;
   }
 
   /** The other bot's chat finished a turn: its reply goes to the asking chat. */
@@ -145,8 +172,9 @@ export class Asks {
     const id = input.labels[ASK_REQUEST_LABEL];
     if (!id) return;
     const message = await this.update((requests) => {
-      const found = requests.find((entry) => entry.id === id);
-      if (!found || found.status !== "running" || found.toChat !== input.agentId) return null;
+      // By chat, not by the id on it: a follow-up goes into a chat that carries the first question's id.
+      const found = requests.find((entry) => entry.toChat === input.agentId && entry.status === "running");
+      if (!found) return null;
       found.status = "answered";
       const text =
         input.outcome.kind === "completed"

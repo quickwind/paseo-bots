@@ -25,6 +25,7 @@ import type { ChatState } from "../useChat";
 import { PermissionCard } from "./Permission";
 import { FindBar } from "./FindBar";
 import { buildRows, findRows, layoutStream, retainLayout, type StreamEntry, type StreamLayout, type StreamLayoutItem, type StreamRow } from "./stream/model";
+import { nextFollow } from "./follow";
 import { CompletedTurnFooter, RowContent, RowFrame, WorkingIndicator, type RowContext } from "./stream/rows";
 import { SecondaryButton } from "./stream/ui";
 import { tooltip } from "../ui/Tooltip";
@@ -83,6 +84,10 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
 
   const [nearBottom, setNearBottom] = useState(true);
   const nearBottomRef = useRef(true);
+  /** Whether new messages scroll into view: on until the reader scrolls up (see follow.ts). */
+  const followRef = useRef(true);
+  /** Until when a scroll event is the app's own (scrolling to the end), not the reader's. */
+  const programmaticUntil = useRef(0);
   const metrics = useRef({ offset: 0, content: 0, viewport: 0 });
   /** Set while an older page loads on web, so content added above doesn't move the reader. */
   const olderAnchor = useRef(false);
@@ -93,11 +98,23 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
     setNearBottom((current) => (current === value ? current : value));
   };
 
+  /** Scrolls to the end, and once more a frame later: a windowed list measures rows it had not drawn yet and grows. */
+  const scrollEnd = (animated: boolean) => {
+    programmaticUntil.current = Date.now() + 400;
+    list.current?.scrollToEnd({ animated });
+    if (!animated) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: false }));
+  };
+
   const scrollToBottom = useCallback(
     (animated: boolean) => {
+      followRef.current = true;
       updateNearBottom(true);
       if (inverted) list.current?.scrollToOffset({ offset: 0, animated });
-      else list.current?.scrollToEnd({ animated });
+      else {
+        programmaticUntil.current = Date.now() + 400;
+        list.current?.scrollToEnd({ animated });
+        if (!animated) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: false }));
+      }
     },
     [inverted],
   );
@@ -112,9 +129,23 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
 
   const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const before = metrics.current;
     metrics.current = { offset: contentOffset.y, content: contentSize.height, viewport: layoutMeasurement.height };
     const distance = inverted ? contentOffset.y : contentSize.height - (contentOffset.y + layoutMeasurement.height);
-    updateNearBottom(distance <= (inverted ? NATIVE_NEAR_BOTTOM : WEB_NEAR_BOTTOM));
+    if (inverted) updateNearBottom(distance <= NATIVE_NEAR_BOTTOM);
+    else {
+      followRef.current = nextFollow({
+        follow: followRef.current,
+        distance,
+        offset: contentOffset.y,
+        previousOffset: before.offset,
+        content: contentSize.height,
+        previousContent: before.content,
+        programmatic: Date.now() < programmaticUntil.current,
+        threshold: WEB_NEAR_BOTTOM,
+      });
+      updateNearBottom(followRef.current || distance <= WEB_NEAR_BOTTOM);
+    }
     maybeLoadOlder();
   };
 
@@ -134,12 +165,12 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
       }
       return;
     }
-    if (nearBottomRef.current && height !== previous) list.current?.scrollToEnd({ animated: false });
+    if (followRef.current && height !== previous) scrollEnd(false);
   };
 
   const onLayout = (event: LayoutChangeEvent) => {
     metrics.current.viewport = event.nativeEvent.layout.height;
-    if (!inverted && nearBottomRef.current) list.current?.scrollToEnd({ animated: false });
+    if (!inverted && followRef.current) scrollEnd(false);
   };
 
   useEffect(() => {
