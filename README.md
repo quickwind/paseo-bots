@@ -66,7 +66,7 @@ Bots can do the setting up too. Ask one in a chat, for example "Create a researc
 
 - `setup/` describes the bots and the setup, and the format of the proposal files; it is kept current by the plugin.
 - `proposals/`: the bot writes one JSON file (`changes`, `routine` or `skill`) as the last step of a turn; when the turn ends the plugin checks it and posts the same confirmation card as the tool would. A file that is not accepted is reported back to the bot, with the reason in `proposals/done/`.
-- `outbox/`: the bot writes an `ask` file to ask another bot. With "Ask first" the user approves a card; the other bot answers in a chat of its own and the answer arrives in the asking chat as a message. A chat started by another bot cannot ask further. A question unanswered for 30 minutes is closed.
+- `outbox/`: the bot writes an `ask` file to ask another bot. With "Ask first" the user approves a card; the other bot answers in a chat of its own and the answer arrives in the asking chat as a message. A chat started by another bot cannot ask further. A question unanswered for 30 minutes is closed. A follow-up to the same bot from the same chat goes into the chat that bot already has with it (an hour of quiet starts a new one); if that chat is still on the last question, the follow-up waits its turn. `ask_bot` does the same.
 - `history/`: a transcript of each recent chat, for the bot to search with its own file tools.
 
 A file belongs to the chat whose turn wrote it (the turn's tool calls name the file), so two chats of one bot do not take each other's files. A bot with its own working folder writes into its home folder, which Devin may ask to approve. A plain new chat in a bot's folder counts as that bot's chat.
