@@ -53,7 +53,7 @@ describe("when a chat carries the prompt itself", () => {
   it("does not for a Devin chat in the bot's own folder, where the rules file does it", () => {
     expect(sendsPromptInChat("devin", home, home)).toBe(false);
     expect(sendsPromptInChat("devin", `${home}/`, home)).toBe(false);
-    expect(sendsPromptInChat("devin", "C:\\Users\\a\\.wukong\\Bots\\bot-1", "c:/users/a/.wukong/Bots/bot-1")).toBe(false);
+    expect(sendsPromptInChat("devin", "C:\\Users\\a\\.irix\\Bots\\bot-1", "c:/users/a/.irix/Bots/bot-1")).toBe(false);
   });
   it("does for a Devin chat in the user's own folder, and for every other provider", () => {
     expect(sendsPromptInChat("devin", "/work/project", home)).toBe(true);

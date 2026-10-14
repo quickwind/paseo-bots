@@ -1,7 +1,7 @@
 # AGENTS.md: decisions and working rules for this repo
 
-This is the company's offline edition of `oliexe/paseo-bots` (MIT), a Paseo/Wukong plugin. It is used
-inside Wukong (the company's internal Paseo) with Claude Code and Devin as the only providers.
+This is the company's offline edition of `oliexe/paseo-bots` (MIT), a Paseo/Irix plugin. It is used
+inside Irix (the company's internal Paseo) with Claude Code and Devin as the only providers.
 Read this before changing anything; each decision says why, so you can tell when it no longer holds.
 Longer design documents are in `docs/superpowers/specs/` and plans in `docs/superpowers/plans/`.
 
@@ -10,10 +10,10 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
 - Remotes: `origin` = `quickwind/paseo-bots` (our public fork), `upstream` = `oliexe/paseo-bots`.
 - Branches (each contains the one before): `offline` (offline edition), `memory-maintenance`,
   `file-tools`, `ask-followups` (newest). Not merged into one main line yet.
-- Package: `npm run pack:offline -- --out ~/wukong-dist` makes `paseo-bots-0.2.0-offline.<n>.zip`.
+- Package: `npm run pack:offline -- --out ~/irix-dist` makes `paseo-bots-0.2.0-offline.<n>.zip`.
   Bump the version in `package.json` and `shared/version.ts` for every package, delete the older zip,
-  keep only the latest in `~/wukong-dist`. The Wukong repo's `INSTALL-WINDOWS.md` names the zip; its
-  owner updates it, do not edit the Wukong repo from here.
+  keep only the latest in `~/irix-dist`. The Irix repo's `INSTALL-WINDOWS.md` names the zip; its
+  owner updates it, do not edit the Irix repo from here.
 - Tests: `npx tsc --noEmit && npm test` (includes `tests/offline.test.ts`).
 
 ## Decisions
@@ -34,7 +34,7 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
 
 - Upstream is MIT (Ondrej Rehacek). Keep `LICENSE`, the author field and the notice in every copy.
   MIT has no trademark clause, so renaming is allowed.
-- Decided but not done: rebrand to "Wukong Bots" in the light way (display name, package and zip
+- Decided but not done: rebrand to "Irix Bots" in the light way (display name, package and zip
   names, README, UI text) and keep the internal plugin id `paseo-bots`, the data folder and the
   `paseo-bots.*` labels, because changing the id loses users' data and needs a migration. Full
   rename only if the plugin must be installed beside the original in the same Paseo.
@@ -124,11 +124,11 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
 - Test with real Devin sparingly: it is a personal free subscription with one model
   (`swe-1-6-slow`); use `devin rules list` and unit tests where they are enough, a few short messages
   otherwise. New bots default to tidy on, which also spends it.
-- Run test instances only with their own `WUKONG_HOME` and their own port (we used 6897). Never touch
-  the main Paseo daemon (6767) or the Wukong trial instance (6899). Stop a daemon only with
-  `wukong daemon stop` under the same `WUKONG_HOME`; never kill by process name. Never read Devin's
+- Run test instances only with their own `IRIX_HOME` and their own port (we used 6897). Never touch
+  the main Paseo daemon (6767) or the Irix trial instance (6899). Stop a daemon only with
+  `irix daemon stop` under the same `IRIX_HOME`; never kill by process name. Never read Devin's
   credentials.
-- Do not edit the Wukong repository from here.
+- Do not edit the Irix repository from here.
 - Test first and watch it fail. Never run `git checkout <file>` to undo an experiment while other work
   in that file is uncommitted (it once discarded real work); commit first.
 - Every change gets a version bump and a new zip; end commit messages with the Co-Authored-By line.
@@ -140,5 +140,5 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
 - Minor, deferred: files with names the plugin rejects are ignored silently; file-name matching is
   case-insensitive; in-memory notice counters are not pruned; hand-opened chats in a bot's folder get
   the bot's saved shell-command approvals.
-- To decide: merge the branches into one line; light rebrand to Wukong Bots; whether Devin bots should
+- To decide: merge the branches into one line; light rebrand to Irix Bots; whether Devin bots should
   have memory tidy off by default; whether to keep the three design documents' company remark public.

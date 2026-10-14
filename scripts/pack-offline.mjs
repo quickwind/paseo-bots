@@ -1,6 +1,6 @@
 // Packs the plugin as a zip of its source files, for installing on a machine with no internet.
 // The daemon compiles the plugin when it starts, so nothing is built here and nothing is downloaded:
-// unzip, then `wukong plugin install <folder>` (or `paseo plugin install <folder>`).
+// unzip, then `irix plugin install <folder>` (or `paseo plugin install <folder>`).
 //
 // Usage: node scripts/pack-offline.mjs [--out <dir>]
 

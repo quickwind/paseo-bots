@@ -272,7 +272,7 @@ too big for that), shared user-level memory (`USER.md`), agent-authored skills, 
 - Existing bots off, new bots on.
 - The save message and the agent's one-line reply being visible in the chat.
 
-## Spike results (2026-10-11, Claude Code on macOS, throwaway Wukong daemon)
+## Spike results (2026-10-11, Claude Code on macOS, throwaway Irix daemon)
 
 1. **Hook can read fresh usage and send.** In `agent.turn_ended`, `agents.ref(id).refresh()` returned
    `status: "idle"` and `lastUsage.contextWindowUsedTokens` / `contextWindowMaxTokens` that had grown

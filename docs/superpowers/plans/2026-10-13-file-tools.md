@@ -17,8 +17,8 @@
 - Nothing is written into a bot's own working folder (`bot.cwd`); all files live under `botDataPath(bot.id)`.
 - Proposals still need the user's click; asking another bot still needs approval unless the bot is "Allowed"; the loop guard (`ASKED_BY_LABEL`) and the tidy exclusion (`TIDY_LABEL`) stay.
 - Limits: 20 files per scan, 256 KB per file, names `^[\w.-]+\.json$`; history: 200 messages per chat, newest 40 chats, 2 MB per bot; ask requests close after 30 minutes.
-- Do not touch the Wukong repository. Real Devin use is limited (personal free subscription, one model): a few short messages, and `devin rules list` where it is enough.
-- Test instances: own `WUKONG_HOME` (`/tmp/wk-files`), port 6897. Never touch 6767 or 6899; stop only with `wukong daemon stop` and your own `WUKONG_HOME`; never `pkill` by name; never read Devin's credentials.
+- Do not touch the Irix repository. Real Devin use is limited (personal free subscription, one model): a few short messages, and `devin rules list` where it is enough.
+- Test instances: own `IRIX_HOME` (`/tmp/irix-files`), port 6897. Never touch 6767 or 6899; stop only with `irix daemon stop` and your own `IRIX_HOME`; never `pkill` by name; never read Devin's credentials.
 - Commit messages end with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
 
 ## Review Focus
@@ -35,12 +35,12 @@
 
 **Files:** none kept; results go into the spec ("Spike results").
 
-- [ ] **Step 1:** Start an isolated instance (`WUKONG_HOME=/tmp/wk-files`, port 6897, plugin installed from this folder), create a bot on Devin with a temporary logging line in the `agent.turn_ended` handler that appends the turn's tool-call items (`name`, `detail`) to `/tmp/files-spike.ndjson` (do not commit it).
+- [ ] **Step 1:** Start an isolated instance (`IRIX_HOME=/tmp/irix-files`, port 6897, plugin installed from this folder), create a bot on Devin with a temporary logging line in the `agent.turn_ended` handler that appends the turn's tool-call items (`name`, `detail`) to `/tmp/files-spike.ndjson` (do not commit it).
 - [ ] **Step 2:** One short Devin message: "Create the file proposals/a1.json containing {} using your file tool." Read the log: expect a `write` or `edit` call with `detail.filePath` (absolute?). Record the exact shape.
 - [ ] **Step 3:** One short Devin message asking for the same with a shell command (`echo {} > proposals/a2.json`). Record whether a `shell` call with `detail.command` appears and whether Devin asks for approval.
 - [ ] **Step 4:** With the bot's working folder set to another folder (`bot.cwd`), one message asking it to write to the bot's home by absolute path. Record whether it asks for approval.
 - [ ] **Step 5:** From the same handler, `agents.ref(id).send("[spike] reply ok")` once while the Devin chat is idle; record whether a new turn starts.
-- [ ] **Step 6:** Revert the logging, stop the instance (`wukong daemon stop` with the same `WUKONG_HOME`), remove `/tmp/wk-files`; add the results to the spec; commit. If step 2 shows no usable `filePath`, stop and revise the attribution design before Task 3.
+- [ ] **Step 6:** Revert the logging, stop the instance (`irix daemon stop` with the same `IRIX_HOME`), remove `/tmp/irix-files`; add the results to the spec; commit. If step 2 shows no usable `filePath`, stop and revise the attribution design before Task 3.
 
 ### Task 1: Tool mode
 
@@ -112,5 +112,5 @@
 
 - [ ] README section "Bot tools without MCP"; mention in the Devin paragraph.
 - [ ] Live with real Devin (a few short messages, isolated instance): the setup interview ends with a changes card; a routine proposal card; one bot asks another and the answer arrives in the asking chat; a search finds a past chat in `history/`. Claude regression: a Claude bot still lists the `bots` tools.
-- [ ] `npx tsc --noEmit && npm test`; bump to `0.2.0-offline.9`; `npm run pack:offline -- --out ~/wukong-dist` replacing offline.8; do not edit the Wukong repo.
+- [ ] `npx tsc --noEmit && npm test`; bump to `0.2.0-offline.9`; `npm run pack:offline -- --out ~/irix-dist` replacing offline.8; do not edit the Irix repo.
 - [ ] Final whole-branch review, one fix pass, update my MEMORY.md, report.

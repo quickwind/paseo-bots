@@ -31,7 +31,7 @@ with the schemas the tools use today.
 ## Scope
 
 In: the five behaviours above, a setting for when to use files, the prompt text for them, and a
-card the plugin can post. Out: changing how Claude works (it keeps MCP), anything in the Wukong
+card the plugin can post. Out: changing how Claude works (it keeps MCP), anything in the Irix
 repository, a bot-to-bot "room".
 
 ## Design
@@ -197,7 +197,7 @@ and no files prompt.
    on Devin.
 2. `history/` (search) and `outbox/` (asking another bot).
 
-## Spike results (2026-10-13, real Devin 3000.11.3 through Wukong, isolated instance)
+## Spike results (2026-10-13, real Devin 3000.11.3 through Irix, isolated instance)
 
 Six Devin turns in total (swe-1-6-slow).
 

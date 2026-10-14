@@ -4,7 +4,7 @@
 
 # paseo-bots, offline edition
 
-Personal bots for [Paseo](https://paseo.sh) and Wukong: give each bot instructions, a model, memory, skills and tools, then chat with it in its own workspace or let it run routines.
+Personal bots for [Paseo](https://paseo.sh) and Irix: give each bot instructions, a model, memory, skills and tools, then chat with it in its own workspace or let it run routines.
 
 This is a fork of [oliexe/paseo-bots](https://github.com/oliexe/paseo-bots) 0.2.0 (MIT, by Ondrej Rehacek) for machines that must not send data to cloud services. **The plugin makes no network connections of its own.** Everything that needed one is gone, and a test keeps it that way.
 
@@ -44,11 +44,11 @@ Everything else is unchanged: bots, memory, routines and webhooks, teams, the sk
 Get the plugin folder onto the machine (the offline package unzips into one), then install it from that folder.
 
 ```bash
-wukong plugin install /path/to/paseo-bots      # Wukong
+irix plugin install /path/to/paseo-bots        # Irix
 paseo plugin install /path/to/paseo-bots       # Paseo
 ```
 
-Turn on **Settings → Plugins → Enable plugins** first. Requires Paseo 0.9.2 or later. Wukong installs plugins from a local folder only, which is what this edition is for.
+Turn on **Settings → Plugins → Enable plugins** first. Requires Paseo 0.9.2 or later. Irix installs plugins from a local folder only, which is what this edition is for.
 
 ## Usage
 

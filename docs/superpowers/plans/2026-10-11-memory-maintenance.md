@@ -87,9 +87,9 @@ In `index.server.ts`, inside `server.on("agent.turn_ended", ...)` before the exi
     }
 ```
 
-- [ ] **Step 2: Install the plugin into the dev Wukong daemon and make a bot chat**
+- [ ] **Step 2: Install the plugin into the dev Irix daemon and make a bot chat**
 
-On the Mac: `wukong plugin install /Volumes/ExternalSSD/workspace/projects/paseo-bots` (Settings > Plugins > Enable plugins first), open Bots, create a Claude bot, send three messages.
+On the Mac: `irix plugin install /Volumes/ExternalSSD/workspace/projects/paseo-bots` (Settings > Plugins > Enable plugins first), open Bots, create a Claude bot, send three messages.
 
 Run: `tail -3 /tmp/bots-spike.ndjson`
 Expected: `status` is `idle`, `lastUsage` has `contextWindowUsedTokens` and `contextWindowMaxTokens` numbers (answers spec questions 1 and 3 for Claude), and `metadataGeneration` is non-null if Paseo's Settings > Metadata generation has an entry (question 2). If `lastUsage` is missing right after the turn ends, wait 2 s in the handler (`await new Promise((r) => setTimeout(r, 2000))`) and log again.
@@ -1780,7 +1780,7 @@ In `client/panel/KnowledgeSections.tsx`, import `MaintenanceSection` and render 
 Run: `npx vitest run tests/maintenance.test.ts && npx tsc --noEmit && npm test`
 Expected: PASS.
 
-Manual (on the Mac): reinstall the plugin in the dev Wukong daemon (`wukong plugin install <folder>`), open a bot's Memory page. Expected: a Maintenance card with the two switches; turning tidy on shows the interval, model and status rows; **Tidy now** starts a "Memory tidy" chat, which archives itself after a clean run; **Changes** shows the diff.
+Manual (on the Mac): reinstall the plugin in the dev Irix daemon (`irix plugin install <folder>`), open a bot's Memory page. Expected: a Maintenance card with the two switches; turning tidy on shows the interval, model and status rows; **Tidy now** starts a "Memory tidy" chat, which archives itself after a clean run; **Changes** shows the diff.
 
 - [ ] **Step 5: Commit**
 
@@ -1797,7 +1797,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `README.md`, `package.json`, `shared/version.ts`
-- Modify: `/Volumes/ExternalSSD/workspace/projects/Paseo/wukong/INSTALL-WINDOWS.md` (file name only)
+- Modify: `/Volumes/ExternalSSD/workspace/projects/Paseo/irix/INSTALL-WINDOWS.md` (file name only)
 - Test: `tests/offline.test.ts` (run only)
 
 - [ ] **Step 1: Run everything**
@@ -1829,13 +1829,13 @@ Every change shows under **Changes** with undo.
 Run:
 
 ```bash
-sed -i '' 's/0\.2\.0-offline\.3/0.2.0-offline.4/g' package.json shared/version.ts /Volumes/ExternalSSD/workspace/projects/Paseo/wukong/INSTALL-WINDOWS.md
+sed -i '' 's/0\.2\.0-offline\.3/0.2.0-offline.4/g' package.json shared/version.ts /Volumes/ExternalSSD/workspace/projects/Paseo/irix/INSTALL-WINDOWS.md
 npx tsc --noEmit && npm test
-rm ~/wukong-dist/paseo-bots-0.2.0-offline.3.zip* && npm run pack:offline -- --out ~/wukong-dist
-cp /Volumes/ExternalSSD/workspace/projects/Paseo/wukong/INSTALL-WINDOWS.md ~/wukong-dist/
+rm ~/irix-dist/paseo-bots-0.2.0-offline.3.zip* && npm run pack:offline -- --out ~/irix-dist
+cp /Volumes/ExternalSSD/workspace/projects/Paseo/irix/INSTALL-WINDOWS.md ~/irix-dist/
 ```
 
-Expected: `paseo-bots-0.2.0-offline.4.zip` and its `.sha256` in `~/wukong-dist`.
+Expected: `paseo-bots-0.2.0-offline.4.zip` and its `.sha256` in `~/irix-dist`.
 
 - [ ] **Step 5: Commit both repositories**
 
@@ -1844,7 +1844,7 @@ git add -A
 git commit -m "Memory maintenance: docs and offline.4 package
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
-cd /Volumes/ExternalSSD/workspace/projects/Paseo && git add wukong/INSTALL-WINDOWS.md && git commit -m "Wukong: install guide points at Bots offline.4
+cd /Volumes/ExternalSSD/workspace/projects/Paseo && git add irix/INSTALL-WINDOWS.md && git commit -m "Irix: install guide points at Bots offline.4
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ```

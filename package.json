@@ -1,6 +1,6 @@
 {
   "name": "paseo-bots-offline",
-  "version": "0.2.0-offline.11",
+  "version": "0.2.0-offline.12",
   "files": [
     "paseo-plugin.json",
     "index.client.ts",
@@ -28,7 +28,7 @@
     "vitest": "^4.1.11",
     "zod": "^4.4.3"
   },
-  "description": "Personal bots for Paseo and Wukong: instructions, a model, memory, routines, teams, skills and local MCP tools. Offline edition: makes no network connections of its own.",
+  "description": "Personal bots for Paseo and Irix: instructions, a model, memory, routines, teams, skills and local MCP tools. Offline edition: makes no network connections of its own.",
   "license": "MIT",
   "author": "Ondrej Rehacek",
   "keywords": [
