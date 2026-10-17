@@ -138,6 +138,13 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
 
 ## Not verified / open
 
+- CI (`.github/workflows/test.yml`) runs typecheck and tests on Ubuntu and Windows. Check it with
+  `gh api repos/quickwind/paseo-bots/actions/runs` (plain `gh run list` here asks the upstream repo).
+  It only covers the unit tests, not a real Irix or Devin on Windows.
+- Windows, known and not fixed: the MCP probe (`server/mcp-probe.ts`) starts servers through
+  `cmd.exe` (`shell: true`), so an argument with a space or a quote is split; and the prompts give
+  paths like `C:\...\bot\d9/proposals` (mixed separators), which a Devin that runs commands in a
+  Unix-style shell may misread.
 - Windows, and Devin's own behaviour for: a bot with its own working folder writing to its home
   (it asks approval each time), context use reporting, the held follow-up when the other chat is busy.
 - Minor, deferred: a file with a name the plugin rejects is only reported when the chat wrote it; file-name matching is

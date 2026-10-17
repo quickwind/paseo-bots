@@ -63,8 +63,12 @@ async function claim(dir: string, name: string): Promise<{ path: string } | { re
   try {
     await realDir(done);
   } catch {
-    await rm(join(dir, name), { force: true });
-    return { removed: true };
+    // Two scans making the folder at once can make one of them fail (on Windows); that is fine when the folder is there.
+    const usable = await lstat(done).then((info) => info.isDirectory(), () => false);
+    if (!usable) {
+      await rm(join(dir, name), { force: true });
+      return { removed: true };
+    }
   }
   try {
     await rename(join(dir, name), join(done, name));
