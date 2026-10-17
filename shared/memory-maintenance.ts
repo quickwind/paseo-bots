@@ -43,6 +43,14 @@ export const NEW_BOT_MEMORY: BotMemory = {
   saveAt: { ...DEFAULT_BOT_MEMORY.saveAt, enabled: true },
 };
 
+/** Providers whose tidy chats spend the user's own subscription quota: their bots start with tidy off. */
+const QUOTA_PROVIDERS = ["devin"];
+
+/** What a new (or imported) bot on this provider starts with. */
+export function newMemory(provider: string): BotMemory {
+  return QUOTA_PROVIDERS.includes(provider) ? { ...NEW_BOT_MEMORY, tidy: { ...NEW_BOT_MEMORY.tidy, enabled: false } } : NEW_BOT_MEMORY;
+}
+
 export function contextPercent(usage: { contextWindowUsedTokens?: number | null; contextWindowMaxTokens?: number | null } | null | undefined): number | null {
   const used = usage?.contextWindowUsedTokens;
   const max = usage?.contextWindowMaxTokens;

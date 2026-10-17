@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BotSchema } from "../shared/bot";
-import { DEFAULT_BOT_MEMORY, NEW_BOT_MEMORY } from "../shared/memory-maintenance";
+import { DEFAULT_BOT_MEMORY, NEW_BOT_MEMORY, newMemory } from "../shared/memory-maintenance";
 import { newBot } from "../shared/templates";
 import { makeBot } from "./helpers";
 
@@ -21,6 +21,15 @@ describe("bot memory settings", () => {
     expect(newBot("claude").memory).toEqual(NEW_BOT_MEMORY);
     expect(NEW_BOT_MEMORY.tidy).toMatchObject({ enabled: true, everyMinutes: 240, source: "public" });
     expect(NEW_BOT_MEMORY.saveAt).toMatchObject({ enabled: true, percent: 70 });
+  });
+
+  it("starts new Devin bots with tidy off, as it spends the user's Devin quota, and keeps the rest", () => {
+    const devin = newBot("devin").memory;
+    expect(devin.tidy).toMatchObject({ enabled: false, everyMinutes: 240, source: "public" });
+    expect(devin.saveAt).toEqual(NEW_BOT_MEMORY.saveAt);
+    expect(newBot("claude").memory.tidy.enabled).toBe(true);
+    expect(newMemory("devin")).toEqual(devin);
+    expect(newMemory("codex")).toEqual(NEW_BOT_MEMORY);
   });
 
   it("keeps the values in range", () => {

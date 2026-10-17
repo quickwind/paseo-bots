@@ -146,6 +146,24 @@ describe("scanning a bot's proposals folder", () => {
     expect(result.unclaimed).toEqual(["skill-old.json"]);
   });
 
+  it("reports a file whose name is not accepted when this turn wrote it, and moves it to done/", async () => {
+    const { dir, host } = await setup();
+    await writeFile(join(dir, "my proposal.json"), "{}");
+    await writeFile(join(dir, "notes.txt"), "x");
+    await writeFile(join(dir, "other name.json"), "{}");
+    const { done } = await scan(host, ["Wrote ./proposals/my proposal.json", "Wrote ./proposals/notes.txt"]);
+    expect(done.map((result) => result.name).sort()).toEqual(["my proposal.json", "notes.txt"]);
+    for (const result of done) {
+      expect(result).toMatchObject({ kind: null, ok: false, proposalId: null });
+      expect(result.quiet).toBeUndefined();
+      expect(result.text).toContain("letters, digits");
+      expect(result.text).toContain(".json");
+    }
+    // The file another turn wrote is left alone, and the reported ones are out of the way.
+    expect((await readdir(dir)).sort()).toEqual(["done", "other name.json"]);
+    expect(await readFile(join(dir, "done", "my proposal.json.result.txt"), "utf8")).toContain("letters, digits");
+  });
+
   it("ignores names it does not accept, files over the size limit, and takes at most twenty", async () => {
     const { dir, host } = await setup();
     await writeFile(join(dir, "notes.txt"), "x");

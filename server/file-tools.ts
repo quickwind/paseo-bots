@@ -22,6 +22,7 @@ import type { BotTool } from "./tools/mcp";
 const TOOLS: Partial<Record<ToolFileKind, BotTool>> = { changes: proposeChanges, routine: proposeRoutine, skill: proposeSkill };
 const AskFile = z.object({ to: z.string().min(1).max(100), message: z.string().min(1).max(20_000) });
 const KEEP_DONE = 100;
+const BAD_NAME = "Not accepted: the file name may only have letters, digits, _, . and -, and must end in .json.";
 
 export interface ScanInput {
   host: BotsHost;
@@ -97,7 +98,8 @@ export async function scanToolFiles(input: ScanInput): Promise<{ done: ScanResul
   const now = input.now ?? Date.now();
   // A link in place of the folder is removed, never followed.
   await realDir(dir).catch(() => {});
-  const names = (await readdir(dir).catch(() => [] as string[])).filter((name) => FILE_NAME.test(name)).sort();
+  const all = (await readdir(dir).catch(() => [] as string[])).sort();
+  const names = all.filter((name) => FILE_NAME.test(name));
   const done: ScanResult[] = [];
   const unclaimed: string[] = [];
   for (const name of names) {
@@ -110,6 +112,15 @@ export async function scanToolFiles(input: ScanInput): Promise<{ done: ScanResul
     if (done.length >= MAX_FILES_PER_SCAN) break;
     const result = await handleFile(input, dir, name, info.size);
     if (result) done.push(result);
+  }
+  // A file this turn wrote under a name the plugin does not read would otherwise sit there unnoticed, and the bot would think it was sent.
+  for (const name of all.filter((entry) => !FILE_NAME.test(entry) && entry !== DONE_DIR)) {
+    if (done.length >= MAX_FILES_PER_SCAN) break;
+    if (!fileBelongsToTurn(name, input.written) || !(await lstat(join(dir, name)).catch(() => null))?.isFile()) continue;
+    const claimed = await claim(dir, name);
+    if (!claimed) continue;
+    if ("path" in claimed) await conclude(dir, name, BAD_NAME);
+    done.push({ name, kind: null, ok: false, text: BAD_NAME, proposalId: null });
   }
   return { done, unclaimed };
 }

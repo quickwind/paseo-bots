@@ -1,5 +1,5 @@
 import { lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { NEW_BOT_MEMORY } from "../shared/memory-maintenance";
+import { newMemory } from "../shared/memory-maintenance";
 import { dirname, join, relative, sep } from "node:path";
 import { z } from "zod";
 import { BotMcpServerSchema, BotSchema, botMcpServers, botSkills, newBotId, newRoutineId, TeamFileTeamSchema, type Bot, type BotGroup, type BotMcpServer, type Library, type TeamFileTeam } from "../shared/bot";
@@ -176,8 +176,8 @@ export async function importBot({ botId, json }: { botId: string; json: string }
     voice: { name: null, readReplies: false },
     // Contact with other bots starts at asking, as on a new bot.
     contactBots: "ask",
-    // Memory upkeep starts on, as on a new bot.
-    memory: NEW_BOT_MEMORY,
+    // Memory upkeep starts as on a new bot of this provider.
+    memory: newMemory(parsed.bot.provider),
     routines: parsed.bot.routines.map((routine) => ({ ...routine, id: newRoutineId(), enabled: false, resultsChatId: null, createdAt: now })),
     pinned: false,
     archived: false,

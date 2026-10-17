@@ -96,7 +96,7 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
 - Files: `MEMORY.md` (the first 200 lines or 24 KB go into the prompt), `memory/<topic>.md`,
   `memory/log/<day>.md`, `memory/inbox.md`. Every edit is journaled with Undo; the journal lives
   outside the bot's folder.
-- Two upkeep jobs (settings per bot: off for old bots, on for new ones; imported bots start on):
+- Two upkeep jobs (settings per bot: off for old bots, on for new ones; imported bots start as new ones; new and imported Devin bots start with tidy off, because it spends the user's Devin quota, and can switch it on):
   - Save: when a chat's context use passes a threshold (default 70%) the chat is asked once, in the
     chat, to append notes to `memory/inbox.md`. Only for providers that report context use.
   - Tidy: a normal "Memory tidy" chat on an interval (default 4 hours, never fixed times because
@@ -140,9 +140,8 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
 
 - Windows, and Devin's own behaviour for: a bot with its own working folder writing to its home
   (it asks approval each time), context use reporting, the held follow-up when the other chat is busy.
-- Minor, deferred: files with names the plugin rejects are ignored silently; file-name matching is
+- Minor, deferred: a file with a name the plugin rejects is only reported when the chat wrote it; file-name matching is
   case-insensitive; in-memory notice counters are not pruned; hand-opened chats in a bot's folder get
   the bot's saved shell-command approvals.
-- Decided, to do: Devin bots get memory tidy off by default and tidy prefers Paseo's "Metadata generation"
-  model; same-team asks without approval as a switch (default off); a leader gets a higher ask limit.
+- Decided, to do: same-team asks without approval as a switch (default off); a leader gets a higher ask limit.
 - To decide: whether to keep the three design documents' company remark public.

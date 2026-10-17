@@ -82,7 +82,7 @@ In the bot's settings, **Memory** shows `MEMORY.md` and its topic files, which y
 **Maintenance.** Under **Memory > Maintenance** two switches keep memory useful as it grows (on for new bots, off for existing ones):
 
 - **Save notes when a chat fills up.** When a chat passes the chosen share of its context window, the app asks it, once, to write what is worth keeping to `memory/inbox.md`. You see that message and a one-line reply in the chat. A provider that does not report context use is never asked.
-- **Tidy memory automatically.** On an interval (it also runs after a laptop wakes), the app starts a "Memory tidy" chat that moves what is durable from the inbox and the daily log into `MEMORY.md`, merges duplicates, drops what is out of date and empties the inbox. It skips when there is nothing new, waits while you are chatting with the bot, runs at most six times a day, and backs off for a day if memory stays over budget. **Tidy now** runs it at once. The model is Paseo's Metadata generation setting by default, or the bot's own.
+- **Tidy memory automatically.** On an interval (it also runs after a laptop wakes), the app starts a "Memory tidy" chat that moves what is durable from the inbox and the daily log into `MEMORY.md`, merges duplicates, drops what is out of date and empties the inbox. It skips when there is nothing new, waits while you are chatting with the bot, runs at most six times a day, and backs off for a day if memory stays over budget. **Tidy now** runs it at once. The model is Paseo's Metadata generation setting by default, or the bot's own. New Devin bots start with tidy off, because every run spends your Devin quota.
 
 Every change shows under **Changes** with undo.
 
