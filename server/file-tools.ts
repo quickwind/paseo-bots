@@ -1,4 +1,4 @@
-import { lstat, readdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { lstat, open, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import type { Bot } from "../shared/bot";
@@ -53,27 +53,58 @@ function issues(error: z.ZodError): string {
   return error.issues.map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`).join("; ");
 }
 
+const CLAIM_STALE_MS = 60_000;
+
 /**
- * Takes the file for this scan by moving it into done/. The move is atomic, so when two scans race
- * for a file only one gets it. Returns where it is now, or null when someone else got it first (or
- * done/ cannot be used, in which case the file is removed so it is not taken over and over).
+ * Exclusive creation of a marker file: of two scans only one gets it. (Two renames of one file are
+ * not enough: on Windows both can succeed.) A marker a crashed scan left behind is taken over.
+ */
+async function lockFile(marker: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await (await open(marker, "wx")).close();
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      // EPERM, EBUSY and EACCES: Windows says so while the other scan is deleting its marker.
+      if (code !== "EEXIST" && code !== "EPERM" && code !== "EBUSY" && code !== "EACCES") throw error;
+      const age = await stat(marker).then((info) => Date.now() - info.mtimeMs, () => null);
+      if (age === null || age <= CLAIM_STALE_MS) return false;
+      await rm(marker, { force: true });
+    }
+  }
+  return false;
+}
+
+/**
+ * Takes the file for this scan by moving it into done/, holding a marker beside it meanwhile so
+ * that when two scans race for a file only one gets it. Returns where it is now, or null when
+ * someone else got it first (or done/ cannot be used, in which case the file is removed so it is
+ * not taken over and over).
  */
 async function claim(dir: string, name: string): Promise<{ path: string } | { removed: true } | null> {
   const done = join(dir, DONE_DIR);
+  let held = false;
+  const marker = join(done, `${name}.claim`);
   try {
-    await realDir(done);
-  } catch {
-    // Two scans making the folder at once can make one of them fail (on Windows); that is fine when the folder is there.
-    const usable = await lstat(done).then((info) => info.isDirectory(), () => false);
-    if (!usable) {
-      await rm(join(dir, name), { force: true });
-      return { removed: true };
+    try {
+      await realDir(done);
+    } catch {
+      // Two scans making the folder at once can make one of them fail (on Windows); that is fine when the folder is there.
+      if (!(await lstat(done).then((info) => info.isDirectory(), () => false))) throw new Error("done/ cannot be used");
     }
+    held = await lockFile(marker);
+    if (!held) return null;
+  } catch {
+    await rm(join(dir, name), { force: true });
+    return { removed: true };
   }
   try {
     await rename(join(dir, name), join(done, name));
   } catch {
     return null;
+  } finally {
+    if (held) await rm(marker, { force: true });
   }
   return { path: join(done, name) };
 }

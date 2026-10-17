@@ -430,6 +430,28 @@ describe("scanning safely", () => {
     expect(JSON.parse(await readFile(join(pluginDataPath(), "proposals.json"), "utf8")).proposals).toHaveLength(1);
   });
 
+  it("leaves a file alone while another scan holds its claim", async () => {
+    const { dir, host } = await prepare();
+    await writeFile(join(dir, "skill-held.json"), skillBody);
+    await mkdir(join(dir, "done"), { recursive: true });
+    await writeFile(join(dir, "done", "skill-held.json.claim"), "");
+    const { done } = await scanOf(host, ["Wrote ./proposals/skill-held.json"]);
+    expect(done).toEqual([]);
+    expect(await readdir(dir)).toContain("skill-held.json");
+  });
+
+  it("takes over a claim that a crashed scan left behind, and leaves no claim of its own", async () => {
+    const { dir, host } = await prepare();
+    await writeFile(join(dir, "skill-stale.json"), skillBody);
+    await mkdir(join(dir, "done"), { recursive: true });
+    await writeFile(join(dir, "done", "skill-stale.json.claim"), "");
+    const old = new Date(Date.now() - 5 * 60_000);
+    await utimes(join(dir, "done", "skill-stale.json.claim"), old, old);
+    const { done } = await scanOf(host, ["Wrote ./proposals/skill-stale.json"]);
+    expect(done.map((result) => result.ok)).toEqual([true]);
+    expect((await readdir(join(dir, "done"))).filter((name) => name.endsWith(".claim"))).toEqual([]);
+  });
+
   it("never follows a proposals folder that is a link to somewhere else", async () => {
     const { bot, host } = await prepare();
     const elsewhere = join(home, "elsewhere");
