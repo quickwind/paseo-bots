@@ -36,7 +36,7 @@ export async function dropLink(path: string): Promise<void> {
 
 /** Windows will not replace a file while someone has it open (a reader, a scanner); it says one of these for a moment. */
 const BUSY = new Set(["EPERM", "EBUSY", "EACCES"]);
-const RENAME_TRIES = 10;
+const RENAME_TRIES = 20;
 
 /** Writes `text` to `path` through a temporary file and a rename; `mode` keeps a file private (0o600) from the start. */
 export async function writeAtomic(path: string, text: string, mode?: number): Promise<void> {
@@ -50,7 +50,7 @@ export async function writeAtomic(path: string, text: string, mode?: number): Pr
         return;
       } catch (error) {
         if (attempt >= RENAME_TRIES || !BUSY.has((error as NodeJS.ErrnoException).code ?? "")) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 10 * attempt));
+        await new Promise((resolve) => setTimeout(resolve, Math.min(10 * attempt, 50)));
       }
     }
   } catch (error) {

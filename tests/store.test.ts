@@ -27,6 +27,8 @@ describe("the stores of questions and proposals", () => {
         const count = await read();
         drop = Math.max(drop, seen - count);
         seen = Math.max(seen, count);
+        // A pause between reads: a reader that never lets go of the file would keep Windows from ever replacing it.
+        await new Promise((resolve) => setTimeout(resolve, 2));
       }
     })();
     await work();
