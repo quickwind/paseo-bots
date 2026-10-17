@@ -23,6 +23,12 @@ afterEach(async () => {
 
 /** "junction" lets Windows link folders without admin rights; other systems ignore it. */
 const linkFolder = (target: string, path: string) => symlink(target, path, "junction");
+/** A file link can need a privilege on Windows; where it cannot be made the test is skipped, but never silently on CI. */
+async function linkFile(target: string, path: string): Promise<boolean> {
+  const made = await symlink(target, path).then(() => true, () => false);
+  if (!made && process.env.CI) throw new Error("CI could not create a file link, so this test would prove nothing");
+  return made;
+}
 const isLink = async (path: string) => (await lstat(path)).isSymbolicLink();
 
 async function botFolder(botId: string): Promise<string> {
@@ -97,7 +103,7 @@ describe("files behind a link", () => {
     await writeFile(join(outside, "secret.txt"), "TOP SECRET");
     await mkdir(join(folder, "memory"), { recursive: true });
     await writeFile(join(folder, "memory", "real.md"), "real notes");
-    await symlink(join(outside, "secret.txt"), join(folder, "memory", "notes.md")).catch(() => {});
+    if (!(await linkFile(join(outside, "secret.txt"), join(folder, "memory", "notes.md")))) return;
     const { json } = await exportBot({ bot: makeBot({ id: "scout" }), includeMemory: true }, EMPTY_LIBRARY);
     expect(json).toContain("real notes");
     expect(json).not.toContain("TOP SECRET");
@@ -109,8 +115,7 @@ describe("files behind a link", () => {
     const icon = join(botsHomePath(), "icon.svg");
     await writeFile(join(outside, "target.txt"), "mine");
     await rm(icon);
-    await symlink(join(outside, "target.txt"), icon).catch(() => {});
-    if (!(await isLink(icon).catch(() => false))) return; // links need a privilege here
+    if (!(await linkFile(join(outside, "target.txt"), icon))) return;
     await ensureBotsHome();
     expect(await readFile(join(outside, "target.txt"), "utf8")).toBe("mine");
   });
