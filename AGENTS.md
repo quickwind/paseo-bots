@@ -75,7 +75,8 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
   a `.result.txt`.
 - A file belongs to the chat whose last turn's tool calls wrote it (match on the unique file name
   inside the call's file path or shell command; Devin's `filePath` is a title like
-  "Wrote ./proposals/x.json"). The scan claims a file by moving it to `done/` (atomic, one winner).
+  "Wrote ./proposals/x.json"). The scan claims a file by first creating `done/<name>.claim` exclusively, then moving the file to `done/`
+  (one winner; two plain renames of one file can both succeed on Windows, found by CI, so the marker is needed).
   Files nobody accounts for after 10 minutes go to the next chat that ends a turn, for proposals
   only and never while another chat of the bot works; an ask file is never guessed.
 - Confirmations are unchanged: the user clicks a card; the plugin posts it as a plugin timeline item

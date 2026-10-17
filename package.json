@@ -1,6 +1,6 @@
 {
   "name": "bot-crew-offline",
-  "version": "0.2.0-offline.17",
+  "version": "0.2.0-offline.18",
   "files": [
     "paseo-plugin.json",
     "index.client.ts",
