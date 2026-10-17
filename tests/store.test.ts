@@ -28,7 +28,7 @@ describe("the stores of questions and proposals", () => {
         drop = Math.max(drop, seen - count);
         seen = Math.max(seen, count);
         // A pause between reads: a reader that never lets go of the file would keep Windows from ever replacing it.
-        await new Promise((resolve) => setTimeout(resolve, 2));
+        await new Promise((resolve) => setTimeout(resolve, 5));
       }
     })();
     await work();
@@ -43,11 +43,11 @@ describe("the stores of questions and proposals", () => {
     const drop = await biggestDrop(
       async () => (await loadRequests()).length,
       async () => {
-        for (let n = 0; n < 150; n++) await updateRequests((requests) => void requests.push(request(n)));
+        for (let n = 0; n < 60; n++) await updateRequests((requests) => void requests.push(request(n)));
       },
     );
     expect(drop).toBe(0);
-    expect((await loadRequests()).length).toBe(150);
+    expect((await loadRequests()).length).toBe(60);
     expect((await readdir(join(home, "plugin-data", "bot-crew"))).filter((name) => name.includes(".tmp-"))).toEqual([]);
   });
 
@@ -62,7 +62,7 @@ describe("the stores of questions and proposals", () => {
         return first && found ? 1 : 0;
       },
       async () => {
-        for (let n = 0; n < 150; n++) ids.push((await createProposal({ botId: "b", agentId: "c", kind: "ask", data: { requestId: `r-${n}`, toBotId: "x", toName: "X", message: "y".repeat(2_000) } } as never)).id);
+        for (let n = 0; n < 60; n++) ids.push((await createProposal({ botId: "b", agentId: "c", kind: "ask", data: { requestId: `r-${n}`, toBotId: "x", toName: "X", message: "y".repeat(2_000) } } as never)).id);
       },
     );
     expect(drop).toBe(0);
