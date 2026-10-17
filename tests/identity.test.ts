@@ -185,7 +185,8 @@ describe("writing a bot's identity to its folder", () => {
     const { botDataPath } = await import("../server/bot-home");
     await writeIdentity(makeBot({ id: "d9", provider: "devin" }), EMPTY_LIBRARY, { paseo: null, settings: null });
     const devin = await readFile(join(botDataPath("d9"), ".devin", "rules", "bot-identity.md"), "utf8");
-    expect(devin).toContain(join(botDataPath("d9"), "proposals"));
+    // The prompt joins with "/", on Windows too.
+    expect(devin).toContain(`${botDataPath("d9")}/proposals`);
     expect(devin).not.toContain('MCP server "bots"');
     await writeIdentity(makeBot({ id: "c9", provider: "claude" }), EMPTY_LIBRARY, { paseo: null, settings: null });
     const claude = await readFile(join(botDataPath("c9"), ".devin", "rules", "bot-identity.md"), "utf8");

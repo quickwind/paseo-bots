@@ -215,9 +215,23 @@ describe("probeMcpServer", () => {
       if (msg.method === "tools/list" && msg.params.cursor === "p2") console.log(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { tools: [{ name: "add" }] } }));
     });`;
 
+  // Scripts go in files: on Windows the command runs through cmd.exe, which does not keep a quoted multi-line argument whole.
+  let scripts: string;
+  beforeAll(async () => {
+    scripts = await mkdtemp(join(tmpdir(), "bot-crew-probe-"));
+  });
+  afterAll(async () => {
+    await rm(scripts, { recursive: true, force: true });
+  });
+  const script = async (name: string, text: string) => {
+    const path = join(scripts, name);
+    await writeFile(path, text);
+    return path;
+  };
+
   it("lists a stdio server's tools across pages", async () => {
     const { probeMcpServer } = await import("../server/mcp-probe");
-    const result = await probeMcpServer({ config: { type: "stdio", command: process.execPath, args: ["-e", fakeServer], env: {} } });
+    const result = await probeMcpServer({ config: { type: "stdio", command: process.execPath, args: [await script("server.js", fakeServer)], env: {} } });
     expect(result).toEqual({ ok: true, tools: [{ name: "echo", description: "Echoes" }, { name: "add", description: "" }] });
   });
 
@@ -225,7 +239,7 @@ describe("probeMcpServer", () => {
     const { probeMcpServer } = await import("../server/mcp-probe");
     const missing = await probeMcpServer({ config: { type: "stdio", command: "definitely-not-a-command-xyz", args: [], env: {} } });
     expect(missing.ok).toBe(false);
-    const exits = await probeMcpServer({ config: { type: "stdio", command: process.execPath, args: ["-e", "console.error('bad key ' + process.env.TOKEN); process.exit(3)"], env: { TOKEN: "sk-12345" } } });
+    const exits = await probeMcpServer({ config: { type: "stdio", command: process.execPath, args: [await script("exits.js", "console.error('bad key ' + process.env.TOKEN); process.exit(3)")], env: { TOKEN: "sk-12345" } } });
     expect(exits).toMatchObject({ ok: false });
     expect(!exits.ok && exits.error).toContain("code 3");
     expect(!exits.ok && exits.error).not.toContain("sk-12345");
@@ -268,8 +282,10 @@ describe("MCP servers on this computer", () => {
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
     const home = await mkdtemp(join(tmpdir(), "paseo-bots-home-"));
-    const previous = process.env.HOME;
+    const previous = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+    // homedir() reads USERPROFILE on Windows.
     process.env.HOME = home;
+    process.env.USERPROFILE = home;
     try {
       await writeFile(join(home, ".claude.json"), JSON.stringify({ projects: { "/x": { mcpServers: { local: { command: "a" } } } }, mcpServers: { fetch: { command: "uvx", args: ["mcp-server-fetch"] } } }));
       await mkdir(join(home, ".cursor"));
@@ -279,7 +295,10 @@ describe("MCP servers on this computer", () => {
       expect(sources.map((source) => [source.label, source.count])).toEqual([["Claude Code", 1]]);
       expect(parseMcpJson(sources[0]!.json).map((server) => server.name)).toEqual(["fetch"]);
     } finally {
-      process.env.HOME = previous;
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
       await rm(home, { recursive: true, force: true });
     }
   });
