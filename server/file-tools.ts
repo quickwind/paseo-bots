@@ -22,6 +22,7 @@ import type { BotTool } from "./tools/mcp";
 const TOOLS: Partial<Record<ToolFileKind, BotTool>> = { changes: proposeChanges, routine: proposeRoutine, skill: proposeSkill };
 const AskFile = z.object({ to: z.string().min(1).max(100), message: z.string().min(1).max(20_000) });
 const KEEP_DONE = 100;
+const NOT_A_FILE = "Not accepted: that is not a plain file (a link or a folder), so it was removed. Write the proposal as an ordinary file.";
 const BAD_NAME = "Not accepted: the file name may only have letters, digits, _, . and -, and must end in .json.";
 
 export interface ScanInput {
@@ -69,8 +70,10 @@ async function lockFile(marker: string): Promise<boolean> {
       // EPERM, EBUSY and EACCES: Windows says so while the other scan is deleting its marker.
       if (code !== "EEXIST" && code !== "EPERM" && code !== "EBUSY" && code !== "EACCES") throw error;
       const age = await stat(marker).then((info) => Date.now() - info.mtimeMs, () => null);
-      if (age === null || age <= CLAIM_STALE_MS) return false;
-      await rm(marker, { force: true });
+      if (age !== null && age <= CLAIM_STALE_MS) return false;
+      if (age !== null) await rm(marker, { force: true });
+      // No marker, and still refused: not another scan's doing (a folder the plugin may not write to), so say so.
+      else if (attempt === 1 && code !== "EEXIST") throw error;
     }
   }
   return false;
@@ -139,7 +142,14 @@ export async function scanToolFiles(input: ScanInput): Promise<{ done: ScanResul
   const unclaimed: string[] = [];
   for (const name of names) {
     const info = await lstat(join(dir, name)).catch(() => null);
-    if (!info?.isFile()) continue;
+    if (!info?.isFile()) {
+      // A link or a folder in place of a file is never read; the bot that made it is told.
+      if (info && fileBelongsToTurn(name, input.written)) {
+        await rm(join(dir, name), { recursive: true, force: true }).catch(() => {});
+        done.push({ name, kind: null, ok: false, text: NOT_A_FILE, proposalId: null });
+      }
+      continue;
+    }
     if (!fileBelongsToTurn(name, input.written)) {
       if (now - info.mtimeMs > UNCLAIMED_AFTER_MS) unclaimed.push(name);
       continue;
@@ -182,6 +192,10 @@ async function handleFile(input: ScanInput, dir: string, name: string, size: num
   };
   if ("removed" in claimed) return fail(null, "The file was removed: the done/ folder next to it could not be used. Write it again.");
   if (size > MAX_FILE_BYTES) return fail(null, `The file is too large (over ${MAX_FILE_BYTES / 1024} KB). Write a smaller one.`);
+  // It could have been swapped for a link (or a bigger file) after it was looked at, before it was moved.
+  const moved = await lstat(claimed.path).catch(() => null);
+  if (!moved?.isFile()) return fail(null, NOT_A_FILE);
+  if (moved.size > MAX_FILE_BYTES) return fail(null, `The file is too large (over ${MAX_FILE_BYTES / 1024} KB). Write a smaller one.`);
   const outbox = input.folder === OUTBOX_DIR;
   const parsed = parseToolFile(await readFile(claimed.path, "utf8").catch(() => ""), outbox ? ["ask"] : undefined);
   if ("error" in parsed) return fail(null, parsed.error);
@@ -189,7 +203,12 @@ async function handleFile(input: ScanInput, dir: string, name: string, size: num
     const question = AskFile.safeParse(parsed.args);
     if (!question.success) return fail("ask", `Not accepted: ${issues(question.error)}`);
     if (!input.asks) return fail("ask", "Not accepted: asking other bots is not available here.");
-    const result = await input.asks.request({ bot: input.bot, agentId: input.agentId, labels: input.labels ?? {} }, question.data);
+    let result: Awaited<ReturnType<Asks["request"]>>;
+    try {
+      result = await input.asks.request({ bot: input.bot, agentId: input.agentId, labels: input.labels ?? {} }, question.data);
+    } catch (error) {
+      return fail("ask", `Not accepted: ${error instanceof Error ? error.message : String(error)}`);
+    }
     if (!result.ok) return fail("ask", result.text);
     await conclude(dir, name, result.text);
     return { name, kind: "ask", ok: true, text: result.text, proposalId: result.proposalId };
@@ -251,6 +270,7 @@ export class FileTools {
         if (result.proposalId) await this.card(agentId, result.proposalId);
       } else if (!result.quiet) {
         const count = (this.failures.get(agentId) ?? 0) + 1;
+        if (this.failures.size > 500) this.failures.clear();
         this.failures.set(agentId, count);
         if (count <= MAX_NOTICES_IN_A_ROW) this.queue(agentId, `Your file ${result.name} was not accepted: ${result.text.replace(/^Not accepted:\s*/, "")} Fix it and write it again as a new file.`);
       }
@@ -285,6 +305,7 @@ export class FileTools {
   }
 
   private queue(agentId: string, text: string): void {
+    if (this.pending.size > 500) this.pending.clear();
     this.pending.set(agentId, [...(this.pending.get(agentId) ?? []), text]);
   }
 

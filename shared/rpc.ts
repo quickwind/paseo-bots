@@ -6,7 +6,7 @@ import { ProposalSchema } from "./proposals";
 const BotId = z.string().regex(/^[a-z0-9-]+$/);
 /** "MEMORY.md" or a topic file such as "projects.md" (stored under memory/). */
 const MemoryFileName = z.string().regex(/^[A-Za-z0-9 ._-]+\.md$/);
-const SkillName = z.string().regex(/^[A-Za-z0-9._-]+$/);
+const SkillName = z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9._-]*$/);
 
 /**
  * Creates (if needed) the Bots project folder and this bot's folder inside it.

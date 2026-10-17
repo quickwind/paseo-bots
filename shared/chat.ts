@@ -1,5 +1,6 @@
 import type { WireAttachment } from "./attachments";
 import { BOT_LABEL, buildAgentConfig, defaultModelId, type Bot, type Library, type PluginServers } from "./bot";
+import { ASK_PREAPPROVED_LABEL, askPreapproval } from "./groups";
 
 /** Label on chats started by a routine, carrying the routine id. */
 export const ROUTINE_LABEL = "bot-crew.routine";
@@ -134,10 +135,13 @@ export async function startBotChat(api: ChatApi, input: StartChatInput): Promise
   const { bot } = input;
   const model = bot.model ?? (await resolveDefaultModel(api, bot.provider));
   const workspace = await ensureBotWorkspace(api, bot, input.placement);
+  // ask_bot runs without a prompt in this chat when the bot or its team allows it. The chat remembers why, so turning
+  // the setting off later still stops it (the tool permission itself is fixed when the chat starts).
+  const preapproved = input.plugin?.tools ? askPreapproval(bot, !!input.plugin.askFreely) : null;
   const agent = await workspace.agents.create({
     ...(input.agentId ? { agentId: input.agentId } : {}),
     config: buildAgentConfig(bot, input.library, model, input.systemPrompt, input.plugin),
-    labels: { [BOT_LABEL]: bot.id, ...input.labels },
+    labels: { [BOT_LABEL]: bot.id, ...(preapproved ? { [ASK_PREAPPROVED_LABEL]: preapproved } : {}), ...input.labels },
     prompt: input.prompt,
     ...(input.title ? { title: input.title.slice(0, MAX_TITLE_CHARS) } : {}),
     ...(input.images?.length ? { images: input.images } : {}),

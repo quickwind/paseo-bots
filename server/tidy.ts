@@ -277,7 +277,7 @@ export class MemoryTidy {
       });
       const forced = record.last.reason === "over-budget";
       if (forced && (failed || check.stillOver)) record.blockedUntil = new Date(Date.now() + FORCE_BACKOFF_MS).toISOString();
-      else if (!failed) record.blockedUntil = null;
+      else if (!failed && !check.stillOver) record.blockedUntil = null;
       return { clean: !failed && check.flags.length === 0 };
     });
     if (result?.clean) await this.host.paseo?.agents.ref(agentId).archive().catch(() => null);

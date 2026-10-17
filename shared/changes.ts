@@ -679,7 +679,7 @@ export function describeChange(change: Change): string {
     case "set_skill":
       return `**Skill ${change.skill}**: ${change.enabled ? "on" : "off"} for every bot that uses it`;
     case "add_mcp_server":
-      return `**New MCP server ${change.name}**: ${change.command ? `runs ${preview([change.command, ...(change.args ?? [])].join(" "))}` : `connects to ${change.url}`}${mcpExtras(change)}; off until it passes a test in Skills & Tools`;
+      return `**New MCP server ${change.name}**: ${change.command ? `runs ${preview([change.command, ...(change.args ?? [])].join(" "))}` : `connects to ${change.url}`}${mcpExtras(change)}; ${change.command ? "off until it passes a test in Skills & Tools" : "off until you turn it on in Skills & Tools"}`;
     case "set_mcp_server":
       return `**MCP server ${change.server}**: ${change.enabled ? "on" : "off"}`;
     case "remove_mcp_server":
@@ -705,6 +705,11 @@ export function changeWarnings(changes: readonly Change[]): string[] {
     if (change.type === "update_bot" && change.allow_tools?.length) warnings.push(`${who} may use ${list(change.allow_tools)} without asking you.`);
     if ((change.type === "create_bot" || change.type === "update_bot") && change.working_folder) warnings.push(`${who} works in ${change.working_folder}.`);
     if (change.type === "add_mcp_server" && change.command) warnings.push(`The ${change.name} MCP server runs a program on this computer once it's on.`);
+    if (change.type === "set_mcp_server" && change.enabled) {
+      const added = changes.find((other): other is Extract<Change, { type: "add_mcp_server" }> => other.type === "add_mcp_server" && other.url !== undefined && other.name.toLowerCase() === change.server.trim().toLowerCase());
+      if (added) warnings.push(`The ${added.name} MCP server connects to ${added.url} and is switched on straight away, without a test.`);
+    }
+    if (change.type === "set_defaults" && change.contact_bots === "allow") warnings.push("New bots start by contacting other bots without asking you.");
     if (change.type === "delete_bot") warnings.push(`Deletes the bot ${change.bot}.`);
     if ((change.type === "create_team" || change.type === "update_team") && change.ask_freely) warnings.push(`Members of ${change.type === "create_team" ? oneLine(change.name) : change.team} may ask each other without asking you.`);
     if (change.type === "delete_team") warnings.push(`Deletes the team ${change.team}.`);

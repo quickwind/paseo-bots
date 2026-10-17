@@ -264,7 +264,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
     const outgoing = (agentId && host.isLocal ? expandLearn(typed) : null) ?? (typed || "See the attached files.");
     const messageId = newMessageId();
     const wire = toWire(message.attachments);
-    rememberSent(messageId, outgoing, message.attachments);
+    rememberSent(messageId, outgoing, message.attachments, bot.id);
     if (agentId && host.api) {
       // `activeTurnBehavior` is forwarded to the daemon as-is (send_agent_message_request).
       const options = {

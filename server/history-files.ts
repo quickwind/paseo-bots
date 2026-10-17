@@ -1,4 +1,4 @@
-import { readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { redactSecrets } from "../shared/activity";
@@ -61,14 +61,16 @@ export async function writeHistory(host: BotsHost, bot: Bot, agentId: string): P
 
 /** Keeps the newest MAX_CHATS files within MAX_BYTES; the file just written always stays. */
 async function prune(dir: string, keep: string): Promise<void> {
-  const files = await Promise.all(
+  // Only plain files count: a folder or a link the bot made with a transcript's name is left alone and cannot stop the pruning.
+  const found = await Promise.all(
     (await readdir(dir))
       .filter((name) => name.endsWith(".md"))
       .map(async (name) => {
-        const info = await stat(join(dir, name));
-        return { name, at: name === keep ? Infinity : info.mtimeMs, size: info.size };
+        const info = await lstat(join(dir, name)).catch(() => null);
+        return info?.isFile() ? { name, at: name === keep ? Infinity : info.mtimeMs, size: info.size } : null;
       }),
   );
+  const files = found.filter((file): file is { name: string; at: number; size: number } => file !== null);
   files.sort((a, b) => b.at - a.at);
   let total = 0;
   let count = 0;

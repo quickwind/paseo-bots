@@ -266,7 +266,12 @@ function MemorySheet({ colors, botId, name, onChanged, onClose }: { colors: Colo
   const destroy = async () => {
     const confirmed = await confirmDialog({ title: "Delete topic file", message: `Delete ${label}? This cannot be undone.`, confirmLabel: "Delete", destructive: true });
     if (!confirmed) return;
-    await remove({ botId, name });
+    try {
+      await remove({ botId, name });
+    } catch (error) {
+      toast.error(`Couldn't delete it: ${errorText(error)}`);
+      return;
+    }
     onChanged();
     onClose();
   };

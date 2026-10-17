@@ -23,7 +23,8 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
 ### Offline edition
 
 - The plugin makes no network connections of its own. `tests/offline.test.ts` scans the source for
-  network code and must stay green. Removed: Composio connected apps, OpenAI avatar generation,
+  network code (calls, imports of network modules, run-time module names, download tools, runtime dependencies)
+  and must stay green. Removed: Composio connected apps, OpenAI avatar generation,
   GitHub skill import (replaced by a local folder import), remote image URLs (only `data:`), the
   community/inbox/ops templates.
 - Remote MCP servers are the agent's business, not the plugin's: the plugin imports them and hands
@@ -97,7 +98,7 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
   `ask_bot`, which then refuses non-teammates (nothing would have asked the user). The Chief of Staff
   may ask 20 times an hour, others 5; `ask_bot` counts the same way (shared `ask-store.ts` log). A chat started
   with `ask_bot` pre-approved (bot on Allow, or its team's switch on) carries the label `bot-crew.ask-preapproved`
-  ("all" or "team"), and `ask_bot` re-checks that basis on every call, so turning the setting off also stops chats
+  ("all" or "team"; added in `startBotChat`, which the app and the server both use), and `ask_bot` re-checks that basis on every call, so turning the setting off also stops chats
   already open (the tool permission itself is fixed when the chat starts). Several bots can be asked in one turn (one outbox file each, or
   `ask_bot` with `wait: false`); each answer comes as its own message, a slow one closes at 30 minutes
   with a notice, and the lead is told to answer without waiting for the slowest.

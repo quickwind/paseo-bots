@@ -543,6 +543,18 @@ describe("the tidy service", () => {
     expect(started).toHaveLength(1);
   });
 
+  it("keeps the backoff when a manual run leaves memory over budget", async () => {
+    const { tidy, started, folder } = await setup();
+    await writeFile(join(folder, "MEMORY.md"), "line\n".repeat(190));
+    await tidy.tick();
+    await tidy.finished("tb", started[0]!.agentId, { kind: "completed" }, "Tried.");
+    const blocked = (await tidy.status("tb")).blockedUntil;
+    expect(blocked).not.toBeNull();
+    await tidy.runNow("tb");
+    await tidy.finished("tb", started[1]!.agentId, { kind: "completed" }, "Tried again.");
+    expect((await tidy.status("tb")).blockedUntil).toBe(blocked);
+  });
+
   it("does nothing for a bot with tidy off or on another host", async () => {
     const off = await setup({ memory: DEFAULT_BOT_MEMORY });
     await writeFile(join(off.folder, "memory", "inbox.md"), "- note\n");

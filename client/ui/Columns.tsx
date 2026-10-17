@@ -21,6 +21,9 @@ export function ResizeHandle({ side, width, onResize, onCommit }: { side: "left"
   const onCommitRef = useRef(onCommit);
   onResizeRef.current = onResize;
   onCommitRef.current = onCommit;
+  // The listeners of a drag in progress, removed if the handle goes away (the panel closes) before the pointer is released.
+  const dragging = useRef<(() => void) | null>(null);
+  useEffect(() => () => dragging.current?.(), []);
   if (Platform.OS !== "web" || !win.addEventListener) return null;
 
   const begin = (event: { nativeEvent: { clientX?: number; pageX?: number } }) => {
@@ -32,12 +35,17 @@ export function ResizeHandle({ side, width, onResize, onCommit }: { side: "left"
       if (dx !== 0) moved = true;
       onResizeRef.current(startWidth + (side === "right" ? dx : -dx));
     };
-    const end: PointerListener = () => {
+    const stop = () => {
       win.removeEventListener?.("pointermove", move);
       win.removeEventListener?.("pointerup", end);
       win.removeEventListener?.("pointercancel", end);
+      dragging.current = null;
+    };
+    const end: PointerListener = () => {
+      stop();
       if (moved) onCommitRef.current(latest.current);
     };
+    dragging.current = stop;
     win.addEventListener?.("pointermove", move);
     win.addEventListener?.("pointerup", end);
     win.addEventListener?.("pointercancel", end);

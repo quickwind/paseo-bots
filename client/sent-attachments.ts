@@ -4,20 +4,26 @@ import type { ComposerAttachment } from "../shared/attachments";
 // from this app are remembered for the session, like Paseo's own composer does.
 interface Sent {
   messageId: string;
+  botId: string;
   text: string;
   attachments: ComposerAttachment[];
 }
 
 const sent: Sent[] = [];
 
-export function rememberSent(messageId: string, text: string, attachments: ComposerAttachment[]): void {
-  if (attachments.length > 0) sent.push({ messageId, text, attachments });
+export function rememberSent(messageId: string, text: string, attachments: ComposerAttachment[], botId: string): void {
+  if (attachments.length > 0) sent.push({ messageId, botId, text, attachments });
 }
 
-/** Matches by message id, then by text for providers that assign their own ids. */
-export function sentAttachments(item: { text: string; messageId?: string; clientMessageId?: string }): ComposerAttachment[] {
+/**
+ * Matches by message id, then by text for providers that assign their own ids. The text match is only
+ * among this bot's own messages, newest first: the same words sent elsewhere carried no such files.
+ */
+export function sentAttachments(item: { text: string; messageId?: string; clientMessageId?: string }, botId: string | null): ComposerAttachment[] {
   const ids = [item.messageId, item.clientMessageId].filter(Boolean);
-  return (sent.find((entry) => ids.includes(entry.messageId)) ?? sent.find((entry) => entry.text === item.text.trim()))?.attachments ?? [];
+  const byId = sent.find((entry) => ids.includes(entry.messageId));
+  if (byId) return byId.attachments;
+  return [...sent].reverse().find((entry) => entry.botId === botId && entry.text === item.text.trim())?.attachments ?? [];
 }
 
 export function newMessageId(): string {

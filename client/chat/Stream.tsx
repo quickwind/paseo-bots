@@ -255,7 +255,7 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
       compact,
       cwd: cwd ?? undefined,
       attachmentsFor: (row) => {
-        const found = sentAttachments(row);
+        const found = sentAttachments(row, botId ?? null);
         return found.length > 0 ? found : EMPTY_ATTACHMENTS;
       },
       openChat: onOpenChat,

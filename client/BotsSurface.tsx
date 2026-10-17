@@ -16,6 +16,7 @@ import { moveKey } from "../shared/sidebar";
 import { chatTranscript } from "../shared/transcript";
 import { ensureBotHomeRpc, mountRpc, exportBotRpc, importBotRpc, importTeamRpc, systemPromptRpc } from "../shared/rpc";
 import { botFromPreset, newBot } from "../shared/templates";
+import { mergeDraft } from "./draft";
 import { AvatarTheme } from "./Avatar";
 import { botMenuEntries, chatMenuEntries, ExportDialog, NewBotDialog, RenameDialog } from "./BotDialogs";
 import { sendsPromptInChat } from "../shared/identity";
@@ -106,6 +107,8 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Each bot as it was when its draft began, so a save applies only what was edited. */
+  const draftBases = useRef<Record<string, Bot>>({});
 
   const flush = async () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -118,14 +121,18 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         const draft = pending[bot.id];
         if (!draft) return bot;
         history = pushHistory(history, bot);
-        return draft;
+        return mergeDraft(bot, draft, draftBases.current[bot.id]);
       });
       return { ...values, bots, history };
     });
     if (ok) {
       setDrafts((current) => {
         const next = { ...current };
-        for (const [id, bot] of Object.entries(pending)) if (next[id] === bot) delete next[id];
+        for (const [id, bot] of Object.entries(pending)) {
+          if (next[id] !== bot) continue;
+          delete next[id];
+          delete draftBases.current[id];
+        }
         return next;
       });
     }
@@ -134,6 +141,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   const patchBot = (botId: string, patch: Partial<Bot>) => {
     setDrafts((current) => {
       const base = current[botId] ?? (latest.current.status === "ready" ? latest.current.values.bots.find((bot) => bot.id === botId) : undefined);
+      if (base && !current[botId]) draftBases.current[botId] = base;
       return base ? { ...current, [botId]: { ...base, ...patch, updatedAt: new Date().toISOString() } } : current;
     });
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -469,7 +477,8 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
           }
           try {
             await botHost.api.agents.ref(chat.id).archive();
-            if (selection?.chatId === chat.id) setSelection({ botId: bot.id, chatId: null });
+            // The selection as it is now: the menu was opened some time ago and the person may have moved on.
+            setSelection((current) => (current?.chatId === chat.id ? { botId: bot.id, chatId: null } : current));
             if (context.pinned) updateUi(unpin);
             await queryClient.invalidateQueries({ queryKey: ["bot-crew", "chats", botHost.key, bot.id] });
           } catch (error) {
@@ -572,7 +581,8 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         onBack={layout.compact ? () => setSelection(null) : undefined}
         onBotMenu={(anchor) => (anchor ? openBotMenu(selectedBot, anchor, "kebab") : openBotMenuFromPane(selectedBot))}
         onTogglePanel={() => setPanel({ open: !panel.open, section: panel.section })}
-        onStarted={(chatId) => setSelection({ botId: selectedBot.id, chatId })}
+        // Only when the person is still on this bot: starting a chat takes a moment, and they may have gone elsewhere.
+        onStarted={(chatId) => setSelection((current) => (current?.botId === selectedBot.id ? { botId: selectedBot.id, chatId } : current))}
       />
     ) : (
       <Splash colors={colors} />

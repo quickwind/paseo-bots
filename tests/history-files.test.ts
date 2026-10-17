@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -46,6 +46,15 @@ describe("the history files a bot with file tools can search", () => {
     expect(text).toContain("[redacted]");
     expect(text).not.toContain("sk-abcdefghijklmnopqrstuv");
     expect(text).not.toContain("tool_call");
+  });
+
+  it("still writes and prunes when the folder holds a folder named like a transcript or a broken link", async () => {
+    const dir = await dirOf();
+    await mkdir(join(dir, "folder.md"), { recursive: true });
+    await symlink(join(dir, "nowhere"), join(dir, "broken.md")).catch(() => {});
+    const host = hostWith({ "abcdef12-0000": { title: "Plan", messages: say("hi", "hello") } });
+    await writeHistory(host, scout, "abcdef12-0000");
+    expect(await readdir(dir)).toContain("2026-10-13-plan-abcdef12.md");
   });
 
   it("keeps one file per chat when the chat is renamed and grows", async () => {

@@ -58,7 +58,11 @@ export class Asks {
     await this.update((requests) => void requests.push(request));
     // A teammate on a team that allows it needs no approval; a bot set to Off was refused above.
     if (bot.contactBots === "ask" && !mayAskWithoutAsking(bot.id, target.id, groups)) {
-      const proposal = await createProposal({ botId: bot.id, agentId: from.agentId, kind: "ask", data: { requestId: request.id, toBotId: target.id, toName: target.name, message: args.message } });
+      const proposal = await createProposal({ botId: bot.id, agentId: from.agentId, kind: "ask", data: { requestId: request.id, toBotId: target.id, toName: target.name, message: args.message } }).catch(async (error: unknown) => {
+        // Without a card nobody can approve it, and a request left waiting would count against the hourly limit for nothing.
+        await this.update((requests) => void Object.assign(requests.find((entry) => entry.id === request.id) ?? {}, { status: "closed" }));
+        throw error;
+      });
       return { ok: true, proposalId: proposal.id, text: `Request ${request.id}: the user sees your question to ${target.name} as a card and decides whether to send it. If they agree, ${target.name}'s answer arrives in this chat as a message. End your turn now.` };
     }
     await this.run(request.id);

@@ -55,6 +55,8 @@ export class MemoryJournal {
   /** What each bot's memory looked like when the journal last checked. */
   private readonly seen = new Map<string, Snapshot>();
   private readonly queues = new Map<string, Promise<unknown>>();
+  /** How many turns of each bot are running, so a turn that starts mid-way through another's is not blamed for its edits on the person. */
+  private readonly running = new Map<string, number>();
 
   /** Runs one change per bot at a time. */
   private serial<T>(botId: string, work: () => Promise<T>): Promise<T> {
@@ -68,7 +70,11 @@ export class MemoryJournal {
 
   /** A turn is starting: anything that changed since the last look was done outside the app. */
   begin(botId: string): Promise<void> {
+    const others = this.running.get(botId) ?? 0;
+    this.running.set(botId, others + 1);
     return this.serial(botId, async () => {
+      // Another chat of this bot is working: what changed since the last look is probably its doing, and its turn will say so.
+      if (others > 0) return;
       const current = await snapshot(botId);
       const previous = this.seen.get(botId);
       if (previous) await this.record(botId, previous, current, { actor: "you", via: "disk", chat: null });
@@ -78,6 +84,7 @@ export class MemoryJournal {
 
   /** A turn ended: what changed during it was the bot's doing in that chat. */
   end(botId: string, chat: { id: string; title: string }): Promise<void> {
+    this.running.set(botId, Math.max(0, (this.running.get(botId) ?? 0) - 1));
     return this.serial(botId, async () => {
       const current = await snapshot(botId);
       const previous = this.seen.get(botId);

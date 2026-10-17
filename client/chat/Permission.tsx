@@ -115,7 +115,7 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
             label={action.label}
             icon={action.behavior === "allow" ? "Check" : "X"}
             primary={action.variant === "primary"}
-            busy={responding}
+            busy={responding || respondingId !== null}
             spinning={responding && respondingId === action.id}
             onPress={() => press(action)}
           />

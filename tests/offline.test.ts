@@ -228,3 +228,65 @@ describe("the source holds no outbound network code", () => {
     expect(users).toEqual(["client/Markdown.tsx"]);
   });
 });
+
+// ---------------------------------------------------------------- a stricter reading of the source
+
+/** Modules that open connections of their own. `http` is allowed to serve on this computer, never to call out. */
+const NETWORK_MODULES = ["https", "http2", "net", "tls", "dgram", "dns", "quic", "undici", "axios", "node-fetch", "got", "ws"];
+const HTTP_SERVER_NAMES = new Set(["createServer", "Server", "IncomingMessage", "ServerResponse", "type"]);
+
+/** What in `text` (a file's source, comments left in) could open a connection to somewhere else. */
+export function networkProblems(text: string): string[] {
+  const source = code(text);
+  const problems: string[] = [];
+  for (const match of source.matchAll(/(?:from|import|require\s*\()\s*["'`]([^"'`]+)["'`]/g)) {
+    const spec = match[1]!.replace(/^node:/, "");
+    if (NETWORK_MODULES.includes(spec.split("/")[0]!)) problems.push(`imports ${match[1]}`);
+  }
+  for (const match of source.matchAll(/import\s+(?:type\s+)?([^;]*?)\s+from\s+["'](?:node:)?http["']/g)) {
+    const clause = match[1]!;
+    const names = clause.startsWith("{") ? clause.replace(/[{}]/g, "").split(",").map((part) => part.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0]!).filter(Boolean) : [clause];
+    if (!names.every((name) => HTTP_SERVER_NAMES.has(name))) problems.push(`imports ${names.filter((name) => !HTTP_SERVER_NAMES.has(name)).join(", ")} from http`);
+  }
+  if (/\brequire\s*\(\s*["'](?:node:)?http["']\s*\)/.test(source)) problems.push("requires http");
+  if (/\b(?:import|require)\s*\(\s*[^"'`\s)]/.test(source)) problems.push("loads a module chosen at run time");
+  if (/child_process/.test(source) && /\b(?:curl|wget|Invoke-WebRequest|Invoke-RestMethod)\b/i.test(source)) problems.push("runs a download tool");
+  return problems;
+}
+
+describe("the network reading of the source", () => {
+  it("flags the ways a connection could be opened that a plain fetch( search misses", () => {
+    expect(networkProblems('import { request } from "node:http";\nrequest(url);')).toEqual(["imports request from http"]);
+    expect(networkProblems('import http from "http";')).toEqual(["imports http from http"]);
+    expect(networkProblems('import * as http from "node:http";')).toEqual(["imports * as http from http"]);
+    expect(networkProblems('import { get } from "https";')).toEqual(["imports https"]);
+    expect(networkProblems('const net = require("net");')).toEqual(["imports net"]);
+    expect(networkProblems('import { lookup } from "node:dns/promises";')).toEqual(["imports node:dns/promises"]);
+    expect(networkProblems('import { connect } from "node:http2";')).toEqual(["imports node:http2"]);
+    expect(networkProblems('import axios from "axios";')).toEqual(["imports axios"]);
+    expect(networkProblems("const mod = await import(name);")).toEqual(["loads a module chosen at run time"]);
+    expect(networkProblems('import { spawn } from "node:child_process";\nspawn("curl", [url]);')).toEqual(["runs a download tool"]);
+  });
+
+  it("lets a server listen on this computer, and ignores a mention in a comment", () => {
+    expect(networkProblems('import { createServer, type IncomingMessage, type ServerResponse } from "node:http";')).toEqual([]);
+    expect(networkProblems('import type { IncomingMessage, ServerResponse } from "node:http";')).toEqual([]);
+    expect(networkProblems('// we never use axios or import("x") or curl\nconst a = 1;')).toEqual([]);
+  });
+
+  it("finds none in the plugin", async () => {
+    const offenders: string[] = [];
+    for (const file of await sourceFiles()) {
+      const name = relative(ROOT, file).replaceAll("\\", "/");
+      // The probe is the one place that starts programs, and it refuses every remote address (tested above).
+      if (name === "server/mcp-probe.ts") continue;
+      for (const problem of networkProblems(await readFile(file, "utf8"))) offenders.push(`${name}: ${problem}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("ships no runtime dependencies, which would be code nobody here reviewed", async () => {
+    const manifest = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8")) as Record<string, unknown>;
+    expect(manifest.dependencies ?? {}).toEqual({});
+  });
+});

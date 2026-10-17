@@ -132,6 +132,18 @@ describe("asking other bots", () => {
   });
 });
 
+describe("asking a bot that lives on another host", () => {
+  it("is refused up front, as that bot's chats cannot be started here, and nothing is left running", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const { loadRequests } = await import("../server/ask-store");
+    const scout = makeBot({ id: "bot-scout", name: "Scout", contactBots: "allow" });
+    const host = fakeHost([scout, makeBot({ id: "bot-far", name: "Far", hostId: "other-host" })]);
+    host.attach(fakePaseo({ "caller-chat": { status: "idle", labels: { "bot-crew.bot": "bot-scout" } } }));
+    await expect(askBot.run({ bot: "Far", message: "hi" }, { bot: scout, agentId: "caller-chat", host, relay: null as never })).rejects.toThrow("There are no other bots to ask.");
+    expect(await loadRequests()).toEqual([]);
+  });
+});
+
 describe("how often ask_bot may be used", () => {
   it("allows a chat five questions an hour, and the team's Chief of Staff twenty", async () => {
     const { askBot } = await import("../server/tools/bots");

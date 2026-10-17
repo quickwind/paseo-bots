@@ -34,7 +34,12 @@ export async function turnStarted(host: BotsHost, journal: MemoryJournal, { agen
 
 export async function turnEnded(host: BotsHost, journal: MemoryJournal, scheduler: Pick<RoutineScheduler, "finished">, { agent, outcome, timeline }: PluginLifecycleEvents["agent.turn_ended"], maintenance?: Maintenance): Promise<void> {
   const chat = await host.chatOf(agent.id);
-  if (!chat) return;
+  if (!chat) {
+    // The chat could not be looked up (the daemon was busy): a bot whose turn started here is still freed, or it would count as working for hours.
+    const known = await host.botIdOf(agent.id);
+    if (known) maintenance?.activity.ended(known, agent.id);
+    return;
+  }
   const { botId } = chat;
   maintenance?.activity.ended(botId, agent.id);
   const title = chat.title?.trim() || agent.title?.trim() || "Untitled chat";

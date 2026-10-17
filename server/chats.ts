@@ -1,6 +1,6 @@
 import type { Bot } from "../shared/bot";
 import { startBotChat } from "../shared/chat";
-import { ASK_PREAPPROVED_LABEL, askPreapproval, teamOf } from "../shared/groups";
+import { teamOf } from "../shared/groups";
 import { sendsPromptInChat } from "../shared/identity";
 import { usesFiles } from "../shared/tools-mode";
 import { newUuid } from "../shared/uuid";
@@ -31,9 +31,6 @@ export async function startChat(host: BotsHost, relay: Relay, bot: Bot, input: {
     const agentId = input.agentId ?? newUuid();
     const askFreely = !!teamOf(bot.id, settings?.groups ?? [])?.askFreely;
     const tools = usesFiles(settings?.toolMode, bot.provider) ? null : await relay.mountTools(bot.id, agentId);
-    // ask_bot runs without a prompt in this chat when the bot or its team allows it. The chat remembers why,
-    // so turning the setting off later still stops it (the tool permission was fixed when the chat started).
-    const preapproved = tools ? askPreapproval(bot, askFreely) : null;
     const placement = bot.cwd ? { path: bot.cwd, projectRoot: null } : { path: home.path, projectRoot: home.root };
     return startBotChat(paseo, {
       bot,
@@ -45,7 +42,7 @@ export async function startChat(host: BotsHost, relay: Relay, bot: Bot, input: {
       prompt: input.prompt,
       systemPrompt: sendsPromptInChat(bot.provider, placement.path, home.path) ? system : "",
       title: input.title,
-      labels: preapproved ? { ...input.labels, [ASK_PREAPPROVED_LABEL]: preapproved } : input.labels,
+      labels: input.labels,
     });
   });
 }

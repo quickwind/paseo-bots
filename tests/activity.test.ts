@@ -95,6 +95,22 @@ describe("memory journal, daily log and search_chats", () => {
     await rm(home, { recursive: true, force: true });
   });
 
+  it("does not blame the person for what another chat of the bot is editing when a second turn starts", async () => {
+    const { MemoryJournal } = await import("../server/journal");
+    const { memoryFilePath } = await import("../server/memory");
+    const journal = new MemoryJournal();
+    const main = memoryFilePath("bot-two", "MEMORY.md");
+    await mkdir(join(main, ".."), { recursive: true });
+    await writeFile(main, "# Memory\n");
+    await journal.begin("bot-two"); // chat A starts
+    await writeFile(main, "# Memory\n- written by chat A\n");
+    await journal.begin("bot-two"); // chat B starts while A is still working
+    await journal.end("bot-two", { id: "chat-a", title: "A" });
+    await journal.end("bot-two", { id: "chat-b", title: "B" });
+    const entries = await journal.list("bot-two");
+    expect(entries.map((entry) => [entry.actor, entry.via, entry.chat?.id ?? null])).toEqual([["bot", "chat", "chat-a"]]);
+  });
+
   it("journals the bot's edits during a turn, the person's edits, and undoes them", async () => {
     const { MemoryJournal } = await import("../server/journal");
     const { memoryFilePath } = await import("../server/memory");

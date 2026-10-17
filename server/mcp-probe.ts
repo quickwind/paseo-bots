@@ -67,6 +67,9 @@ function probeStdio(config: Extract<McpServerConfig, { type: "stdio" }>, signal:
       settled = true;
       signal.removeEventListener("abort", onAbort);
       child.kill();
+      // Requests still waiting for an answer that will not come.
+      for (const waiter of pending.values()) waiter.reject(error ?? new Error("The probe is finished."));
+      pending.clear();
       if (error) reject(error);
       else resolve(tools ?? []);
     };

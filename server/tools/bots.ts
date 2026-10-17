@@ -139,7 +139,8 @@ export const askBot = defineTool({
     const groups = (await host.values())?.groups ?? [];
     const limit = askLimit(bot.id, groups);
     if ((await askedInLastHour(caller.agentId, Date.now())) >= limit) throw new Error(`This chat has asked too many times in the last hour (${limit}). Wait for the user before asking again.`);
-    const others = (await host.bots()).filter((entry) => entry.id !== bot.id && !entry.archived);
+    // A bot on another host cannot have a chat started here, so it is not offered.
+    const others = (await host.bots()).filter((entry) => entry.id !== bot.id && !entry.archived && !entry.hostId);
     const key = wanted.trim().toLowerCase();
     const target = others.find((entry) => entry.id === wanted.trim()) ?? others.find((entry) => entry.name.trim().toLowerCase() === key);
     if (!target) throw new Error(others.length ? `There's no other bot called "${wanted}". Ask one of: ${others.map((entry) => entry.name).join(", ")}.` : "There are no other bots to ask.");

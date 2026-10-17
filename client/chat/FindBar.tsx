@@ -1,6 +1,7 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useRef } from "react";
+import { isImeComposing } from "./composer/logic";
 import { ActivityIndicator, Platform, Pressable, Text, TextInput, View, type NativeSyntheticEvent, type TextInputKeyPressEventData } from "react-native";
 import { CONTENT_MAX_WIDTH, nativeTokens, useHover } from "../native";
 import { ui } from "../typography";
@@ -40,6 +41,8 @@ export function FindBar({
   useEffect(() => input.current?.focus(), []);
   const onKeyPress = (event: NativeSyntheticEvent<TextInputKeyPressEventData & { shiftKey?: boolean }>) => {
     const { key, shiftKey } = event.nativeEvent;
+    // Enter that confirms an IME candidate is not a request to jump to the previous match.
+    if (isImeComposing(event.nativeEvent as { isComposing?: boolean; keyCode?: number })) return;
     if (key === "Escape") onClose();
     else if (key === "Enter") {
       event.preventDefault();

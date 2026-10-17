@@ -23,6 +23,8 @@ function librarySkillsPath(): string {
 }
 
 export function librarySkillPath(id: string): string {
+  // "." and ".." (or a path) would name a folder outside the library, and deleting a skill removes the folder.
+  if (!/^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(id)) throw new Error(`Not a skill name: ${id}`);
   return join(librarySkillsPath(), id);
 }
 

@@ -24,12 +24,27 @@ async function readText(path: string): Promise<string> {
   }
 }
 
+function cutToBytes(text: string, limit: number): string {
+  let out = "";
+  let bytes = 0;
+  for (const char of text) {
+    bytes += Buffer.byteLength(char, "utf8");
+    if (bytes > limit) break;
+    out += char;
+  }
+  return out;
+}
+
 function trimForPrompt(text: string): string {
   const lines = text.split("\n").slice(0, MEMORY_MAX_LINES);
   let out = "";
   for (const line of lines) {
     const next = out ? `${out}\n${line}` : line;
-    if (Buffer.byteLength(next, "utf8") > MEMORY_MAX_BYTES) break;
+    if (Buffer.byteLength(next, "utf8") > MEMORY_MAX_BYTES) {
+      // A first line over the limit still gives its first part, cut between characters.
+      if (!out) out = cutToBytes(line, MEMORY_MAX_BYTES);
+      break;
+    }
     out = next;
   }
   return out;
@@ -160,13 +175,16 @@ export async function inboxBytes(botId: string): Promise<number> {
   return Buffer.byteLength(notes.join("\n"), "utf8");
 }
 
+/** The log keeps minutes, so a line from the minute a tidy started in is counted: it may have come after the start. */
+const startOfMinute = (date: Date) => Math.floor(date.getTime() / 60_000) * 60_000;
+
 /** Daily-log lines written after `since` (all of the last 31 days when null), and the log files that hold them. */
 export async function newLogLines(botId: string, since: Date | null, now = new Date()): Promise<{ count: number; files: string[] }> {
   let count = 0;
   const files: string[] = [];
   for (let back = 30; back >= 0; back--) {
     const day = localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - back));
-    const entries = parseLog(day, await readText(logPath(botId, day))).filter((entry) => !since || entry.at > since);
+    const entries = parseLog(day, await readText(logPath(botId, day))).filter((entry) => !since || entry.at.getTime() >= startOfMinute(since));
     if (entries.length) {
       count += entries.length;
       files.push(logPath(botId, day));
