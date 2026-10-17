@@ -14,7 +14,7 @@ export const FORCE_BACKOFF_MS = 24 * 3_600_000;
 /** The file chats append unfinished notes to; it lives in memory/ so it is a topic file to the app. */
 export const INBOX_FILE = "inbox.md";
 /** Label on tidy chats, carrying the bot id. */
-export const TIDY_LABEL = "paseo-bots.tidy";
+export const TIDY_LABEL = "bot-crew.tidy";
 export const SAVE_MAX_LINES = 20;
 
 const TidySettingsSchema = z.object({

@@ -297,7 +297,7 @@ function fakePaseo(chat: { status?: string; used?: number; max?: number; labels?
             id: agentId,
             status: chat.status ?? "idle",
             title: "Planning",
-            labels: { "paseo-bots.bot": "bot-s", ...(chat.labels ?? {}) },
+            labels: { "bot-crew.bot": "bot-s", ...(chat.labels ?? {}) },
             lastUsage: chat.used === undefined ? null : { contextWindowUsedTokens: chat.used, contextWindowMaxTokens: chat.max ?? 100 },
           },
         }),
@@ -350,8 +350,8 @@ describe("saving when the context fills up", () => {
   });
 
   it("leaves maintenance and routine chats alone", async () => {
-    expect((await run({ used: 90, labels: { "paseo-bots.tidy": "bot-s" } })).sent).toHaveLength(0);
-    expect((await run({ used: 90, labels: { "paseo-bots.routine": "rt-1" } })).sent).toHaveLength(0);
+    expect((await run({ used: 90, labels: { "bot-crew.tidy": "bot-s" } })).sent).toHaveLength(0);
+    expect((await run({ used: 90, labels: { "bot-crew.routine": "rt-1" } })).sent).toHaveLength(0);
   });
 
   it("does not log the save turn, or ask again from it", async () => {
@@ -473,7 +473,7 @@ describe("the tidy service", () => {
     await writeFile(join(folder, "memory", "inbox.md"), "- remember Acme\n");
     await tidy.tick();
     expect(started).toHaveLength(1);
-    expect(started[0]!.labels).toEqual({ "paseo-bots.tidy": "tb" });
+    expect(started[0]!.labels).toEqual({ "bot-crew.tidy": "tb" });
     expect(started[0]!.prompt).toContain("inbox.md");
     expect(started[0]!.bot.cwd).toBeNull();
     expect(started[0]!.bot.modeId).toBe("acceptEdits");
@@ -582,10 +582,10 @@ describe("the tidy service", () => {
     await writeFile(join(folder, "memory", "inbox.md"), "- note\n");
     await tidy.tick();
     const first = started[0]!.agentId;
-    const state = JSON.parse(await readFile(join(home, "plugin-data", "paseo-bots", "tidy.json"), "utf8"));
+    const state = JSON.parse(await readFile(join(home, "plugin-data", "bot-crew", "tidy.json"), "utf8"));
     state.tb.last.at = new Date(Date.now() - 4 * 3_600_000).toISOString();
     state.tb.lastRunAt = state.tb.last.at;
-    await writeFile(join(home, "plugin-data", "paseo-bots", "tidy.json"), JSON.stringify(state));
+    await writeFile(join(home, "plugin-data", "bot-crew", "tidy.json"), JSON.stringify(state));
     await tidy.tick();
     expect(archived).toContain(first);
     expect(started).toHaveLength(2);

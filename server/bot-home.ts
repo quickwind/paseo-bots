@@ -10,7 +10,7 @@ function pluginDataRoot(): string {
 }
 
 export function pluginDataPath(): string {
-  return join(pluginDataRoot(), "paseo-bots");
+  return join(pluginDataRoot(), "bot-crew");
 }
 
 /**
@@ -72,7 +72,7 @@ function migrateLegacyHome(): Promise<void> {
     await mkdir(join(target, ".."), { recursive: true });
     await rename(legacy, target);
     await symlink(target, legacy, "dir");
-  })().catch((error: unknown) => console.error("paseo-bots: couldn't move the bots folder", error));
+  })().catch((error: unknown) => console.error("bot-crew: couldn't move the bots folder", error));
   return migration;
 }
 

@@ -22,7 +22,7 @@ export function MaintenanceSection({ colors, bot, localHost, onPatch }: PanelPro
   const runRpc = useRpc(tidyRunRpc);
   const [starting, setStarting] = useState(false);
   const { tidy, saveAt } = bot.memory;
-  const status = useQuery({ queryKey: ["paseo-bots", "tidy", bot.id], queryFn: () => statusRpc({ botId: bot.id }), refetchInterval: 15_000, enabled: host.isLocal });
+  const status = useQuery({ queryKey: ["bot-crew", "tidy", bot.id], queryFn: () => statusRpc({ botId: bot.id }), refetchInterval: 15_000, enabled: host.isLocal });
   const provider = providers.data?.find((entry) => entry.provider === bot.provider);
   const models = (provider?.models ?? []).filter((model) => model.isSelectable !== false);
   const setTidy = (patch: Partial<typeof tidy>) => onPatch({ memory: { ...bot.memory, tidy: { ...tidy, ...patch } } });
@@ -88,7 +88,7 @@ export function MaintenanceSection({ colors, bot, localHost, onPatch }: PanelPro
               onPress={() => {
                 setStarting(true);
                 void runRpc({ botId: bot.id })
-                  .then(() => queryClient.invalidateQueries({ queryKey: ["paseo-bots", "tidy", bot.id] }))
+                  .then(() => queryClient.invalidateQueries({ queryKey: ["bot-crew", "tidy", bot.id] }))
                   .catch((caught: unknown) => toast.error(errorText(caught)))
                   .finally(() => setStarting(false));
               }}

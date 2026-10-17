@@ -115,11 +115,11 @@ export function MemorySection(props: PanelProps) {
   const toast = useToast();
   const [open, setOpen] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"topic" | "changes" | "log" | null>(null);
-  const files = useQuery({ queryKey: ["paseo-bots", "memory", bot.id], queryFn: () => list({ botId: bot.id }), refetchInterval: 20_000 });
+  const files = useQuery({ queryKey: ["bot-crew", "memory", bot.id], queryFn: () => list({ botId: bot.id }), refetchInterval: 20_000 });
   const journal = useMemoryJournal(bot.id);
   const log = useDailyLog(bot.id);
   const refresh = () =>
-    Promise.all([queryClient.invalidateQueries({ queryKey: ["paseo-bots", "memory", bot.id] }), queryClient.invalidateQueries({ queryKey: ["paseo-bots", "memory-journal", bot.id] })]);
+    Promise.all([queryClient.invalidateQueries({ queryKey: ["bot-crew", "memory", bot.id] }), queryClient.invalidateQueries({ queryKey: ["bot-crew", "memory-journal", bot.id] })]);
 
   const data = files.data;
   const over = data ? data.injectedLines > MEMORY_LINES || data.injectedBytes > MEMORY_BYTES : false;

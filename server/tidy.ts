@@ -171,7 +171,7 @@ export class MemoryTidy {
     try {
       for (const bot of await this.host.bots()) {
         if (bot.archived || bot.hostId || !bot.memory.tidy.enabled) continue;
-        await this.consider(bot, false).catch((error: unknown) => console.error("paseo-bots: memory tidy failed to start", error));
+        await this.consider(bot, false).catch((error: unknown) => console.error("bot-crew: memory tidy failed to start", error));
       }
     } finally {
       this.ticking = false;
@@ -245,7 +245,7 @@ export class MemoryTidy {
       await this.update(bot.id, (record) => {
         if (record.last?.agentId === agentId) Object.assign(record.last, { status: "failed", note });
       });
-      console.error("paseo-bots: couldn't start a memory tidy chat", error);
+      console.error("bot-crew: couldn't start a memory tidy chat", error);
     }
   }
 

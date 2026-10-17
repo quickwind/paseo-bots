@@ -50,7 +50,7 @@ function routineMeta(routine: Routine, run: RoutineRun | undefined, next: Date |
   return parts.join(" · ");
 }
 
-const ROUTINES_KEY = ["paseo-bots", "routines"];
+const ROUTINES_KEY = ["bot-crew", "routines"];
 const UPCOMING = 6;
 const UPCOMING_DAYS = 7;
 const RECENT = 10;
@@ -92,7 +92,7 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
       if (started.status === "running") toast.show(`Started "${routine.name}". It appears as a chat under ${bot.name}.`, { variant: "success" });
       else if (started.status === "skipped-busy") toast.show(`"${routine.name}" is still working on its last run.`);
       else toast.error(started.error ?? "Couldn't start the run.");
-      void queryClient.invalidateQueries({ queryKey: ["paseo-bots"] });
+      void queryClient.invalidateQueries({ queryKey: ["bot-crew"] });
     } catch (error) {
       toast.error(errorText(error));
     }
@@ -401,7 +401,7 @@ function WebhookRows({ colors, routineId }: { colors: Colors; routineId: string 
   const webhook = useRpc(routineWebhookRpc);
   const toast = useToast();
   const queryClient = useQueryClient();
-  const key = ["paseo-bots", "webhook", routineId];
+  const key = ["bot-crew", "webhook", routineId];
   const url = useQuery({ queryKey: key, queryFn: () => webhook({ routineId }) });
 
   const rotate = async () => {

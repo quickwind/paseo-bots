@@ -57,7 +57,7 @@ export function useHostResolver(local: LocalHost): (hostId: string | null) => Bo
 
 export function useProviders(host: BotHost) {
   return useQuery({
-    queryKey: ["paseo-bots", "providers", host.key],
+    queryKey: ["bot-crew", "providers", host.key],
     enabled: !!host.api,
     staleTime: 60_000,
     queryFn: async () => {
@@ -69,7 +69,7 @@ export function useProviders(host: BotHost) {
 
 export function useAgentProfiles(host: BotHost) {
   return useQuery({
-    queryKey: ["paseo-bots", "profiles", host.key],
+    queryKey: ["bot-crew", "profiles", host.key],
     enabled: !!host.api,
     staleTime: 60_000,
     queryFn: async () => (await host.api!.config.get()).config.agentProfiles ?? [],
@@ -78,7 +78,7 @@ export function useAgentProfiles(host: BotHost) {
 
 export function useHostWorkspaces(host: BotHost) {
   return useQuery({
-    queryKey: ["paseo-bots", "workspaces", host.key],
+    queryKey: ["bot-crew", "workspaces", host.key],
     enabled: !!host.api,
     staleTime: 30_000,
     queryFn: async () => {
@@ -94,7 +94,7 @@ export function useHostWorkspaces(host: BotHost) {
 
 export function useBotChats(host: BotHost, botId: string) {
   return useQuery({
-    queryKey: ["paseo-bots", "chats", host.key, botId],
+    queryKey: ["bot-crew", "chats", host.key, botId],
     enabled: !!host.api,
     // The local host pushes agent updates (useChatInvalidation); other hosts are polled.
     refetchInterval: host.isLocal ? false : 15_000,
@@ -120,7 +120,7 @@ export function useChatInvalidation() {
       if (timer) return;
       timer = setTimeout(() => {
         timer = null;
-        void queryClient.invalidateQueries({ queryKey: ["paseo-bots", "chats"] });
+        void queryClient.invalidateQueries({ queryKey: ["bot-crew", "chats"] });
       }, 500);
     });
     // The daemon only sends agent updates to sessions that subscribed through a list request.
@@ -143,7 +143,7 @@ export function useChatInvalidation() {
 /** The host's Paseo-tools settings for a provider, and a way to turn them on. */
 export function usePaseoTools(host: BotHost, provider: string) {
   const queryClient = useQueryClient();
-  const key = ["paseo-bots", "paseo-tools", host.key];
+  const key = ["bot-crew", "paseo-tools", host.key];
   const config = useQuery({
     queryKey: key,
     enabled: !!host.api,

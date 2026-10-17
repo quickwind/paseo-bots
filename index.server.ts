@@ -64,12 +64,12 @@ export default function contribute(server: PluginServerContext) {
   try {
     migrateRenamedPluginData();
   } catch (error) {
-    console.error("paseo-bots: couldn't move the data of the old paseo-bot plugin", error);
+    console.error("bot-crew: couldn't move the data of the old paseo-bot plugin", error);
   }
   // Moves the old folder if needed and writes the Bots project icon.
   void ensureBotsHome()
     .then(migrateBotSkills)
-    .catch((error: unknown) => console.error("paseo-bots: couldn't prepare the Bots folder", error));
+    .catch((error: unknown) => console.error("bot-crew: couldn't prepare the Bots folder", error));
   const settings = server.registerSettings(botSettings);
   const library = async () => {
     const state = await settings.read();
@@ -86,7 +86,7 @@ export default function contribute(server: PluginServerContext) {
   host.onAttach(refreshSoon);
   // Bots' tools go through this relay; it reads the saved settings on every call.
   const relay = new Relay(host, BOT_TOOLS);
-  void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the relay", error));
+  void relay.start().catch((error: unknown) => console.error("bot-crew: couldn't start the relay", error));
   const scheduler = new RoutineScheduler(host, relay);
   const journal = new MemoryJournal();
   const chatActivity = new ChatActivity();
@@ -94,7 +94,7 @@ export default function contribute(server: PluginServerContext) {
   const asks = new Asks(host, relay);
   const maintenance = { activity: chatActivity, saves: new SaveTracker(), tidy, fileTools: new FileTools(host, relay, asks), asks };
   // A question nobody answered is closed after half an hour.
-  const asksTimer = setInterval(() => void asks.sweep().catch((error: unknown) => console.error("paseo-bots: couldn't close old requests", error)), 5 * 60_000);
+  const asksTimer = setInterval(() => void asks.sweep().catch((error: unknown) => console.error("bot-crew: couldn't close old requests", error)), 5 * 60_000);
   const commands = new CommandAllowlist();
   // Every handler and hook receives the plugin's Paseo API; features that start chats need it.
   const attach = ({ paseo }: PluginHandlerContext) => host.attach(paseo);
@@ -111,7 +111,7 @@ export default function contribute(server: PluginServerContext) {
     const [saved, settings] = [await library(), await host.values()];
     // The app creates its chats itself, right after asking for the prompt: Devin finds the identity in the bot's folder.
     if (input.local && !input.bot.hostId) {
-      await withBotLock(input.bot.id, () => writeIdentity(input.bot, saved, { paseo: context.paseo, settings })).catch((error: unknown) => console.error(`paseo-bots: couldn't write ${input.bot.name}'s identity`, error));
+      await withBotLock(input.bot.id, () => writeIdentity(input.bot, saved, { paseo: context.paseo, settings })).catch((error: unknown) => console.error(`bot-crew: couldn't write ${input.bot.name}'s identity`, error));
     }
     return systemPrompt(input, saved, context.paseo, settings);
   });
@@ -183,7 +183,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(uploadRpc, saveUpload);
   server.on("agent.turn_started", async (event, context) => {
     host.attach(context.paseo);
-    await turnStarted(host, journal, event, maintenance).catch((error: unknown) => console.error("paseo-bots: couldn't check memory before a turn", error));
+    await turnStarted(host, journal, event, maintenance).catch((error: unknown) => console.error("bot-crew: couldn't check memory before a turn", error));
   });
   // A bot's saved commands (exact command, exact folder) are approved here instead of asking.
   server.on("agent.permission_requested", async ({ agent, request }, context) => {
@@ -195,11 +195,11 @@ export default function contribute(server: PluginServerContext) {
     await context.paseo.agents
       .ref(agent.id)
       .respondToPermission({ requestId: request.id, response: { behavior: "allow" } })
-      .catch((error: unknown) => console.error("paseo-bots: couldn't approve an allowed command", error));
+      .catch((error: unknown) => console.error("bot-crew: couldn't approve an allowed command", error));
   });
   server.on("agent.turn_ended", async (event, context) => {
     host.attach(context.paseo);
-    await turnEnded(host, journal, scheduler, event, maintenance).catch((error: unknown) => console.error("paseo-bots: couldn't record a turn", error));
+    await turnEnded(host, journal, scheduler, event, maintenance).catch((error: unknown) => console.error("bot-crew: couldn't record a turn", error));
     // The memory may have changed in this turn, and a chat created next reads it from the identity file.
     const botId = await host.botIdOf(event.agent.id).catch(() => null);
     if (botId) void refreshIdentity(host, botId);

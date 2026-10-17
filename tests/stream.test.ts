@@ -149,9 +149,9 @@ describe("turn footers", () => {
       [
         user("q", 0),
         assistant("done", 8000),
-        entry({ type: "plugin", pluginId: "paseo-bots", id: "p-abcdef1234", kind: "proposal", version: 1, data: { proposalId: "p-abcdef1234" } }, { at: 9000 }),
+        entry({ type: "plugin", pluginId: "bot-crew", id: "p-abcdef1234", kind: "proposal", version: 1, data: { proposalId: "p-abcdef1234" } }, { at: 9000 }),
         entry({ type: "plugin", pluginId: "other", id: "x", kind: "proposal", version: 1, data: { proposalId: "p-other" } }, { at: 9100 }),
-        entry({ type: "plugin", pluginId: "paseo-bots", id: "bad", kind: "proposal", version: 1, data: {} }, { at: 9200 }),
+        entry({ type: "plugin", pluginId: "bot-crew", id: "bad", kind: "proposal", version: 1, data: {} }, { at: 9200 }),
       ],
       false,
     );
@@ -165,7 +165,7 @@ describe("turn footers", () => {
       [
         user("q", 0),
         assistant("done", 8000),
-        entry({ type: "plugin", pluginId: "paseo-bots", id: "run-1", kind: "routine-run", version: 1, data: card }, { at: 60_000 }),
+        entry({ type: "plugin", pluginId: "bot-crew", id: "run-1", kind: "routine-run", version: 1, data: card }, { at: 60_000 }),
         entry({ type: "plugin", pluginId: "other", id: "x", kind: "routine-run", version: 1, data: card }, { at: 61_000 }),
       ],
       false,

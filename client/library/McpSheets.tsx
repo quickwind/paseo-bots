@@ -136,7 +136,7 @@ export function ImportSheet({ colors, onClose, onImport }: { colors: Colors; onC
   const [json, setJson] = useState("");
   const [error, setError] = useState<string | null>(null);
   const readSources = useRpc(mcpSourcesRpc);
-  const sources = useQuery({ queryKey: ["paseo-bots", "mcp-sources"], queryFn: () => readSources({}) });
+  const sources = useQuery({ queryKey: ["bot-crew", "mcp-sources"], queryFn: () => readSources({}) });
   return (
     <Modal title="Import MCP servers" open onOpenChange={(open) => !open && onClose()}>
       <Modal.Content contentContainerStyle={{ gap: 0 }}>

@@ -25,7 +25,7 @@ export async function startChat(host: BotsHost, relay: Relay, bot: Bot, input: {
   const settings = await host.values();
   return withBotLock(bot.id, async () => {
     // The saved bot, not `bot`: a maintenance chat runs as a trimmed copy that must not become the identity.
-    await writeIdentity((await host.bot(bot.id)) ?? bot, library, { paseo, settings }).catch((error: unknown) => console.error(`paseo-bots: couldn't write ${bot.name}'s identity`, error));
+    await writeIdentity((await host.bot(bot.id)) ?? bot, library, { paseo, settings }).catch((error: unknown) => console.error(`bot-crew: couldn't write ${bot.name}'s identity`, error));
     const { systemPrompt: system } = await systemPrompt({ bot, local: true, message: input.prompt }, library, paseo, settings);
     const agentId = input.agentId ?? newUuid();
     const placement = bot.cwd ? { path: bot.cwd, projectRoot: null } : { path: home.path, projectRoot: home.root };

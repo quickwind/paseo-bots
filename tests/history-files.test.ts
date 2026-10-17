@@ -84,7 +84,7 @@ describe("the history files a bot with file tools can search", () => {
   });
 
   it("skips a memory tidy chat, and does nothing for a bot whose tools are an MCP server", async () => {
-    const tidy = hostWith({ "t1-bbbbbbbb": { title: "Memory tidy", labels: { "paseo-bots.tidy": "scout" }, messages: say("tidy", "ok") } });
+    const tidy = hostWith({ "t1-bbbbbbbb": { title: "Memory tidy", labels: { "bot-crew.tidy": "scout" }, messages: say("tidy", "ok") } });
     await writeHistory(tidy, scout, "t1-bbbbbbbb");
     expect(await readdir(await dirOf()).catch(() => [])).toEqual([]);
     const claude = makeBot({ id: "scout", provider: "claude" });

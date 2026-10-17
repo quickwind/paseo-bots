@@ -240,7 +240,7 @@ export class RoutineScheduler {
     await this.paseo.agents
       .ref(routine.resultsChatId)
       .timeline.append({ type: "plugin", id: run.id, ...ROUTINE_RUN_CARD, data: { ...data } })
-      .catch((error: unknown) => console.error("paseo-bots: couldn't post a routine result", error));
+      .catch((error: unknown) => console.error("bot-crew: couldn't post a routine result", error));
   }
 
   private async tick(): Promise<void> {
@@ -270,7 +270,7 @@ export class RoutineScheduler {
         }
       }
     } catch (error) {
-      console.error("paseo-bots: routine tick failed", error);
+      console.error("bot-crew: routine tick failed", error);
     } finally {
       this.ticking = false;
     }

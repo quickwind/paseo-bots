@@ -75,7 +75,7 @@ describe("asking other bots", () => {
     const { askBot, askPrompt, ASKED_BY_LABEL } = await import("../server/tools/bots");
     const scout = makeBot({ id: "bot-scout", name: "Scout" });
     const host = fakeHost([scout, makeBot({ id: "bot-inbox", name: "Inbox" }), makeBot({ id: "bot-old", name: "Old", archived: true })]);
-    const chats: Record<string, FakeChat> = { "caller-chat": { status: "running", labels: { "paseo-bots.bot": "bot-scout" } }, "chat-new": { status: "running", labels: {}, reply: "Three unread, one urgent." } };
+    const chats: Record<string, FakeChat> = { "caller-chat": { status: "running", labels: { "bot-crew.bot": "bot-scout" } }, "chat-new": { status: "running", labels: {}, reply: "Three unread, one urgent." } };
     host.attach(fakePaseo(chats));
     const caller = { bot: scout, agentId: "caller-chat", host, relay: null as never };
 
@@ -96,7 +96,7 @@ describe("asking other bots", () => {
     expect(await askBot.available!({ ...caller, bot: { ...scout, contactBots: "off" } })).toBe(false);
     // A memory tidy chat reads untrusted text unattended, so it can't ask other bots either.
     delete chats["caller-chat"]!.labels[ASKED_BY_LABEL];
-    chats["caller-chat"]!.labels["paseo-bots.tidy"] = "bot-scout";
+    chats["caller-chat"]!.labels["bot-crew.tidy"] = "bot-scout";
     const tidying = fakeHost([scout]);
     tidying.attach(fakePaseo(chats));
     expect(await askBot.available!({ ...caller, host: tidying })).toBe(false);
@@ -108,10 +108,10 @@ describe("asking other bots", () => {
     const host = fakeHost([scout, makeBot({ id: "bot-inbox", name: "Inbox" })]);
     host.attach(
       fakePaseo({
-        asked: { status: "running", title: "Scout: count", labels: { "paseo-bots.bot": "bot-inbox", "paseo-bots.asked-by": "bot-scout" } },
-        waiting: { status: "idle", title: "Scout: send", labels: { "paseo-bots.bot": "bot-inbox", "paseo-bots.asked-by": "bot-scout" }, pendingPermissions: [{}] },
-        mine: { status: "idle", title: "Invoices", labels: { "paseo-bots.bot": "bot-scout" }, reply: "Sent." },
-        theirs: { status: "idle", labels: { "paseo-bots.bot": "bot-inbox" } },
+        asked: { status: "running", title: "Scout: count", labels: { "bot-crew.bot": "bot-inbox", "bot-crew.asked-by": "bot-scout" } },
+        waiting: { status: "idle", title: "Scout: send", labels: { "bot-crew.bot": "bot-inbox", "bot-crew.asked-by": "bot-scout" }, pendingPermissions: [{}] },
+        mine: { status: "idle", title: "Invoices", labels: { "bot-crew.bot": "bot-scout" }, reply: "Sent." },
+        theirs: { status: "idle", labels: { "bot-crew.bot": "bot-inbox" } },
       }),
     );
     const caller = { bot: scout, agentId: "x", host, relay: null as never };
@@ -137,7 +137,7 @@ describe("asking the same bot again with ask_bot", () => {
     const { askBot } = await import("../server/tools/bots");
     const scout = makeBot({ id: "bot-scout", name: "Scout", contactBots: "allow" });
     const host = fakeHost([scout, makeBot({ id: "bot-inbox", name: "Inbox" })]);
-    const chats: Record<string, FakeChat> = { "caller-chat": { status: "idle", labels: { "paseo-bots.bot": "bot-scout" } }, "chat-new": { status: "running", labels: {}, reply: "First answer." } };
+    const chats: Record<string, FakeChat> = { "caller-chat": { status: "idle", labels: { "bot-crew.bot": "bot-scout" } }, "chat-new": { status: "running", labels: {}, reply: "First answer." } };
     host.attach(fakePaseo(chats));
     const caller = { bot: scout, agentId: "caller-chat", host, relay: null as never };
     return { askBot, chats, caller };
@@ -170,7 +170,7 @@ describe("asking the same bot again with ask_bot", () => {
     const { askBot, chats, caller } = await setup();
     await askBot.run({ bot: "Inbox", message: "first" }, caller);
     chats["chat-new"]!.status = "idle";
-    chats["other-chat"] = { status: "idle", labels: { "paseo-bots.bot": "bot-scout" } };
+    chats["other-chat"] = { status: "idle", labels: { "bot-crew.bot": "bot-scout" } };
     await askBot.run({ bot: "Inbox", message: "from another chat" }, { ...caller, agentId: "other-chat" });
     expect(started).toHaveLength(2);
 

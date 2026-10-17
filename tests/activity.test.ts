@@ -175,7 +175,7 @@ describe("memory journal, daily log and search_chats", () => {
     } as never);
     const caller = { bot: makeBot({ id: "bot-s" }), agentId: current, host, relay: null as never };
     const found = await searchChats.run({ query: "q3 invoices" }, caller);
-    expect(listed[0]).toMatchObject({ filter: { labels: { "paseo-bots.bot": "bot-s" }, includeArchived: true } });
+    expect(listed[0]).toMatchObject({ filter: { labels: { "bot-crew.bot": "bot-s" }, includeArchived: true } });
     expect(found).toContain("Memory:\n- [memory/log/");
     expect(found).toContain(`chat "Invoices" (id: ${past.id}) · you] Sent the three [Q3] [invoices] to Acme.`);
     expect(found).toContain("· the user] Send the [Q3] [invoices]");

@@ -52,6 +52,8 @@ describe("team files", () => {
     const bots = [makeBot({ id: "bot-a", name: "Inbox", contactBots: "allow", routines: [routine] }), makeBot({ id: "bot-b", name: "Scout" })];
     const { json } = await exportTeam({ bots, groups: [], includeMemory: false }, EMPTY_LIBRARY);
     expect(isTeamFile(json)).toBe(true);
+    expect(isTeamFile(JSON.stringify({ format: "paseo-bots-team", version: 1, bots: [] }))).toBe(true);
+    expect(isTeamFile(JSON.stringify({ format: "other" }))).toBe(false);
     const imported = await importTeam({ json });
     expect(imported.bots.map((entry) => entry.bot.name)).toEqual(["Inbox", "Scout"]);
     expect(imported.bots[0]!.bot).toMatchObject({ contactBots: "ask", routines: [{ name: "Daily", enabled: false, resultsChatId: null }] });

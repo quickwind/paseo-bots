@@ -41,7 +41,7 @@ describe("asking another bot through a file", () => {
     const off = await setup({ contactBots: "off" });
     expect(await off.asks.request(off.from, { to: "Scout", message: "hi" })).toMatchObject({ ok: false, text: expect.stringContaining("not allowed") });
     const loop = await setup();
-    expect(await loop.asks.request({ ...loop.from, labels: { "paseo-bots.asked-by": "scout" } }, { to: "Scout", message: "hi" })).toMatchObject({ ok: false, text: expect.stringContaining("asked by another bot") });
+    expect(await loop.asks.request({ ...loop.from, labels: { "bot-crew.asked-by": "scout" } }, { to: "Scout", message: "hi" })).toMatchObject({ ok: false, text: expect.stringContaining("asked by another bot") });
     const missing = await setup({}, [makeBot({ id: "old", name: "Old", archived: true })]);
     expect((await missing.asks.request(missing.from, { to: "Old", message: "hi" })).text).toContain("Ask one of: Scout");
     expect((await missing.asks.request(missing.from, { to: "Chief", message: "hi" })).ok).toBe(false);
@@ -56,7 +56,7 @@ describe("asking another bot through a file", () => {
     expect(started[0]!.bot).toBe("scout");
     expect(started[0]!.prompt).toContain("not from your user");
     expect(started[0]!.prompt).toContain("How many unread mails?");
-    expect(started[0]!.labels["paseo-bots.asked-by"]).toBe("chief");
+    expect(started[0]!.labels["bot-crew.asked-by"]).toBe("chief");
     expect(result.text).toContain("answer");
   });
 

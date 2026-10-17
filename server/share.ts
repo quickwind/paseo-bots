@@ -7,9 +7,9 @@ import { sanitizeSkillName } from "../shared/skills";
 import { botDataPath } from "./bot-home";
 import { librarySkillPath, type ImportedSkill } from "./library";
 
-const FORMAT = "paseo-bots";
-/** Files exported before the plugin was renamed. */
-const FORMATS = z.enum([FORMAT, "paseo-bot"]);
+const FORMAT = "bot-crew";
+/** Files exported before the plugin was renamed are still read. */
+const FORMATS = z.enum([FORMAT, "paseo-bots", "paseo-bot"]);
 const MAX_FILES = 400;
 
 const BotFields = BotSchema.pick({
@@ -120,12 +120,12 @@ function parseExport(json: string): z.infer<typeof ExportV2Schema> {
   try {
     raw = JSON.parse(json);
   } catch {
-    throw new Error("That isn't a paseo-bots export.");
+    throw new Error("That isn't a Bot Crew export.");
   }
   const v2 = ExportV2Schema.safeParse(raw);
   if (v2.success) return v2.data;
   const v1 = ExportV1Schema.safeParse(raw);
-  if (!v1.success) throw new Error("That isn't a paseo-bots export.");
+  if (!v1.success) throw new Error("That isn't a Bot Crew export.");
   const { mcpServers, skills, ...bot } = v1.data.bot;
   return {
     format: FORMAT,
@@ -191,14 +191,15 @@ export async function importBot({ botId, json }: { botId: string; json: string }
 
 // ---------------------------------------------------------------- team files
 
-const TEAM_FORMAT = "paseo-bots-team";
+const TEAM_FORMAT = "bot-crew-team";
+const TEAM_FORMATS: readonly unknown[] = [TEAM_FORMAT, "paseo-bots-team"];
 const MAX_TEAM = 50;
 
-const TeamSchema = z.object({ format: z.literal(TEAM_FORMAT), version: z.literal(1), bots: z.array(z.unknown()).min(1).max(MAX_TEAM), teams: z.array(TeamFileTeamSchema).max(MAX_TEAM).default([]) });
+const TeamSchema = z.object({ format: z.enum([TEAM_FORMAT, "paseo-bots-team"]), version: z.literal(1), bots: z.array(z.unknown()).min(1).max(MAX_TEAM), teams: z.array(TeamFileTeamSchema).max(MAX_TEAM).default([]) });
 
 export function isTeamFile(json: string): boolean {
   try {
-    return (JSON.parse(json) as { format?: unknown }).format === TEAM_FORMAT;
+    return TEAM_FORMATS.includes((JSON.parse(json) as { format?: unknown }).format);
   } catch {
     return false;
   }

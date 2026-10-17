@@ -195,7 +195,7 @@ export class FileTools {
         results = [...results, ...(await discardFiles({ bot, folder }, first.unclaimed, "Not accepted: the plugin could not tell which chat wrote this file, so the question was not sent. Write it again as the last step of your turn."))];
       } else if (!this.activity?.busy(bot.id)) {
         // No chat's tool calls account for these and they are old, and no other chat of the bot is working: this chat takes them. A guess, so it is logged.
-        console.warn(`paseo-bots: giving ${first.unclaimed.join(", ")} to chat ${agentId}; no turn accounted for them`);
+        console.warn(`bot-crew: giving ${first.unclaimed.join(", ")} to chat ${agentId}; no turn accounted for them`);
         results = [...results, ...(await scanToolFiles({ ...base, written: first.unclaimed })).done];
       }
     }
@@ -210,15 +210,15 @@ export class FileTools {
       }
     }
     await this.flush(agentId);
-    await this.asks?.deliver(agentId).catch((error: unknown) => console.error("paseo-bots: couldn't deliver a bot's answer", error));
-    await writeHistory(this.host, bot, agentId).catch((error: unknown) => console.error("paseo-bots: couldn't write the chat history", error));
+    await this.asks?.deliver(agentId).catch((error: unknown) => console.error("bot-crew: couldn't deliver a bot's answer", error));
+    await writeHistory(this.host, bot, agentId).catch((error: unknown) => console.error("bot-crew: couldn't write the chat history", error));
   }
 
   private async card(agentId: string, proposalId: string): Promise<void> {
     await this.host.paseo?.agents
       .ref(agentId)
       .timeline.append({ type: "plugin", id: proposalId, ...PROPOSAL_CARD, data: { proposalId } } as never)
-      .catch((error: unknown) => console.error("paseo-bots: couldn't post a proposal card", error));
+      .catch((error: unknown) => console.error("bot-crew: couldn't post a proposal card", error));
   }
 
   private queue(agentId: string, text: string): void {
@@ -236,6 +236,6 @@ export class FileTools {
     await this.host.paseo!.agents
       .ref(agentId)
       .send(`[Bots, not from the user] ${waiting.join("\n")}`, { messageId: newUuid() } as never)
-      .catch((error: unknown) => console.error("paseo-bots: couldn't tell a chat about a proposal file", error));
+      .catch((error: unknown) => console.error("bot-crew: couldn't tell a chat about a proposal file", error));
   }
 }

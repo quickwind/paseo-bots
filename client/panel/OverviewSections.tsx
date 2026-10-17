@@ -44,7 +44,7 @@ export function OverviewSection({ colors, bot, library, groups, localHost, onSet
   const promptBot = useDebounced(bot, 600);
   const prompt = useQuery({
     // The server reads skills and teams from the saved settings, so changes there recompose too.
-    queryKey: ["paseo-bots", "prompt", JSON.stringify(promptBot), host.isLocal, JSON.stringify(library.skills), JSON.stringify(groups)],
+    queryKey: ["bot-crew", "prompt", JSON.stringify(promptBot), host.isLocal, JSON.stringify(library.skills), JSON.stringify(groups)],
     queryFn: () => compose({ bot: promptBot, local: host.isLocal }),
     // Keep the previous composition while edits recompose it, so the card doesn't jump.
     placeholderData: (previous) => previous,
@@ -53,7 +53,7 @@ export function OverviewSection({ colors, bot, library, groups, localHost, onSet
   // Devin reads the identity from rule files that it cuts at 32 KB; say so when this one is long.
   const identityRpc = useRpc(identityStatusRpc);
   const identity = useQuery({
-    queryKey: ["paseo-bots", "identity", bot.id, prompt.dataUpdatedAt],
+    queryKey: ["bot-crew", "identity", bot.id, prompt.dataUpdatedAt],
     queryFn: () => identityRpc({ botId: bot.id }),
     enabled: host.isLocal && /^devin(\b|$)/.test(bot.provider) && prompt.isSuccess,
   });

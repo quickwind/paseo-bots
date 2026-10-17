@@ -299,7 +299,7 @@ function AllowedCommands({ colors, bot }: Pick<PanelProps, "colors" | "bot">) {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const key = ["paseo-bots", "commands", bot.id];
+  const key = ["bot-crew", "commands", bot.id];
   const rules = useQuery({ queryKey: key, queryFn: () => list({ botId: bot.id }) });
   const items = rules.data?.rules ?? [];
   const info = "Commands this bot runs without asking you: the exact command, in the exact folder. Add one with Always allow on the command's approval card.";

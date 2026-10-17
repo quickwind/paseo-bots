@@ -69,7 +69,7 @@ export async function answerMcp(message: JsonRpcRequest, tools: readonly BotTool
   switch (message.method) {
     case "initialize": {
       const requested = typeof message.params?.protocolVersion === "string" ? message.params.protocolVersion : PROTOCOL_VERSION;
-      return ok({ protocolVersion: requested, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "paseo-bots", version: PLUGIN_VERSION } });
+      return ok({ protocolVersion: requested, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "bot-crew", version: PLUGIN_VERSION } });
     }
     case "ping":
       return ok({});

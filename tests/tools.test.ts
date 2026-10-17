@@ -84,7 +84,7 @@ describe("the bots MCP server", () => {
         fetch(url, { method: "POST", headers: { authorization: token, "content-type": "application/json" }, body: JSON.stringify(body) });
 
       const init = (await (await post({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } })).json()) as { result: { serverInfo: { name: string } } };
-      expect(init.result.serverInfo.name).toBe("paseo-bots");
+      expect(init.result.serverInfo.name).toBe("bot-crew");
       expect((await post({ jsonrpc: "2.0", method: "notifications/initialized" })).status).toBe(202);
 
       const list = (await (await post({ jsonrpc: "2.0", id: 2, method: "tools/list" })).json()) as { result: { tools: { name: string; inputSchema: { type: string } }[] } };

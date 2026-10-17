@@ -28,7 +28,7 @@ interface SkillPageProps {
   onDelete(): void;
 }
 
-export const skillQueryKey = (id: string) => ["paseo-bots", "library-skill", id];
+export const skillQueryKey = (id: string) => ["bot-crew", "library-skill", id];
 
 /** A skill imported from a folder on this computer updates by reading that folder again. */
 function updateSource(source: string): string | null {

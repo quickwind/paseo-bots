@@ -49,7 +49,7 @@ export async function writeIdentity(bot: Bot, library: Library, context: { paseo
 export async function refreshIdentity(host: BotsHost, botId: string): Promise<void> {
   const [bot, library, settings] = await Promise.all([host.bot(botId), host.library(), host.values()]);
   if (!bot || bot.archived || bot.hostId) return;
-  await withBotLock(bot.id, () => writeIdentity(bot, library, { paseo: host.paseo, settings })).catch((error: unknown) => console.error(`paseo-bots: couldn't write ${bot.name}'s identity`, error));
+  await withBotLock(bot.id, () => writeIdentity(bot, library, { paseo: host.paseo, settings })).catch((error: unknown) => console.error(`bot-crew: couldn't write ${bot.name}'s identity`, error));
 }
 
 /** Rewrites the identity of every bot that runs on this host. */
@@ -57,7 +57,7 @@ export async function refreshIdentities(host: BotsHost): Promise<void> {
   const [bots, library, settings] = await Promise.all([host.bots(), host.library(), host.values()]);
   for (const bot of bots) {
     if (bot.archived || bot.hostId) continue;
-    await withBotLock(bot.id, () => writeIdentity(bot, library, { paseo: host.paseo, settings })).catch((error: unknown) => console.error(`paseo-bots: couldn't write ${bot.name}'s identity`, error));
+    await withBotLock(bot.id, () => writeIdentity(bot, library, { paseo: host.paseo, settings })).catch((error: unknown) => console.error(`bot-crew: couldn't write ${bot.name}'s identity`, error));
   }
 }
 

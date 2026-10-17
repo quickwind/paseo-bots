@@ -31,7 +31,7 @@ export const listBots = defineTool({
 });
 
 /** Label on a chat started by another bot's ask_bot, carrying the asking bot's id. */
-export const ASKED_BY_LABEL = "paseo-bots.asked-by";
+export const ASKED_BY_LABEL = "bot-crew.asked-by";
 /** MCP clients give up on a tool call after about a minute (Codex after 60 seconds), so answers are awaited a little less. */
 const ASK_WAIT_MS = 50_000;
 const REPLY_MAX = 8_000;

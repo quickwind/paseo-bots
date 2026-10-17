@@ -1,6 +1,6 @@
 {
-  "id": "paseo-bots",
-  "description": "Personal bots with their own instructions, agent, memory, routines, skills and local tools. Offline edition: no network connections of its own.",
+  "id": "bot-crew",
+  "description": "Bot Crew: personal bots with their own instructions, agent, memory, routines, skills and local tools. Offline edition: no network connections of its own.",
   "requirements": {
     "paseo": ">=0.9.2"
   }

@@ -16,7 +16,7 @@ import type { ToolMode } from "../../shared/tools-mode";
 
 type Colors = PluginSurfaceProps["theme"]["colors"];
 
-/** Settings → Plugins → paseo-bots: what new bots start with, saved presets, and team files. */
+/** Settings → Plugins → bot-crew: what new bots start with, saved presets, and team files. */
 export function BotsSettings({ theme, host }: PluginSurfaceProps) {
   const colors = theme.colors;
   const { settings, commit } = useBotSettings();

@@ -186,7 +186,7 @@ export class Asks {
     try {
       await this.host.paseo!.agents.ref(fromChat).send(taken.flatMap((entry) => entry.messages).join("\n\n"), { messageId: newUuid() } as never);
     } catch (error) {
-      console.error("paseo-bots: couldn't deliver a bot's answer; it stays waiting", error);
+      console.error("bot-crew: couldn't deliver a bot's answer; it stays waiting", error);
       await this.update((requests) => {
         for (const { id, messages } of taken) {
           const entry = requests.find((candidate) => candidate.id === id);

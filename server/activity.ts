@@ -41,7 +41,7 @@ export async function turnEnded(host: BotsHost, journal: MemoryJournal, schedule
   await journal.end(botId, { id: agent.id, title });
   const { reply, tools } = lastTurn(timeline);
   const isTidy = Boolean(chat.labels[TIDY_LABEL]);
-  if (chat.labels[ASK_REQUEST_LABEL]) await maintenance?.asks?.answered({ agentId: agent.id, labels: chat.labels, outcome, reply }).catch((error: unknown) => console.error("paseo-bots: couldn't pass on a bot's answer", error));
+  if (chat.labels[ASK_REQUEST_LABEL]) await maintenance?.asks?.answered({ agentId: agent.id, labels: chat.labels, outcome, reply }).catch((error: unknown) => console.error("bot-crew: couldn't pass on a bot's answer", error));
   const wasSave = maintenance?.saves.consume(agent.id) ?? false;
   if (isTidy) {
     // A tidy turn is the app's own work; logging it would look like new material to the next tidy.
@@ -58,7 +58,7 @@ export async function turnEnded(host: BotsHost, journal: MemoryJournal, schedule
   if (maintenance && !wasSave && !chat.routineId && outcome.kind === "completed") await askToSave(host, maintenance, botId, agent.id);
   if (maintenance?.fileTools) {
     const bot = await host.bot(botId);
-    if (bot && !bot.hostId) await maintenance.fileTools.afterTurn({ bot, agentId: agent.id, timeline, labels: chat.labels }).catch((error: unknown) => console.error("paseo-bots: couldn't read the bot's proposal files", error));
+    if (bot && !bot.hostId) await maintenance.fileTools.afterTurn({ bot, agentId: agent.id, timeline, labels: chat.labels }).catch((error: unknown) => console.error("bot-crew: couldn't read the bot's proposal files", error));
   }
 }
 
@@ -80,6 +80,6 @@ async function askToSave(host: BotsHost, maintenance: Maintenance, botId: string
     .send(savePrompt(inboxPath(botId)), { messageId: newUuid() } as never)
     .catch((error: unknown) => {
       maintenance.saves.consume(agentId);
-      console.error("paseo-bots: couldn't ask a chat to save its notes", error);
+      console.error("bot-crew: couldn't ask a chat to save its notes", error);
     });
 }

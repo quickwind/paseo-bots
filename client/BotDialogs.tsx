@@ -45,7 +45,7 @@ export function NewBotDialog({
           </SettingsCard>
         </SettingsSection>
         {presets.length ? (
-          <SettingsSection title="Your presets" info="Bots you saved as presets from their menu. Manage them in Settings, Plugins, paseo-bots.">
+          <SettingsSection title="Your presets" info="Bots you saved as presets from their menu. Manage them in Settings, Plugins, bot-crew.">
             <SettingsCard>
               {presets.map((preset) => (
                 <StartRow key={preset.id} colors={colors} label={preset.name} hint={preset.title || preset.description} avatar={preset.avatar} onPress={() => onCreate({ preset })} />
@@ -53,7 +53,7 @@ export function NewBotDialog({
             </SettingsCard>
           </SettingsSection>
         ) : null}
-        <SettingsSection title="Import" info="Paste a bot or team file from paseo-bots. Routines arrive paused, skills need a review and secrets must be filled in again.">
+        <SettingsSection title="Import" info="Paste a bot or team file from Bot Crew. Routines arrive paused, skills need a review and secrets must be filled in again.">
           <FormTextArea
             colors={colors}
             monospace
@@ -63,7 +63,7 @@ export function NewBotDialog({
             autoCapitalize="none"
             autoCorrect={false}
             minHeight={120}
-            placeholder='{"format": "paseo-bots", …}'
+            placeholder='{"format": "bot-crew", …}'
           />
           <SheetActions>
             <Button

@@ -7,7 +7,7 @@ import type { BotsHost } from "./host";
 // into the chat that already has the answer, whether the question came as a file or as the ask_bot tool.
 
 /** Label on the chat that answers, carrying the id of the first question put to it. */
-export const ASK_REQUEST_LABEL = "paseo-bots.ask-request";
+export const ASK_REQUEST_LABEL = "bot-crew.ask-request";
 /** A follow-up goes into the same chat for this long after its last question; after that a new chat starts. */
 export const REUSE_WITHIN_MS = 60 * 60_000;
 const KEEP = 200;

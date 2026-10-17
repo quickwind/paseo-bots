@@ -8,7 +8,7 @@ import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 import { renderPlaybooks } from "./playbooks";
 
 /** Agent label carrying the bot id. Chats are found by filtering on it. */
-export const BOT_LABEL = "paseo-bots.bot";
+export const BOT_LABEL = "bot-crew.bot";
 
 const StringRecord = z.record(z.string(), z.string());
 

@@ -18,8 +18,8 @@ type Colors = PanelProps["colors"];
 
 const SHOWN = 20;
 const DAYS = 14;
-const journalKey = (botId: string) => ["paseo-bots", "memory-journal", botId];
-const logKey = (botId: string) => ["paseo-bots", "memory-log", botId];
+const journalKey = (botId: string) => ["bot-crew", "memory-journal", botId];
+const logKey = (botId: string) => ["bot-crew", "memory-log", botId];
 
 // OpenMausBot's memory "Changes" card and daily log, each browsed in a modal from the bot's Memory section.
 
