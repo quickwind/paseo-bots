@@ -52,15 +52,20 @@ export const BotMcpServerSchema = z.object({
 export type BotMcpServer = z.infer<typeof BotMcpServerSchema>;
 
 /** Pictures are kept only as data: URLs, so nothing ever loads an address from the network. */
+/** A negative colour number names no palette: the picture then takes the colour its seed gives. */
+function noNegative(value: number | null): number | null {
+  return value !== null && value < 0 ? null : value;
+}
+
 function dataImageOnly(value: string | null): string | null {
   return value !== null && /^data:image\//i.test(value) ? value : null;
 }
 
-const BotAvatarSchema = z.object({
+export const BotAvatarSchema = z.object({
   /** Seed for the generated robot face. */
   seed: z.string(),
   /** Palette override for the generated face; null lets the seed pick. */
-  palette: z.number().int().nullable().default(null),
+  palette: z.number().int().nullable().default(null).transform(noNegative),
   shape: z.enum(["circle", "rounded", "square"]).default("circle"),
   /** A data: image shown instead of the generated face. Any other address is dropped. */
   imageUrl: z.string().nullable().default(null).transform(dataImageOnly),
@@ -230,11 +235,11 @@ export type BotListUi = z.infer<typeof BotListUiSchema>;
 export const DEFAULT_BOT_LIST_UI: BotListUi = BotListUiSchema.parse({});
 
 /** A team's logo: a generated pixel-art motif, or a picture instead. */
-const TeamLogoSchema = z.object({
+export const TeamLogoSchema = z.object({
   /** Seed for the generated logo. */
   seed: z.string(),
   /** Palette override for the generated logo; null lets the seed pick. */
-  palette: z.number().int().nullable().default(null),
+  palette: z.number().int().nullable().default(null).transform(noNegative),
   /** A data: image shown instead of the generated logo. Any other address is dropped. */
   imageUrl: z.string().nullable().default(null).transform(dataImageOnly),
 });

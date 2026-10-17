@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { promptSections, type BotGroup } from "../shared/bot";
-import { askLimit, groupBots, mayAskWithoutAsking, OTHER_BOTS_TAB, saveTeam, tabOf, teamLogoOf, teamOf, teamPrompt, teamTabs, withoutBot } from "../shared/groups";
+import { ASK_PREAPPROVED_LABEL, askLimit, askPreapproval, groupBots, mayAskWithoutAsking, OTHER_BOTS_TAB, saveTeam, tabOf, teamLogoOf, teamOf, teamPrompt, teamTabs, withoutBot } from "../shared/groups";
 import { LOGO_SIZE, MOTIF_NAMES, teamLogo, type TeamLogoImage } from "../shared/team-logo";
 import { makeBot } from "./helpers";
 
@@ -133,5 +133,16 @@ describe("asking inside a team", () => {
     }
     // A member's text does not depend on it.
     expect(teamPrompt(team(), bots[1]!, bots, "none")).toMatch(/^You're on the "Ops" team\./);
+  });
+});
+
+describe("how ask_bot was pre-approved when a chat started", () => {
+  it("records the basis: the bot is set to Allow, or its team lets members ask freely", () => {
+    expect(ASK_PREAPPROVED_LABEL).toBe("bot-crew.ask-preapproved");
+    expect(askPreapproval(makeBot({ contactBots: "allow" }), false)).toBe("all");
+    expect(askPreapproval(makeBot({ contactBots: "allow" }), true)).toBe("all");
+    expect(askPreapproval(makeBot({ contactBots: "ask" }), true)).toBe("team");
+    expect(askPreapproval(makeBot({ contactBots: "ask" }), false)).toBeNull();
+    expect(askPreapproval(makeBot({ contactBots: "off" }), true)).toBeNull();
   });
 });

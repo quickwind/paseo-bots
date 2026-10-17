@@ -132,6 +132,24 @@ describe("asking other bots", () => {
   });
 });
 
+describe("how often ask_bot may be used", () => {
+  it("allows a chat five questions an hour, and the team's Chief of Staff twenty", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const make = async (id: string, groups: Parameters<typeof fakeHost>[2]) => {
+      const bot = makeBot({ id, name: "Asker", contactBots: "allow" });
+      const host = fakeHost([bot, makeBot({ id: "bot-inbox", name: "Inbox" })], EMPTY_LIBRARY, groups);
+      host.attach(fakePaseo({ [`chat-of-${id}`]: { status: "idle", labels: { "bot-crew.bot": id } }, "chat-new": { status: "running", labels: {}, reply: "Done." } }));
+      return { bot, agentId: `chat-of-${id}`, host, relay: null as never };
+    };
+    const plain = await make("bot-plain", []);
+    for (let n = 0; n < 5; n++) await askBot.run({ bot: "Inbox", message: `q${n}`, wait: false }, plain);
+    await expect(askBot.run({ bot: "Inbox", message: "one more", wait: false }, plain)).rejects.toThrow(/too many times in the last hour \(5\)/);
+    const lead = await make("bot-lead", [{ id: "t1", name: "Ops", logo: null, leadId: "bot-lead", memberIds: ["bot-lead"], instructions: "", askFreely: false, createdAt: "", updatedAt: "" }]);
+    for (let n = 0; n < 20; n++) await askBot.run({ bot: "Inbox", message: `q${n}`, wait: false }, lead);
+    await expect(askBot.run({ bot: "Inbox", message: "one more", wait: false }, lead)).rejects.toThrow(/\(20\)/);
+  });
+});
+
 describe("asking the same bot again with ask_bot", () => {
   async function setup() {
     const { askBot } = await import("../server/tools/bots");
@@ -208,5 +226,25 @@ describe("asking with the tool inside a team that allows it", () => {
     const strict = fakeHost([scout, makeBot({ id: "bot-solo", name: "Solo" })], EMPTY_LIBRARY, [{ ...group, askFreely: false }]);
     strict.attach(fakePaseo(chats));
     expect(await askBot.run({ bot: "Solo", message: "hi" }, { ...caller, host: strict })).toContain("Done.");
+  });
+
+  it("stops a chat that was started pre-approved once the setting is gone", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const { ASK_PREAPPROVED_LABEL } = await import("../shared/groups");
+    const chatsFor = (basis: string) => ({ "caller-chat": { status: "idle", labels: { "bot-crew.bot": "bot-scout", [ASK_PREAPPROVED_LABEL]: basis } }, "chat-new": { status: "running", labels: {}, reply: "Done." } }) as Record<string, FakeChat>;
+    const run = async (basis: string, contactBots: "ask" | "allow", groups: (typeof group)[]) => {
+      const scout = makeBot({ id: "bot-scout", name: "Scout", contactBots });
+      const host = fakeHost([scout, makeBot({ id: "bot-inbox", name: "Inbox" }), makeBot({ id: "bot-solo", name: "Solo" })], EMPTY_LIBRARY, groups);
+      host.attach(fakePaseo(chatsFor(basis)));
+      const caller = { bot: scout, agentId: "caller-chat", host, relay: null as never };
+      return (who: string) => askBot.run({ bot: who, message: "hi" }, caller);
+    };
+    // Team pre-approval: the team switched askFreely off, or the bot left the team.
+    await expect((await run("team", "ask", [{ ...group, askFreely: false }]))("Inbox")).rejects.toThrow(/no longer/);
+    await expect((await run("team", "ask", []))("Inbox")).rejects.toThrow(/no longer/);
+    expect(await (await run("team", "ask", [group]))("Inbox")).toContain("Done.");
+    // "Allow" pre-approval: the user changed the bot back to Ask first.
+    await expect((await run("all", "ask", []))("Inbox")).rejects.toThrow(/no longer/);
+    expect(await (await run("all", "allow", []))("Solo")).toContain("Done.");
   });
 });

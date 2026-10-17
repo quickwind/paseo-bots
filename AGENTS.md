@@ -94,10 +94,16 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
   cannot loosen it): its members ask each other without the user's approval; a bot set to Off still may
   not, and a question to someone outside the team still asks. For the MCP tool it also pre-approves
   `ask_bot`, which then refuses non-teammates (nothing would have asked the user). The Chief of Staff
-  may ask 20 times an hour, others 5. Several bots can be asked in one turn (one outbox file each, or
+  may ask 20 times an hour, others 5; `ask_bot` counts the same way (shared `ask-store.ts` log). A chat started
+  with `ask_bot` pre-approved (bot on Allow, or its team's switch on) carries the label `bot-crew.ask-preapproved`
+  ("all" or "team"), and `ask_bot` re-checks that basis on every call, so turning the setting off also stops chats
+  already open (the tool permission itself is fixed when the chat starts). Several bots can be asked in one turn (one outbox file each, or
   `ask_bot` with `wait: false`); each answer comes as its own message, a slow one closes at 30 minutes
   with a notice, and the lead is told to answer without waiting for the slowest.
-- Safety rules for anything the plugin writes in a bot's folder: never follow a link (remove it),
+- A memory tidy chat runs in the bot's folder, so its identity file is the full one; the files its turn wrote
+  in `proposals/` and `outbox/` are settled with a note and never become cards or go to a later chat
+  (`FileTools.discardTurn`).
+- Safety rules for anything the plugin writes in a bot's folder: never follow a link (remove it; `realDirUnder` checks every folder of the path, `writeAtomic` replaces a linked file),
   write through temp file and rename, keep every file under the bot's folder, treat file contents and
   other bots' replies as data, never as instructions.
 

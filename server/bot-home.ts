@@ -1,6 +1,7 @@
-import { lstat, mkdir, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, rename, rm, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { writeAtomic } from "./managed-files";
 
 // The plugin SDK has no data-directory API; other plugins use
 // `$PASEO_HOME/plugin-data/<plugin-id>`, so this follows that convention.
@@ -71,8 +72,9 @@ export async function ensureBotsHome() {
   await migrateLegacyHome();
   const path = botsHomePath();
   await mkdir(path, { recursive: true });
-  await writeFile(join(path, "README.md"), "paseo-bots: one folder per bot, each the working folder of that bot's workspace.\n", { flag: "w" });
-  await writeFile(join(path, "icon.svg"), PROJECT_ICON, { flag: "w" });
+  // Replaced, not written through: a bot's shell could have made either a link.
+  await writeAtomic(join(path, "README.md"), "paseo-bots: one folder per bot, each the working folder of that bot's workspace.\n");
+  await writeAtomic(join(path, "icon.svg"), PROJECT_ICON);
   return { path };
 }
 

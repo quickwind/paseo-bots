@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { redactSecrets } from "../shared/activity";
 import { lineDiff } from "../shared/diff";
-import { pluginDataPath } from "./bot-home";
+import { botDataPath, pluginDataPath } from "./bot-home";
+import { realDirUnder, writeAtomic } from "./managed-files";
 import { MAIN_MEMORY, memoryFilePath, memoryFolder } from "./memory";
 
 // OpenMausBot's memory journal: every change to a bot's MEMORY.md and topic
@@ -96,8 +97,9 @@ export class MemoryJournal {
     const before = await readFile(path, "utf8").catch(() => null);
     if (text === null) await rm(path, { force: true });
     else {
-      await mkdir(join(path, ".."), { recursive: true });
-      await writeFile(path, text, "utf8");
+      // Through a temporary file, and past any link the bot put in the way.
+      await realDirUnder(botDataPath(botId), ...relative(botDataPath(botId), dirname(path)).split(sep));
+      await writeAtomic(path, text);
     }
     await this.append(botId, file, before, text, { actor: "you", via, chat: null });
     const seen = this.seen.get(botId);

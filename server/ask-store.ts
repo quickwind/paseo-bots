@@ -58,6 +58,11 @@ export function updateRequests<T>(change: (requests: AskRequest[]) => T): Promis
   return next;
 }
 
+/** How many questions this chat has put to other bots in the last hour, by file or by ask_bot. */
+export async function askedInLastHour(fromChat: string, now: number): Promise<number> {
+  return (await loadRequests()).filter((entry) => entry.fromChat === fromChat && now - Date.parse(entry.createdAt) < 3_600_000).length;
+}
+
 const lastUsed = (request: AskRequest) => Date.parse(request.answeredAt ?? request.startedAt ?? request.createdAt);
 
 /**

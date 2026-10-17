@@ -5,6 +5,7 @@ import { basename, dirname, join, posix, relative, resolve, sep } from "node:pat
 import type { LibrarySkill } from "../shared/bot";
 import { parseSkillFolder, parseSkillFrontmatter, sanitizeSkillName } from "../shared/skills";
 import { botDataPath, botsHomePath, pluginDataPath } from "./bot-home";
+import { realDirUnder } from "./managed-files";
 
 // The shared skill library: one folder per skill under plugin-data/library/skills.
 // Bots that use the managed folder get a link to each of their skills in
@@ -170,7 +171,7 @@ export async function migrateBotSkills(): Promise<void> {
 export async function linkBotSkills(botId: string, ids: readonly string[]): Promise<Map<string, string>> {
   const dir = join(botDataPath(botId), "skills");
   const paths = new Map<string, string>();
-  await mkdir(dir, { recursive: true }).catch(() => {});
+  await realDirUnder(botDataPath(botId), "skills").catch(() => {});
   const existing = await readdir(dir, { withFileTypes: true }).catch(() => []);
   for (const entry of existing) {
     if (entry.isSymbolicLink() && !ids.includes(entry.name)) await unlink(join(dir, entry.name)).catch(() => {});

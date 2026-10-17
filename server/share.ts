@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { newMemory } from "../shared/memory-maintenance";
 import { dirname, join, relative, sep } from "node:path";
 import { z } from "zod";
@@ -68,7 +68,9 @@ async function collect(root: string, include: (path: string) => boolean): Promis
     for (const name of names) {
       if (Object.keys(files).length >= MAX_FILES) return;
       const path = join(dir, name);
-      const info = await stat(path);
+      // A link is skipped: it could lead to a file outside the folder (a key, say) that would end up in the export.
+      const info = await lstat(path);
+      if (info.isSymbolicLink()) continue;
       if (info.isDirectory()) await walk(path);
       else {
         const key = relative(root, path).split(sep).join("/");

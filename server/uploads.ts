@@ -1,11 +1,11 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { botDataPath } from "./bot-home";
+import { realDirUnder } from "./managed-files";
 
 export async function saveUpload({ botId, fileName, dataBase64 }: { botId: string; fileName: string; dataBase64: string }) {
   const safe = fileName.replace(/[^A-Za-z0-9._ -]+/g, "_").replace(/^\.+/, "") || "file";
-  const dir = join(botDataPath(botId), "uploads");
-  await mkdir(dir, { recursive: true });
+  const dir = await realDirUnder(botDataPath(botId), "uploads");
   const path = join(dir, `${Date.now().toString(36)}-${safe}`);
   const bytes = Buffer.from(dataBase64, "base64");
   await writeFile(path, bytes);

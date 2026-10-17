@@ -15,6 +15,25 @@ export async function realDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
 }
 
+/**
+ * Makes sure each folder in `parts` below `root` is a real folder, creating them. Links among them are
+ * removed rather than followed, so a write below never lands outside `root`.
+ */
+export async function realDirUnder(root: string, ...parts: string[]): Promise<string> {
+  let dir = root;
+  await mkdir(dir, { recursive: true });
+  for (const part of parts.flatMap((entry) => entry.split(/[\\/]/)).filter(Boolean)) {
+    dir = join(dir, part);
+    await realDir(dir);
+  }
+  return dir;
+}
+
+/** Removes `path` when it is a link, so an append or write goes to a file of its own and not to the link's target. */
+export async function dropLink(path: string): Promise<void> {
+  if ((await lstat(path).catch(() => null))?.isSymbolicLink()) await unlink(path);
+}
+
 export async function writeAtomic(path: string, text: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.tmp-${randomBytes(4).toString("hex")}`;
@@ -38,6 +57,7 @@ export async function syncManaged(dir: string, files: readonly { path: string; t
   const wanted = new Set(files.map((file) => file.path));
   for (const file of files) {
     const target = join(dir, ...file.path.split("/"));
+    await realDirUnder(dir, ...file.path.split("/").slice(0, -1));
     const current = await readFile(target, "utf8").catch(() => null);
     if (current !== file.text) await writeAtomic(target, file.text);
   }

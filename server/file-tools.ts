@@ -218,8 +218,8 @@ export class FileTools {
   constructor(
     private readonly host: BotsHost,
     private readonly relay: Relay,
-    private readonly asks: Pick<Asks, "request" | "deliver"> | null = null,
-    private readonly activity: Pick<ChatActivity, "busy"> | null = null,
+    private readonly asks: Pick<Asks, "request" | "deliver"> | null,
+    private readonly activity: Pick<ChatActivity, "busy"> | null,
   ) {}
 
   async afterTurn(input: { bot: Bot; agentId: string; timeline: readonly unknown[]; labels?: Record<string, string> }): Promise<void> {
@@ -258,6 +258,23 @@ export class FileTools {
     await this.flush(agentId);
     await this.asks?.deliver(agentId).catch((error: unknown) => console.error("bot-crew: couldn't deliver a bot's answer", error));
     await writeHistory(this.host, bot, agentId).catch((error: unknown) => console.error("bot-crew: couldn't write the chat history", error));
+  }
+
+  /**
+   * A memory tidy chat reads untrusted text and has no business proposing or asking: the files its last
+   * turn wrote are settled with a note and never become a card, and no later chat is handed them.
+   */
+  async discardTurn(input: { bot: Bot; timeline: readonly unknown[] }): Promise<void> {
+    const written = writtenStrings(input.timeline);
+    for (const folder of [PROPOSALS_DIR, OUTBOX_DIR] as const) {
+      const dir = join(botDataPath(input.bot.id), folder);
+      await realDir(dir).catch(() => {});
+      const names: string[] = [];
+      for (const name of (await readdir(dir).catch(() => [] as string[])).filter((entry) => entry !== DONE_DIR)) {
+        if (fileBelongsToTurn(name, written) && (await lstat(join(dir, name)).catch(() => null))?.isFile()) names.push(name);
+      }
+      await discardFiles({ bot: input.bot, folder }, names, "Not accepted: a memory tidy chat cannot propose changes or ask other bots.");
+    }
   }
 
   private async card(agentId: string, proposalId: string): Promise<void> {

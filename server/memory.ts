@@ -1,8 +1,9 @@
-import { appendFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { appendFile, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { localDay, parseLog, type LogEntry } from "../shared/activity";
 import { INBOX_FILE, MEMORY_MAX_BYTES, MEMORY_MAX_LINES } from "../shared/memory-maintenance";
 import { botDataPath } from "./bot-home";
+import { dropLink, realDirUnder } from "./managed-files";
 
 // OpenMausBot's budget: the first MEMORY_MAX_LINES lines or MEMORY_MAX_BYTES bytes of MEMORY.md go into every chat.
 export const MAIN_MEMORY = "MEMORY.md";
@@ -81,8 +82,11 @@ function logPath(botId: string, day: string): string {
 
 /** Adds a line to today's log, memory/log/YYYY-MM-DD.md. */
 export async function appendDailyLog(botId: string, line: string, at = new Date()): Promise<void> {
-  await mkdir(logFolder(botId), { recursive: true });
-  await appendFile(logPath(botId, localDay(at)), `${line}\n`, { encoding: "utf8", mode: 0o600 });
+  // The bot can replace memory/log, or today's file, with a link; neither is followed.
+  await realDirUnder(botDataPath(botId), "memory", "log");
+  const path = logPath(botId, localDay(at));
+  await dropLink(path);
+  await appendFile(path, `${line}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
 /** The log's days, newest first, with how many lines each has. */

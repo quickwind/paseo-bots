@@ -26,6 +26,21 @@ export function mayAskWithoutAsking(askerId: string, targetId: string, groups: r
   return !!group?.askFreely && (group.leadId === targetId || group.memberIds.includes(targetId));
 }
 
+/** Label on a chat that started with ask_bot pre-approved, saying why: "all" (the bot is set to Allow) or "team" (its team lets members ask freely). */
+export const ASK_PREAPPROVED_LABEL = "bot-crew.ask-preapproved";
+
+/** Why ask_bot runs without the user's tool approval for a chat starting now, if it does. */
+export function askPreapproval(bot: Pick<Bot, "contactBots">, teamAsksFreely: boolean): "all" | "team" | null {
+  if (bot.contactBots === "allow") return "all";
+  return bot.contactBots === "ask" && teamAsksFreely ? "team" : null;
+}
+
+/** Whether the reason a chat was pre-approved still holds, so a setting turned off later takes effect in chats already open. */
+export function stillPreapproved(basis: string, bot: Pick<Bot, "id" | "contactBots">, targetId: string, groups: readonly BotGroup[]): boolean {
+  if (bot.contactBots === "allow") return true;
+  return basis === "team" && bot.contactBots === "ask" && mayAskWithoutAsking(bot.id, targetId, groups);
+}
+
 /** How many questions a chat of this bot may send in an hour. */
 export function askLimit(botId: string, groups: readonly BotGroup[]): number {
   return teamOf(botId, groups)?.leadId === botId ? LEAD_ASKS_PER_HOUR : ASKS_PER_HOUR;

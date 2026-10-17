@@ -211,7 +211,7 @@ describe("after a turn ends, for a bot whose tools are files", () => {
     const { botDataPath } = await import("../server/bot-home");
     const dir = join(botDataPath("scout"), "proposals");
     await mkdir(dir, { recursive: true });
-    const files = new FileTools(host, null as never);
+    const files = new FileTools(host, null as never, null, null);
     const turn = (agentId: string, written: string[]) => files.afterTurn({ bot, agentId, timeline: written.map((filePath) => ({ type: "tool_call", detail: { type: "edit", filePath } })) });
     return { bot, host, dir, files, appended, sent, state, turn };
   }
@@ -223,6 +223,16 @@ describe("after a turn ends, for a bot whose tools are files", () => {
     expect(appended).toHaveLength(1);
     expect(appended[0]).toMatchObject({ agentId: "chat-1", item: { type: "plugin", kind: "proposal", version: 1, data: { proposalId: expect.stringMatching(/^p-/) } } });
     expect(appended[0]!.item.id).toBe((appended[0]!.item.data as { proposalId: string }).proposalId);
+    expect(sent).toEqual([]);
+  });
+
+  it("settles the files a memory tidy chat wrote without a card, so no later chat picks them up", async () => {
+    const { dir, files, bot, appended, sent } = await setup();
+    await writeFile(join(dir, "skill-t1.json"), skillFile("t"));
+    await files.discardTurn({ bot, timeline: [{ type: "tool_call", detail: { type: "edit", filePath: "Wrote ./proposals/skill-t1.json" } }] });
+    expect(await readdir(dir)).not.toContain("skill-t1.json");
+    expect(await readFile(join(dir, "done", "skill-t1.json.result.txt"), "utf8")).toContain("memory tidy");
+    expect(appended).toEqual([]);
     expect(sent).toEqual([]);
   });
 
@@ -322,11 +332,24 @@ describe("a chat in a bot's own folder", () => {
     const dir = join(botDataPath("scout"), "proposals");
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, "skill-f6.json"), JSON.stringify({ kind: "skill", name: "f", description: "d", instructions: "i" }));
-    const files = new FileTools(host, null as never);
+    const files = new FileTools(host, null as never, null, null);
     const event = { agent: { id: "plain", workspaceId: null, parentAgentId: null, provider: "devin", cwd: botDataPath("scout"), title: "New chat" }, turnId: "t", outcome: { kind: "completed" }, timeline: [{ type: "tool_call", detail: { type: "edit", filePath: "Wrote ./proposals/skill-f6.json" } }] };
     await turnEnded(host, new MemoryJournal(), { finished: async () => {} }, event as never, { activity: new ChatActivity(), saves: new SaveTracker(), tidy: null, fileTools: files });
     expect(appended).toHaveLength(1);
     expect(bot.id).toBe("scout");
+  });
+
+  it("discards what a memory tidy chat wrote instead of showing a card or handing it to a later chat", async () => {
+    const { botDataPath } = await import("../server/bot-home");
+    const { host, appended } = await hostWith(botDataPath("scout"), { "bot-crew.bot": "scout", "bot-crew.tidy": "scout" });
+    const dir = join(botDataPath("scout"), "proposals");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "skill-f7.json"), JSON.stringify({ kind: "skill", name: "f", description: "d", instructions: "i" }));
+    const files = new FileTools(host, null as never, null, null);
+    const event = { agent: { id: "tidy-chat", workspaceId: null, parentAgentId: null, provider: "devin", cwd: botDataPath("scout"), title: "Memory tidy" }, turnId: "t", outcome: { kind: "completed" }, timeline: [{ type: "tool_call", detail: { type: "edit", filePath: "Wrote ./proposals/skill-f7.json" } }] };
+    await turnEnded(host, new MemoryJournal(), { finished: async () => {} }, event as never, { activity: new ChatActivity(), saves: new SaveTracker(), tidy: { finished: async () => {} }, fileTools: files });
+    expect(appended).toEqual([]);
+    expect(await readdir(dir)).not.toContain("skill-f7.json");
   });
 });
 
@@ -354,7 +377,7 @@ describe("the outbox, for a bot whose tools are files", () => {
     const proposals = join(botDataPath("chief"), "proposals");
     await mkdir(outbox, { recursive: true });
     await mkdir(proposals, { recursive: true });
-    const files = new FileTools(host, null as never, asks as never);
+    const files = new FileTools(host, null as never, asks as never, null);
     const turn = (written: string[], labels: Record<string, string> = {}) => files.afterTurn({ bot, agentId: "chat-1", labels, timeline: written.map((filePath) => ({ type: "tool_call", detail: { type: "edit", filePath } })) });
     return { outbox, proposals, calls, appended, sent, turn };
   }

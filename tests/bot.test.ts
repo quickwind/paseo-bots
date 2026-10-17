@@ -304,3 +304,23 @@ describe("paths in the prompt", () => {
     expect(text).not.toContain("\\");
   });
 });
+
+import { BotAvatarSchema as AvatarSchema, TeamLogoSchema } from "../shared/bot";
+import { teamLogo } from "../shared/team-logo";
+import { paletteSwatch } from "../shared/pixel";
+
+describe("a colour number outside the palettes", () => {
+  it("still draws a picture and a swatch, as an imported file can carry any whole number", () => {
+    for (const palette of [-1, -7, 1_000_003]) {
+      expect(() => pixelAvatar("abc", palette)).not.toThrow();
+      expect(() => teamLogo("abc", palette)).not.toThrow();
+      expect(() => paletteSwatch(palette)).not.toThrow();
+    }
+  });
+
+  it("is read as no colour chosen when a saved or imported file has a negative one", () => {
+    expect(AvatarSchema.parse({ seed: "s", palette: -1 }).palette).toBeNull();
+    expect(TeamLogoSchema.parse({ seed: "s", palette: -4 }).palette).toBeNull();
+    expect(AvatarSchema.parse({ seed: "s", palette: 2 }).palette).toBe(2);
+  });
+});

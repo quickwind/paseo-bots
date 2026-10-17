@@ -87,7 +87,7 @@ export default function contribute(server: PluginServerContext) {
   const chatActivity = new ChatActivity();
   const tidy = new MemoryTidy(host, relay, chatActivity);
   const asks = new Asks(host, relay);
-  const maintenance = { activity: chatActivity, saves: new SaveTracker(), tidy, fileTools: new FileTools(host, relay, asks), asks };
+  const maintenance = { activity: chatActivity, saves: new SaveTracker(), tidy, fileTools: new FileTools(host, relay, asks, chatActivity), asks };
   // A question nobody answered is closed after half an hour.
   const asksTimer = setInterval(() => void asks.sweep().catch((error: unknown) => console.error("bot-crew: couldn't close old requests", error)), 5 * 60_000);
   const commands = new CommandAllowlist();

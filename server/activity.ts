@@ -20,7 +20,7 @@ export interface Maintenance {
   saves: SaveTracker;
   tidy: { finished(botId: string, agentId: string, outcome: PluginTurnOutcome, reply: string): Promise<void> } | null;
   /** For bots whose tools are files: reads their proposal files after a turn. */
-  fileTools?: Pick<FileTools, "afterTurn"> | null;
+  fileTools?: Pick<FileTools, "afterTurn" | "discardTurn"> | null;
   /** For a chat started to answer another bot: its reply goes back to the asking chat. */
   asks?: Pick<Asks, "answered"> | null;
 }
@@ -46,6 +46,9 @@ export async function turnEnded(host: BotsHost, journal: MemoryJournal, schedule
   if (isTidy) {
     // A tidy turn is the app's own work; logging it would look like new material to the next tidy.
     await maintenance?.tidy?.finished(botId, agent.id, outcome, reply);
+    // It runs in the bot's folder and may have written tool files (an injected note could ask it to); none of them are accepted.
+    const bot = maintenance?.fileTools ? await host.bot(botId) : null;
+    if (bot && !bot.hostId) await maintenance!.fileTools!.discardTurn({ bot, timeline }).catch((error: unknown) => console.error("bot-crew: couldn't settle a tidy chat's tool files", error));
     return;
   }
   if (chat.routineId) await scheduler.finished(chat.routineId, agent.id, outcome, reply);

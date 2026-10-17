@@ -6,7 +6,7 @@
 // Each motif is hand-drawn on a 12×12 area of a 16×16 grid and shaded the way the
 // avatars are: light from the top-left, two shadow tones and a coloured outline.
 
-import { buildPalette, darkBackground, PALETTES, pick, rng, toRuns, type Palette, type PaletteDef, type PixelRun } from "./pixel";
+import { buildPalette, darkBackground, paletteAt, PALETTES, pick, rng, toRuns, type Palette, type PaletteDef, type PixelRun } from "./pixel";
 
 export const LOGO_SIZE = 16;
 
@@ -321,5 +321,5 @@ export function teamLogo(seed: string, palette: number | null = null, options: L
   const next = rng(`team:${seed}`);
   const motif = pick(next, MOTIF_NAMES);
   const seeded = pick(next, PALETTES);
-  return themed(motif, palette === null ? seeded : PALETTES[palette % PALETTES.length]!, options);
+  return themed(motif, palette === null ? seeded : paletteAt(palette), options);
 }

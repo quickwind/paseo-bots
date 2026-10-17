@@ -121,8 +121,13 @@ export function pick<T>(next: () => number, items: readonly T[]): T {
 /** Number of colour palettes a bot or team can pin its picture to. */
 export const PALETTE_COUNT = PALETTES.length;
 
+/** The palette for any whole number: a negative or large one (an imported file can carry any) wraps around. */
+export function paletteAt(index: number): (typeof PALETTES)[number] {
+  return PALETTES[((index % PALETTES.length) + PALETTES.length) % PALETTES.length]!;
+}
+
 export function paletteSwatch(index: number): string {
-  return PALETTES[index % PALETTES.length]!.body;
+  return paletteAt(index).body;
 }
 
 // ------------------------------------------------------------------ themes

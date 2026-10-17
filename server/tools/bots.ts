@@ -3,10 +3,10 @@ import { TIDY_LABEL } from "../../shared/memory-maintenance";
 import { z } from "zod";
 import { foldText, lastTurn } from "../../shared/activity";
 import { BOT_LABEL } from "../../shared/bot";
-import { mayAskWithoutAsking, teamOf } from "../../shared/groups";
+import { ASK_PREAPPROVED_LABEL, askLimit, mayAskWithoutAsking, stillPreapproved, teamOf } from "../../shared/groups";
 import { randomBytes } from "node:crypto";
 import { newUuid } from "../../shared/uuid";
-import { ASK_REQUEST_LABEL, reusableChat, updateRequests } from "../ask-store";
+import { ASK_REQUEST_LABEL, askedInLastHour, reusableChat, updateRequests } from "../ask-store";
 import { startChat } from "../chats";
 import type { BotsHost } from "../host";
 import type { Relay } from "../relay";
@@ -135,14 +135,22 @@ export const askBot = defineTool({
   available: mayAsk,
   async run({ bot: wanted, message, wait = true }, caller) {
     const { bot, host, relay } = caller;
+    // The same limit as for ask files: bots that keep answering each other would otherwise never stop.
+    const groups = (await host.values())?.groups ?? [];
+    const limit = askLimit(bot.id, groups);
+    if ((await askedInLastHour(caller.agentId, Date.now())) >= limit) throw new Error(`This chat has asked too many times in the last hour (${limit}). Wait for the user before asking again.`);
     const others = (await host.bots()).filter((entry) => entry.id !== bot.id && !entry.archived);
     const key = wanted.trim().toLowerCase();
     const target = others.find((entry) => entry.id === wanted.trim()) ?? others.find((entry) => entry.name.trim().toLowerCase() === key);
     if (!target) throw new Error(others.length ? `There's no other bot called "${wanted}". Ask one of: ${others.map((entry) => entry.name).join(", ")}.` : "There are no other bots to ask.");
     // With the team's switch on, ask_bot runs without the user's tool approval, so it keeps to the team.
-    const groups = (await host.values())?.groups ?? [];
     if (bot.contactBots === "ask" && teamOf(bot.id, groups)?.askFreely && !mayAskWithoutAsking(bot.id, target.id, groups)) {
       throw new Error(`${target.name} is not on your team, and the user has not allowed you to ask them without asking first. Tell the user who you would like to ask and why.`);
+    }
+    // This chat started with ask_bot approved in advance; if the setting behind that is gone, nothing would ask the user now.
+    const basis = (await host.chatOf(caller.agentId))?.labels[ASK_PREAPPROVED_LABEL];
+    if (basis && !stillPreapproved(basis, bot, target.id, groups)) {
+      throw new Error(`You can no longer ask ${target.name} without asking the user first: the setting that allowed it has changed since this chat started. Tell the user who you would like to ask and why.`);
     }
     const paseo = host.requirePaseo();
     const chatId = await sendOrStart({ host, relay, paseo, from: { bot, agentId: caller.agentId }, target, message });
