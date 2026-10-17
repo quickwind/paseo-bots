@@ -252,6 +252,8 @@ export const BotGroupSchema = z.object({
   memberIds: z.array(z.string()).default([]),
   /** Added to every member's prompt; only the user edits them. */
   instructions: z.string().default(""),
+  /** Members may ask each other without the user approving each question (a bot set to Off still may not). */
+  askFreely: z.boolean().default(false),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -614,6 +616,8 @@ function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name" | "con
 /** Servers the plugin itself adds to a local bot's chat: its tools. */
 export interface PluginServers {
   tools?: McpServerConfig | null;
+  /** The bot's team lets its members ask each other without the user's approval. */
+  askFreely?: boolean;
 }
 
 export function buildAgentConfig(bot: Bot, library: Library, model: string, systemPrompt: string, plugin: PluginServers = {}) {
@@ -622,8 +626,8 @@ export function buildAgentConfig(bot: Bot, library: Library, model: string, syst
     ...(plugin.tools ? { [TOOLS_MCP_NAME]: plugin.tools } : {}),
   };
   // The plugin's quiet tools (reading, or proposing what the user confirms) run without prompts;
-  // asking another bot does too once the user allowed it for this bot.
-  const quiet = plugin.tools ? [...QUIET_TOOLS, ...(bot.contactBots === "allow" ? ["ask_bot"] : [])].map((tool) => `${TOOLS_MCP_NAME}/${tool}`) : [];
+  // asking another bot does too once the user allowed it for this bot (or for its team; ask_bot then keeps to teammates).
+  const quiet = plugin.tools ? [...QUIET_TOOLS, ...(bot.contactBots === "allow" || (bot.contactBots === "ask" && plugin.askFreely) ? ["ask_bot"] : [])].map((tool) => `${TOOLS_MCP_NAME}/${tool}`) : [];
   // Paseo rejects the whole request when a grant names a server it doesn't carry
   // (a server switched off for the bot, or Paseo's own, which is added later),
   // and when the provider can't take exact grants at all.

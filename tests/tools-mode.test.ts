@@ -90,11 +90,23 @@ describe("the files prompt", () => {
     expect(asks).toContain("/data/bots/scout/outbox/");
     expect(asks).toContain('"kind":"ask"');
     expect(asks).toContain("end your turn");
+    // Several bots can be asked in one turn: one file for each question.
+    expect(asks).toContain("ONE JSON file per question");
+    expect(asks).toContain("several bots at once");
     expect(asks).toMatch(/user (is asked|decides)/i);
     const allowed = botFilesPrompt({ contactBots: "allow" }, "/data/bots/scout");
     expect(allowed).toContain("/data/bots/scout/outbox/");
     expect(allowed).not.toMatch(/user (is asked|decides)/i);
     const off = botFilesPrompt({ contactBots: "off" }, "/data/bots/scout");
     expect(off).not.toContain("outbox");
+  });
+});
+
+import { botToolsPrompt } from "../shared/bot-tools";
+
+describe("the tool prompt for asking several bots", () => {
+  it("shows how to ask several at once only to a bot that can ask", () => {
+    expect(botToolsPrompt(true)).toContain("wait set to false");
+    expect(botToolsPrompt(false)).not.toContain("ask_bot");
   });
 });

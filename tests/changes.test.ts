@@ -8,7 +8,7 @@ const PROVIDERS: ProviderInfo[] = [
   { id: "codex", models: [{ id: "gpt", label: "GPT", isDefault: true, thinking: [] }], modes: [{ id: "auto", label: "Auto" }], defaultModeId: "auto" },
 ];
 const context: ApplyContext = { now: NOW, provider: "claude", providers: PROVIDERS };
-const team = (patch: Partial<BotGroup> = {}): BotGroup => ({ id: "t1", name: "Ops", logo: null, leadId: "chief", memberIds: ["chief", "scout"], instructions: "", createdAt: NOW, updatedAt: NOW, ...patch });
+const team = (patch: Partial<BotGroup> = {}): BotGroup => ({ id: "t1", name: "Ops", logo: null, leadId: "chief", memberIds: ["chief", "scout"], instructions: "", askFreely: false, createdAt: NOW, updatedAt: NOW, ...patch });
 
 function setup(patch: Partial<BotSettingsValues> = {}): BotSettingsValues {
   return {
@@ -149,5 +149,31 @@ describe("provider snapshot", () => {
     ]);
     expect(readyProvider(entries)).toBe("codex");
     expect(readyProvider([...entries, { provider: "claude", enabled: true, status: "ready" }])).toBe("claude");
+  });
+});
+
+describe("teams that ask each other without approval", () => {
+  it("can be turned on and off by a change, and starts off", () => {
+    const created = apply([{ type: "create_team", name: "Studio", lead: "Solo", members: ["Solo"] }]);
+    expect(created.groups!.find((group) => group.name === "Studio")!.askFreely).toBe(false);
+    const on = apply([{ type: "update_team", team: "Ops", ask_freely: true }]);
+    expect(on.groups!.find((group) => group.id === "t1")!.askFreely).toBe(true);
+    // A change that does not mention it leaves it as it is.
+    expect(apply([{ type: "update_team", team: "Ops", name: "Operations" }], on).groups!.find((group) => group.id === "t1")!.askFreely).toBe(true);
+    expect(apply([{ type: "update_team", team: "Ops", ask_freely: false }], on).groups!.find((group) => group.id === "t1")!.askFreely).toBe(false);
+  });
+
+  it("is said plainly on the card, with a warning when it gives more access", () => {
+    const changes = ChangesSchema.parse([{ type: "update_team", team: "Ops", ask_freely: true }, { type: "update_team", team: "Home", ask_freely: false }]);
+    expect(changes.map(describeChange)).toEqual(["**Team Ops**: members ask each other without asking you", "**Team Home**: members ask you before asking each other"]);
+    expect(changeWarnings(changes)).toEqual(["Members of Ops may ask each other without asking you."]);
+  });
+
+  it("is shown in the overview, which also notes a Chief of Staff that may not contact anyone", () => {
+    const quiet = setup({ bots: [makeBot({ id: "chief", name: "Chief", contactBots: "off" }), makeBot({ id: "scout", name: "Scout" }), makeBot({ id: "solo", name: "Solo" })], groups: [team({ askFreely: true })] });
+    const text = setupOverview(quiet, null);
+    expect(text).toContain("members ask each other without asking the user");
+    expect(text).toMatch(/Chief of Staff Chief .*cannot contact other bots/i);
+    expect(setupOverview(setup(), null)).not.toMatch(/cannot contact other bots/i);
   });
 });

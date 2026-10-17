@@ -130,6 +130,7 @@ const CreateTeam = z.object({
   lead: Ref("Its Chief of Staff, the user's main contact who hands work to the others").optional(),
   members: z.array(Ref("A member")).max(50).optional().describe("The team's bots. A bot is on one team at a time; adding it moves it here."),
   instructions: z.string().max(20_000).optional().describe("Shared instructions added to every member's prompt."),
+  ask_freely: z.boolean().optional().describe("true: members may ask each other without the user approving each question (a bot set to never contact others still may not). Default false."),
   logo: LogoInput.optional(),
 });
 
@@ -141,6 +142,7 @@ const UpdateTeam = z.object({
   add_members: z.array(Ref("A bot")).max(50).optional(),
   remove_members: z.array(Ref("A bot")).max(50).optional(),
   instructions: z.string().max(20_000).optional().describe("Shared instructions; replaces the current ones."),
+  ask_freely: z.boolean().optional().describe("true: members may ask each other without the user approving each question (a bot set to never contact others still may not). Default false."),
   logo: LogoInput.optional(),
 });
 
@@ -472,7 +474,7 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
       const lead = change.lead ? findBot(values, change.lead) : null;
       const members = [...new Set([...(lead ? [lead.id] : []), ...(change.members ?? []).map((ref) => findBot(values, ref).id)])];
       const logo = withLogo({ seed: randomSeed(), palette: null, imageUrl: null }, change.logo);
-      const draft = { name: oneLine(change.name), logo, leadId: lead?.id ?? null, memberIds: members, instructions: change.instructions?.trim() ?? "" };
+      const draft = { name: oneLine(change.name), logo, leadId: lead?.id ?? null, memberIds: members, instructions: change.instructions?.trim() ?? "", askFreely: change.ask_freely ?? false };
       return { ...values, groups: saveTeam(groups, null, draft, newGroupId(), context.now) };
     }
     case "update_team": {
@@ -486,6 +488,7 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
         leadId: lead && members.includes(lead) ? lead : null,
         memberIds: members,
         instructions: change.instructions?.trim() ?? group.instructions,
+        askFreely: change.ask_freely ?? group.askFreely,
       };
       return { ...values, groups: saveTeam(groups, group.id, draft, group.id, context.now) };
     }
@@ -640,6 +643,7 @@ export function describeChange(change: Change): string {
         ...(change.lead ? [`led by ${change.lead}`] : []),
         ...(members.length ? [`with ${list(members)}`] : []),
         ...(change.instructions?.trim() ? ["shared instructions"] : []),
+        ...(change.ask_freely ? ["members ask each other without asking you"] : []),
       ];
       return `**New team ${oneLine(change.name)}**${parts.length ? `: ${parts.join("; ")}` : ""}`;
     }
@@ -650,6 +654,7 @@ export function describeChange(change: Change): string {
         ...(change.add_members?.length ? [`adds ${list(change.add_members)}`] : []),
         ...(change.remove_members?.length ? [`removes ${list(change.remove_members)}`] : []),
         ...(change.instructions !== undefined ? ["new shared instructions"] : []),
+        ...(change.ask_freely !== undefined ? [change.ask_freely ? "members ask each other without asking you" : "members ask you before asking each other"] : []),
         ...(change.logo ? ["a new logo"] : []),
       ];
       return `**Team ${change.team}**: ${parts.join("; ") || "no changes"}`;
@@ -686,6 +691,7 @@ export function changeWarnings(changes: readonly Change[]): string[] {
     if ((change.type === "create_bot" || change.type === "update_bot") && change.working_folder) warnings.push(`${who} works in ${change.working_folder}.`);
     if (change.type === "add_mcp_server" && change.command) warnings.push(`The ${change.name} MCP server runs a program on this computer once it's on.`);
     if (change.type === "delete_bot") warnings.push(`Deletes the bot ${change.bot}.`);
+    if ((change.type === "create_team" || change.type === "update_team") && change.ask_freely) warnings.push(`Members of ${change.type === "create_team" ? oneLine(change.name) : change.team} may ask each other without asking you.`);
     if (change.type === "delete_team") warnings.push(`Deletes the team ${change.team}.`);
     if (change.type === "remove_mcp_server") warnings.push(`Removes the MCP server ${change.server}.`);
   }
@@ -722,7 +728,8 @@ export function setupOverview(values: BotSettingsValues, providers: readonly Pro
       groups
         .map((group) => {
           const members = teamMembers(group).filter((id) => id !== group.leadId).map((id) => byId.get(id) ?? id);
-          return `- ${group.name} (id ${group.id}): Chief of Staff ${group.leadId ? (byId.get(group.leadId) ?? group.leadId) : "none"}; members ${list(members) || "none"}${group.instructions.trim() ? "; has shared instructions" : ""}.`;
+          const lead = group.leadId ? values.bots.find((bot) => bot.id === group.leadId) : null;
+          return `- ${group.name} (id ${group.id}): Chief of Staff ${lead ? lead.name : group.leadId ? (byId.get(group.leadId) ?? group.leadId) : "none"}${lead?.contactBots === "off" ? " (cannot contact other bots: its setting is Off, so it cannot hand work to the team)" : ""}; members ${list(members) || "none"}${group.instructions.trim() ? "; has shared instructions" : ""}${group.askFreely ? "; members ask each other without asking the user" : ""}.`;
         })
         .join("\n") || "- none"
     }`,

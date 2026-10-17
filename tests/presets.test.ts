@@ -53,6 +53,8 @@ describe("team files", () => {
     const { json } = await exportTeam({ bots, groups: [], includeMemory: false }, EMPTY_LIBRARY);
     expect(isTeamFile(json)).toBe(true);
     expect(isTeamFile(JSON.stringify({ format: "other" }))).toBe(false);
+    // The switch that skips the user's approval never travels in a file.
+    expect(json).not.toContain("askFreely");
     const imported = await importTeam({ json });
     expect(imported.bots.map((entry) => entry.bot.name)).toEqual(["Inbox", "Scout"]);
     expect(imported.bots[0]!.bot).toMatchObject({ contactBots: "ask", routines: [{ name: "Daily", enabled: false, resultsChatId: null }] });
@@ -66,8 +68,8 @@ describe("team files", () => {
     const bots = [makeBot({ id: "bot-a", name: "Juno" }), makeBot({ id: "bot-b", name: "Mika" })];
     const logo = { seed: "s", palette: 2, imageUrl: null };
     const groups = [
-      { id: "t1", name: "Studio", logo, leadId: "bot-a", memberIds: ["bot-a", "bot-b", "bot-gone"], instructions: "Ship Fridays.", createdAt: "", updatedAt: "" },
-      { id: "t2", name: "Empty", logo: null, leadId: null, memberIds: ["bot-gone"], instructions: "", createdAt: "", updatedAt: "" },
+      { id: "t1", name: "Studio", logo, leadId: "bot-a", memberIds: ["bot-a", "bot-b", "bot-gone"], instructions: "Ship Fridays.", askFreely: true, createdAt: "", updatedAt: "" },
+      { id: "t2", name: "Empty", logo: null, leadId: null, memberIds: ["bot-gone"], instructions: "", askFreely: false, createdAt: "", updatedAt: "" },
     ];
     const { json } = await exportTeam({ bots, groups, includeMemory: false }, EMPTY_LIBRARY);
     expect(JSON.parse(json).teams).toEqual([{ name: "Studio", logo, lead: 0, members: [0, 1], instructions: "Ship Fridays." }]);

@@ -31,7 +31,7 @@ export function supportsToolGrants(provider: string): boolean {
 
 /** The prompt section for the plugin's own tools, given to chats that get them (bots on the plugin's host). */
 export function botToolsPrompt(canAsk: boolean): string {
-  const others = canAsk ? "list_bots to see the other bots and ask_bot to ask one for help (check_chat follows up)" : "list_bots to see the other bots";
+  const others = canAsk ? "list_bots to see the other bots and ask_bot to ask one for help (check_chat follows up; to ask several at once, call ask_bot with wait set to false for each of them, then check_chat for each answer)" : "list_bots to see the other bots";
   return `Your own tools come from the MCP server "bots". Use propose_routine for your own recurring or webhook-started work (rather than Paseo schedules) and propose_skill to keep a way of working for next time. When the user asks you to set up or change bots, teams, skills, MCP servers or defaults, read get_setup and put all the changes in one propose_changes call. The user confirms proposals on a card in the chat. Use search_chats to look through your past chats and daily log, and ${others}.`;
 }
 
@@ -55,7 +55,7 @@ export function botFilesPrompt(bot: { contactBots: string }, home: string): stri
       ? []
       : [
           "",
-          `Ask another bot for help: write ONE JSON file into ${home}/outbox/, named ask-<YYYYMMDD-HHMM>-<4 random letters>.json, as the last step of your turn, and then end your turn. The other bot works in a chat of its own and its answer arrives in this chat as a message, framed as information from another bot. ${bot.contactBots === "ask" ? "The user is asked first and may say no. " : ""}A chat started by another bot can't ask further. The names of the bots are in ${home}/setup/overview.md.`,
+          `Ask another bot for help: write ONE JSON file per question into ${home}/outbox/, named ask-<YYYYMMDD-HHMM>-<4 random letters>.json (a different name for each), as the last step of your turn, and then end your turn. To ask several bots at once, write all their files in the same turn. Each answer arrives as its own message when that bot is done, so you do not wait for the slowest. The other bot works in a chat of its own and its answer arrives in this chat as a message, framed as information from another bot. ${bot.contactBots === "ask" ? "The user is asked first and may say no. " : ""}A chat started by another bot can't ask further. The names of the bots are in ${home}/setup/overview.md.`,
           '{"kind":"ask","to":"<a bot name>","message":"what you need, written so it works without this chat"}',
         ]),
   ].join("\n");

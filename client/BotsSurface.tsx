@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, type LayoutRectangle, Platform, Text, View } from "react-native";
 import { randomSeed } from "../shared/avatar";
 import { applyDefaults, DEFAULT_BOT_DEFAULTS, DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, newGroupId, presetFromBot, pushHistory, type Bot, type BotGroup, type BotListUi, type Library } from "../shared/bot";
-import { saveTeam, tabOf, teamTabs, withoutBot } from "../shared/groups";
+import { saveTeam, tabOf, teamOf, teamTabs, withoutBot } from "../shared/groups";
 import { addImportedBots } from "../shared/library";
 import { displayTitle, startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
 import { moveKey } from "../shared/sidebar";
@@ -764,7 +764,10 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
     const { systemPrompt } = await compose({ bot, local: host.isLocal, message: message.text });
     // The plugin's tools go through this host's relay, so only bots here get them.
     const agentId = newUuid();
-    const plugin = host.isLocal && !usesFiles(settings.status === "ready" ? settings.values.toolMode : undefined, bot.provider) ? await mountServers({ botId: bot.id, agentId }) : {};
+    const mounted = host.isLocal && !usesFiles(settings.status === "ready" ? settings.values.toolMode : undefined, bot.provider) ? await mountServers({ botId: bot.id, agentId }) : {};
+    // A team that lets its members ask each other freely also lets ask_bot run without a tool approval.
+    const askFreely = settings.status === "ready" && !!teamOf(bot.id, settings.values.groups ?? [])?.askFreely;
+    const plugin = askFreely ? { ...mounted, askFreely: true } : mounted;
     const id = await startBotChat(host.api, {
       bot,
       library,

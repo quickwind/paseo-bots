@@ -43,9 +43,12 @@ export function TeamSheet({
   const [memberIds, setMemberIds] = useState<string[]>(group ? [...new Set([...(group.leadId ? [group.leadId] : []), ...group.memberIds])] : []);
   const [leadId, setLeadId] = useState<string | null>(group?.leadId ?? null);
   const [instructions, setInstructions] = useState(group?.instructions ?? "");
+  const [askFreely, setAskFreely] = useState(group?.askFreely ?? false);
   const live = bots.filter((bot) => !bot.archived);
   const members = live.filter((bot) => memberIds.includes(bot.id));
   const lead = leadId && memberIds.includes(leadId) ? leadId : null;
+  // A Chief of Staff set to never contact other bots cannot hand anything on.
+  const quietLead = lead ? members.find((bot) => bot.id === lead && bot.contactBots === "off") : undefined;
 
   const toggle = (botId: string, on: boolean) => setMemberIds((current) => (on ? [...current, botId] : current.filter((id) => id !== botId)));
   const patchLogo = (patch: Partial<Logo>) => setLogo((current) => ({ ...current, ...patch }));
@@ -103,6 +106,11 @@ export function TeamSheet({
             />
           </SettingsCard>
         </SettingsSection>
+        <SettingsSection title="Asking" info="Teammates ask each other for help through the bots' own tools. By default you approve each question, on a card in the chat. A bot whose contact setting is Off never asks.">
+          <SettingsCard>
+            <SettingsSwitch label="Ask each other without approval" hint={quietLead ? `${quietLead.name} is set to never contact other bots, so it cannot hand work on; change that on its Agent page` : "Members of this team may put questions to each other without you approving each one. Questions to bots outside the team still ask you first."} value={askFreely} onValueChange={setAskFreely} />
+          </SettingsCard>
+        </SettingsSection>
         <SettingsSection title="Shared instructions" info="Added to every member's prompt. Only you edit them.">
           <SettingsCard>
             <TextAreaField colors={colors} accessibilityLabel="Shared instructions" value={instructions} onChangeText={setInstructions} minHeight={160} placeholder="We handle the family's paperwork. Keep anything with an account number out of replies." />
@@ -115,7 +123,7 @@ export function TeamSheet({
             variant="default"
             label={group ? "Save" : "Create team"}
             disabled={!name.trim()}
-            onPress={() => onSave({ name: name.trim().slice(0, 60), logo, leadId: lead, memberIds: members.map((bot) => bot.id), instructions })}
+            onPress={() => onSave({ name: name.trim().slice(0, 60), logo, leadId: lead, memberIds: members.map((bot) => bot.id), instructions, askFreely })}
           />
         </SheetActions>
       </Modal.Content>

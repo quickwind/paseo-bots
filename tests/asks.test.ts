@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ASK_REQUEST_LABEL, Asks } from "../server/asks";
 import { getProposal } from "../server/proposals";
+import type { BotGroup } from "../shared/bot";
+import { EMPTY_LIBRARY } from "../shared/bot";
 import { fakeHost, makeBot } from "./helpers";
 
 describe("asking another bot through a file", () => {
@@ -17,10 +19,10 @@ describe("asking another bot through a file", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  async function setup(asker: Partial<ReturnType<typeof makeBot>> = {}, others: ReturnType<typeof makeBot>[] = []) {
+  async function setup(asker: Partial<ReturnType<typeof makeBot>> = {}, others: ReturnType<typeof makeBot>[] = [], groups: BotGroup[] = []) {
     const chief = makeBot({ id: "chief", name: "Chief", provider: "devin", contactBots: "allow", ...asker });
     const scout = makeBot({ id: "scout", name: "Scout", provider: "claude" });
-    const host = fakeHost([chief, scout, ...others]);
+    const host = fakeHost([chief, scout, ...others], EMPTY_LIBRARY, groups);
     const sent: { agentId: string; text: string }[] = [];
     const status: Record<string, string> = {};
     const gone = new Set<string>();
@@ -315,5 +317,41 @@ describe("asking another bot through a file", () => {
     await updateRequests((requests) => void requests.push({ id: "r-tool", fromBot: "chief", fromChat: "asker-chat", toBot: "scout", toName: "Scout", toChat: "some-chat", message: "q", createdAt: old, startedAt: old, status: "running", via: "tool", unsent: [] }));
     await asks.sweep();
     expect(sent).toEqual([]);
+  });
+
+  describe("inside a team that allows asking freely", () => {
+    const crew = (patch: Partial<BotGroup> = {}): BotGroup => ({ id: "t1", name: "Ops", logo: null, leadId: "chief", memberIds: ["chief", "scout"], instructions: "", askFreely: true, createdAt: "", updatedAt: "", ...patch });
+
+    it("sends a teammate's question at once, with no card, although the bot is set to ask first", async () => {
+      const { asks, started, from } = await setup({ contactBots: "ask" }, [], [crew()]);
+      const result = await asks.request(from, { to: "Scout", message: "Count the mails" });
+      expect(result).toMatchObject({ ok: true, proposalId: null });
+      expect(started.map((entry) => entry.bot)).toEqual(["scout"]);
+    });
+
+    it("still asks the user about someone outside the team, when the team does not allow it, and never overrides Off", async () => {
+      const outside = makeBot({ id: "solo", name: "Solo" });
+      const a = await setup({ contactBots: "ask" }, [outside], [crew()]);
+      expect((await a.asks.request(a.from, { to: "Solo", message: "hi" })).proposalId).toMatch(/^p-/);
+      const b = await setup({ contactBots: "ask" }, [], [crew({ askFreely: false })]);
+      expect((await b.asks.request(b.from, { to: "Scout", message: "hi" })).proposalId).toMatch(/^p-/);
+      const c = await setup({ contactBots: "off" }, [], [crew()]);
+      expect(await c.asks.request(c.from, { to: "Scout", message: "hi" })).toMatchObject({ ok: false });
+      expect(a.started.concat(b.started, c.started)).toEqual([]);
+    });
+  });
+
+  it("lets the Chief of Staff ask more often than the others in an hour", async () => {
+    const group: BotGroup = { id: "t1", name: "Ops", logo: null, leadId: "chief", memberIds: ["chief", "scout"], instructions: "", askFreely: false, createdAt: "", updatedAt: "" };
+    const lead = await setup({}, [], [group]);
+    const results = [];
+    for (let index = 0; index < 21; index++) results.push(await lead.asks.request(lead.from, { to: "Scout", message: `q${index}` }));
+    expect(results.filter((result) => result.ok)).toHaveLength(20);
+    expect(results[20]!.text).toContain("too many");
+    // Here Scout leads and Chief is only a member.
+    const member = await setup({}, [], [{ ...group, leadId: "scout" }]);
+    const tries = [];
+    for (let index = 0; index < 6; index++) tries.push(await member.asks.request({ ...member.from, agentId: "member-chat" }, { to: "Scout", message: `q${index}` }));
+    expect(tries.filter((result) => result.ok)).toHaveLength(5);
   });
 });

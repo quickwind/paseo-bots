@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { promptSections, type BotGroup } from "../shared/bot";
-import { groupBots, OTHER_BOTS_TAB, saveTeam, tabOf, teamLogoOf, teamOf, teamPrompt, teamTabs, withoutBot } from "../shared/groups";
+import { askLimit, groupBots, mayAskWithoutAsking, OTHER_BOTS_TAB, saveTeam, tabOf, teamLogoOf, teamOf, teamPrompt, teamTabs, withoutBot } from "../shared/groups";
 import { LOGO_SIZE, MOTIF_NAMES, teamLogo, type TeamLogoImage } from "../shared/team-logo";
 import { makeBot } from "./helpers";
 
 const NOW = "2026-09-27T00:00:00.000Z";
-const team = (patch: Partial<BotGroup> = {}): BotGroup => ({ id: "t1", name: "Ops", logo: null, leadId: "chief", memberIds: ["chief", "scout", "inbox"], instructions: "", createdAt: NOW, updatedAt: NOW, ...patch });
+const team = (patch: Partial<BotGroup> = {}): BotGroup => ({ id: "t1", name: "Ops", logo: null, leadId: "chief", memberIds: ["chief", "scout", "inbox"], instructions: "", askFreely: false, createdAt: NOW, updatedAt: NOW, ...patch });
 const bots = [makeBot({ id: "chief", name: "Chief", title: "Runs the house" }), makeBot({ id: "scout", name: "Scout", title: "Researcher" }), makeBot({ id: "inbox", name: "Inbox", archived: true }), makeBot({ id: "solo", name: "Solo" })];
 
 describe("teams", () => {
@@ -90,5 +90,48 @@ describe("team logos", () => {
       for (const y of [0, LOGO_SIZE - 1]) expect(rows[y]!.every((run) => run.color === null), `${motif} row ${y}`).toBe(true);
       for (const runs of rows) expect(runs[0]!.x === 0 && runs[0]!.color === null && runs[runs.length - 1]!.color === null, motif).toBe(true);
     }
+  });
+});
+
+describe("asking inside a team", () => {
+  it("lets teammates ask each other without asking the user only when the team allows it", () => {
+    const free = [team({ askFreely: true })];
+    expect(mayAskWithoutAsking("chief", "scout", free)).toBe(true);
+    expect(mayAskWithoutAsking("scout", "chief", free)).toBe(true);
+    expect(mayAskWithoutAsking("scout", "solo", free)).toBe(false);
+    expect(mayAskWithoutAsking("solo", "scout", free)).toBe(false);
+    expect(mayAskWithoutAsking("chief", "scout", [team()])).toBe(false);
+    // Two teams: only inside the one that allows it.
+    const other = team({ id: "t2", leadId: "solo", memberIds: ["solo"], askFreely: true });
+    expect(mayAskWithoutAsking("solo", "scout", [team({ askFreely: true }), other])).toBe(false);
+  });
+
+  it("gives the Chief of Staff a higher hourly limit than the others", () => {
+    expect(askLimit("chief", [team()])).toBe(20);
+    expect(askLimit("scout", [team()])).toBe(5);
+    expect(askLimit("solo", [team()])).toBe(5);
+  });
+
+  it("keeps the switch when a team is saved, and it starts off", () => {
+    const draft = { name: "Ops", logo: null, leadId: "chief", memberIds: ["chief", "scout"], instructions: "" };
+    expect(saveTeam([], null, draft, "t9", NOW)[0]!.askFreely).toBe(false);
+    expect(saveTeam([], null, { ...draft, askFreely: true }, "t9", NOW)[0]!.askFreely).toBe(true);
+  });
+
+  it("tells the Chief of Staff how it can ask, and not to when it can't", () => {
+    const chief = bots[0]!;
+    const by = (how: "tool" | "file" | "none", patch = {}) => teamPrompt(team(), { ...chief, ...patch }, bots, how);
+    expect(by("tool")).toContain("ask_bot");
+    expect(by("tool")).toMatch(/several teammates at once/i);
+    expect(by("file")).toContain("outbox");
+    expect(by("file")).not.toContain("ask_bot");
+    expect(by("file")).toMatch(/several teammates at once/i);
+    for (const none of [by("none"), by("tool", { contactBots: "off" })]) {
+      expect(none).not.toContain("ask_bot");
+      expect(none).not.toContain("outbox");
+      expect(none).toMatch(/can't contact/i);
+    }
+    // A member's text does not depend on it.
+    expect(teamPrompt(team(), bots[1]!, bots, "none")).toMatch(/^You're on the "Ops" team\./);
   });
 });

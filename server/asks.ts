@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { PluginTurnOutcome } from "@getpaseo/plugin/server";
 import { foldText } from "../shared/activity";
 import type { Bot } from "../shared/bot";
+import { askLimit, mayAskWithoutAsking } from "../shared/groups";
 import type { Proposal } from "../shared/proposals";
 import { newUuid } from "../shared/uuid";
 import { ASK_REQUEST_LABEL, loadRequests, reusableChat, updateRequests, type AskRequest } from "./ask-store";
@@ -16,8 +17,6 @@ import { ASKED_BY_LABEL, askPrompt } from "./tools/bots";
 // freely) and later puts the answer into the asking chat as a message.
 
 const CLOSE_AFTER_MS = 30 * 60_000;
-/** A chat may ask this many times an hour: bots that keep answering each other would otherwise never stop. */
-const MAX_ASKS_PER_CHAT_PER_HOUR = 5;
 const REPLY_MAX = 8_000;
 
 export { ASK_REQUEST_LABEL };
@@ -47,15 +46,18 @@ export class Asks {
     const fail = (text: string): AskResult => ({ ok: false, text, proposalId: null });
     if (bot.contactBots === "off") return fail("Asking other bots is not allowed for you; the setting for this bot is Off.");
     if (from.labels[ASKED_BY_LABEL]) return fail("You were asked by another bot, so you can't ask another bot yourself. Answer the question.");
+    const groups = (await this.host.values())?.groups ?? [];
+    const limit = askLimit(bot.id, groups);
     const recent = (await this.load()).filter((entry) => entry.fromChat === from.agentId && this.now() - Date.parse(entry.createdAt) < 3_600_000).length;
-    if (recent >= MAX_ASKS_PER_CHAT_PER_HOUR) return fail(`This chat has asked too many times in the last hour (${MAX_ASKS_PER_CHAT_PER_HOUR}). Wait for the user before asking again.`);
+    if (recent >= limit) return fail(`This chat has asked too many times in the last hour (${limit}). Wait for the user before asking again.`);
     const others = (await this.host.bots()).filter((entry) => entry.id !== bot.id && !entry.archived && !entry.hostId);
     const key = args.to.trim().toLowerCase();
     const target = others.find((entry) => entry.id === args.to.trim()) ?? others.find((entry) => entry.name.trim().toLowerCase() === key);
     if (!target) return fail(others.length ? `There's no other bot called "${args.to}". Ask one of: ${others.map((entry) => entry.name).join(", ")}.` : "There are no other bots to ask.");
     const request: AskRequest = { id: `r-${randomBytes(4).toString("hex")}`, fromBot: bot.id, fromChat: from.agentId, toBot: target.id, toName: target.name, toChat: null, message: args.message, createdAt: new Date(this.now()).toISOString(), status: "waiting", unsent: [] };
     await this.update((requests) => void requests.push(request));
-    if (bot.contactBots === "ask") {
+    // A teammate on a team that allows it needs no approval; a bot set to Off was refused above.
+    if (bot.contactBots === "ask" && !mayAskWithoutAsking(bot.id, target.id, groups)) {
       const proposal = await createProposal({ botId: bot.id, agentId: from.agentId, kind: "ask", data: { requestId: request.id, toBotId: target.id, toName: target.name, message: args.message } });
       return { ok: true, proposalId: proposal.id, text: `Request ${request.id}: the user sees your question to ${target.name} as a card and decides whether to send it. If they agree, ${target.name}'s answer arrives in this chat as a message. End your turn now.` };
     }

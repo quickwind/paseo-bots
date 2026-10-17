@@ -1,5 +1,6 @@
 import type { Bot } from "../shared/bot";
 import { startBotChat } from "../shared/chat";
+import { teamOf } from "../shared/groups";
 import { sendsPromptInChat } from "../shared/identity";
 import { usesFiles } from "../shared/tools-mode";
 import { newUuid } from "../shared/uuid";
@@ -34,7 +35,7 @@ export async function startChat(host: BotsHost, relay: Relay, bot: Bot, input: {
       library,
       agentId,
       // A provider that cannot use the plugin's MCP server (Devin) gets the tools as files instead.
-      plugin: usesFiles(settings?.toolMode, bot.provider) ? {} : { tools: await relay.mountTools(bot.id, agentId) },
+      plugin: usesFiles(settings?.toolMode, bot.provider) ? {} : { tools: await relay.mountTools(bot.id, agentId), ...(teamOf(bot.id, settings?.groups ?? [])?.askFreely ? { askFreely: true } : {}) },
       placement,
       prompt: input.prompt,
       systemPrompt: sendsPromptInChat(bot.provider, placement.path, home.path) ? system : "",

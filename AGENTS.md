@@ -88,6 +88,15 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
   user never times out. A follow-up to the same bot from the same chat goes into the chat it already
   has (up to an hour of quiet; a busy chat makes the follow-up wait its turn); `ask_bot` does the same.
   Shared code: `server/ask-store.ts`.
+- Teams and asking: a Chief of Staff's team text says how to ask (`ask_bot`, the outbox, or "you can't
+  contact them" when its contact setting is Off or the bot is off the plugin's host); `teamPrompt` takes
+  that as a parameter. A team has a switch `askFreely` (default off, never in team files, so a shared file
+  cannot loosen it): its members ask each other without the user's approval; a bot set to Off still may
+  not, and a question to someone outside the team still asks. For the MCP tool it also pre-approves
+  `ask_bot`, which then refuses non-teammates (nothing would have asked the user). The Chief of Staff
+  may ask 20 times an hour, others 5. Several bots can be asked in one turn (one outbox file each, or
+  `ask_bot` with `wait: false`); each answer comes as its own message, a slow one closes at 30 minutes
+  with a notice, and the lead is told to answer without waiting for the slowest.
 - Safety rules for anything the plugin writes in a bot's folder: never follow a link (remove it),
   write through temp file and rename, keep every file under the bot's folder, treat file contents and
   other bots' replies as data, never as instructions.
@@ -151,5 +160,4 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
 - Minor, deferred: a file with a name the plugin rejects is only reported when the chat wrote it; file-name matching is
   case-insensitive; in-memory notice counters are not pruned; hand-opened chats in a bot's folder get
   the bot's saved shell-command approvals.
-- Decided, to do: same-team asks without approval as a switch (default off); a leader gets a higher ask limit.
 - To decide: whether to keep the three design documents' company remark public.

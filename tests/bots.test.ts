@@ -182,3 +182,31 @@ describe("asking the same bot again with ask_bot", () => {
     expect(started).toHaveLength(3);
   });
 });
+
+describe("asking with the tool inside a team that allows it", () => {
+  const group = { id: "t1", name: "Ops", logo: null, leadId: "bot-scout", memberIds: ["bot-scout", "bot-inbox"], instructions: "", askFreely: true, createdAt: "", updatedAt: "" };
+
+  it("pre-approves ask_bot for a bot set to ask first, only when the team allows it, and never for Off", () => {
+    const tools = { type: "http" as const, url: "http://127.0.0.1:1/bots/b/a", headers: {} };
+    const granted = (contactBots: "ask" | "allow" | "off", askFreely?: boolean) => buildAgentConfig(makeBot({ contactBots }), EMPTY_LIBRARY, "m", "", { tools, ...(askFreely === undefined ? {} : { askFreely }) }).toolPolicy?.preapproved.map((grant) => grant.tool) ?? [];
+    expect(granted("ask", true)).toContain("ask_bot");
+    expect(granted("ask", false)).not.toContain("ask_bot");
+    expect(granted("ask")).not.toContain("ask_bot");
+    expect(granted("off", true)).not.toContain("ask_bot");
+  });
+
+  it("answers a teammate, and sends the bot back to the user for anyone else, since nothing asked them", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const scout = makeBot({ id: "bot-scout", name: "Scout", contactBots: "ask" });
+    const host = fakeHost([scout, makeBot({ id: "bot-inbox", name: "Inbox" }), makeBot({ id: "bot-solo", name: "Solo" })], EMPTY_LIBRARY, [group]);
+    const chats: Record<string, FakeChat> = { "caller-chat": { status: "idle", labels: { "bot-crew.bot": "bot-scout" } }, "chat-new": { status: "running", labels: {}, reply: "Done." } };
+    host.attach(fakePaseo(chats));
+    const caller = { bot: scout, agentId: "caller-chat", host, relay: null as never };
+    expect(await askBot.run({ bot: "Inbox", message: "hi" }, caller)).toContain("Done.");
+    await expect(askBot.run({ bot: "Solo", message: "hi" }, caller)).rejects.toThrow(/not on your team/);
+    // A team that does not allow it leaves the choice to the tool permission, as before.
+    const strict = fakeHost([scout, makeBot({ id: "bot-solo", name: "Solo" })], EMPTY_LIBRARY, [{ ...group, askFreely: false }]);
+    strict.attach(fakePaseo(chats));
+    expect(await askBot.run({ bot: "Solo", message: "hi" }, { ...caller, host: strict })).toContain("Done.");
+  });
+});

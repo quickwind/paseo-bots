@@ -5,6 +5,10 @@ import type { Bot, BotGroup, TeamLogo } from "./bot";
 // Staff (its lead) is the user's main contact who hands work to the others.
 
 const ROSTER_MAX = 40;
+/** A chat may ask this many times an hour: bots that keep answering each other would otherwise never stop. */
+const ASKS_PER_HOUR = 5;
+/** The Chief of Staff hands work to several teammates, so it gets more. */
+const LEAD_ASKS_PER_HOUR = 20;
 
 /** The team's logo; teams from before logos draw one from their id. */
 export function teamLogoOf(group: Pick<BotGroup, "id" | "logo">): TeamLogo {
@@ -14,6 +18,17 @@ export function teamLogoOf(group: Pick<BotGroup, "id" | "logo">): TeamLogo {
 /** The team a bot is on, if any. */
 export function teamOf(botId: string, groups: readonly BotGroup[]): BotGroup | null {
   return groups.find((group) => group.leadId === botId || group.memberIds.includes(botId)) ?? null;
+}
+
+/** Whether `askerId` may put a question to `targetId` without the user approving it: both on a team that allows it. */
+export function mayAskWithoutAsking(askerId: string, targetId: string, groups: readonly BotGroup[]): boolean {
+  const group = teamOf(askerId, groups);
+  return !!group?.askFreely && (group.leadId === targetId || group.memberIds.includes(targetId));
+}
+
+/** How many questions a chat of this bot may send in an hour. */
+export function askLimit(botId: string, groups: readonly BotGroup[]): number {
+  return teamOf(botId, groups)?.leadId === botId ? LEAD_ASKS_PER_HOUR : ASKS_PER_HOUR;
 }
 
 /** The team's bots that still exist, lead first. */
@@ -29,15 +44,26 @@ function rosterLine(bot: Bot, lead: boolean): string {
   return `- ${bot.name}${lead ? " (Chief of Staff)" : ""}${about ? `: ${about}` : ""}`;
 }
 
+/** How a bot can ask a teammate: with the ask_bot tool, by a file in its outbox, or not at all. */
+export type AskingHow = "tool" | "file" | "none";
+
+function leadPrompt(name: string, how: AskingHow): string {
+  const lead = `You are the Chief of Staff of the "${name}" team and the user's main contact for it. Own the outcome: understand the request, decide what to handle yourself`;
+  const close = "return one concise answer. Don't delegate trivial work to look busy, and never invent a teammate's progress or result.";
+  if (how === "none") return `${lead}, and ${close.replace("return one concise answer.", "return one concise answer. You can't contact your teammates yourself, so when part of a request needs one, tell the user which teammate to ask.")}`;
+  const ask = how === "file" ? "by writing an ask file into your outbox/ (see Bot tools)" : "with ask_bot";
+  return `${lead}, hand parts to the teammates who fit them ${ask} when that helps, and ${close} You can ask several teammates at once: ask all of them in the same turn, then end your turn. Each answer arrives as a message when that teammate is done, so don't wait for the slowest; answer the user when you have what you need, and say so if a teammate hasn't answered.`;
+}
+
 /** A team member's prompt section: its teammates, the shared instructions and, for the lead, how to lead. */
-export function teamPrompt(group: BotGroup, bot: Bot, bots: readonly Bot[]): string {
+export function teamPrompt(group: BotGroup, bot: Bot, bots: readonly Bot[], how: AskingHow = "tool"): string {
   const { lead, members } = groupBots(group, bots);
   const isLead = lead?.id === bot.id;
   const others = [...(lead && !isLead ? [lead] : []), ...members.filter((member) => member.id !== bot.id)].slice(0, ROSTER_MAX);
   const name = group.name.trim() || "Untitled";
   const parts = [
     isLead
-      ? `You are the Chief of Staff of the "${name}" team and the user's main contact for it. Own the outcome: understand the request, decide what to handle yourself, hand parts to the teammates who fit them with ask_bot when that helps, and return one concise answer. Don't delegate trivial work to look busy, and never invent a teammate's progress or result.`
+      ? leadPrompt(name, bot.contactBots === "off" ? "none" : how)
       : `You're on the "${name}" team.${lead ? ` ${lead.name} leads it.` : ""}`,
     others.length ? `Teammates:\n${others.map((other) => rosterLine(other, other.id === lead?.id)).join("\n")}` : "",
     group.instructions.trim() ? `Shared instructions for the team. The user manages them for every bot on the team; you can't edit them.\n${group.instructions.trim()}` : "",
@@ -51,6 +77,7 @@ export interface TeamDraft {
   leadId: string | null;
   memberIds: string[];
   instructions: string;
+  askFreely?: boolean;
 }
 
 /** Creates (null id) or updates a team; its members leave any other team they were on. */
@@ -58,7 +85,7 @@ export function saveTeam(groups: readonly BotGroup[], id: string | null, draft: 
   const teamId = id ?? newId;
   const joining = new Set(draft.memberIds);
   const existing = groups.find((group) => group.id === teamId);
-  const team: BotGroup = { id: teamId, ...draft, leadId: draft.leadId && joining.has(draft.leadId) ? draft.leadId : null, createdAt: existing?.createdAt ?? now, updatedAt: now };
+  const team: BotGroup = { id: teamId, ...draft, askFreely: draft.askFreely ?? existing?.askFreely ?? false, leadId: draft.leadId && joining.has(draft.leadId) ? draft.leadId : null, createdAt: existing?.createdAt ?? now, updatedAt: now };
   const others = groups.map((group) => {
     if (group.id === teamId) return team;
     const memberIds = group.memberIds.filter((member) => !joining.has(member));

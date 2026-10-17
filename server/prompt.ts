@@ -26,9 +26,10 @@ export interface ChatStart {
 export async function promptContext(bot: Bot, local: boolean, library: Library, paseoTools: boolean, start: ChatStart = {}): Promise<PromptContext> {
   // Playbooks and teams live in the settings, so they travel with the bot to any host.
   const playbooks = selectPlaybooks(start.message ?? "", bot.playbooks);
-  const team = start.team ? teamPrompt(start.team.group, bot, start.team.bots) : null;
-  if (!local) return { memory: "", memoryPath: null, recentWork: [], playbooks, team, skills: [], paseoTools, botTools: false };
+  // How the bot can ask a teammate depends on how it gets the plugin's tools; off the plugin's host it can't.
   const files = usesFiles(start.toolMode, bot.provider);
+  const team = start.team ? teamPrompt(start.team.group, bot, start.team.bots, !local ? "none" : files ? "file" : "tool") : null;
+  if (!local) return { memory: "", memoryPath: null, recentWork: [], playbooks, team, skills: [], paseoTools, botTools: false };
   // Only skills whose SKILL.md is still what the user reviewed.
   const skills: typeof library.skills = [];
   for (const skill of botSkills(bot, library)) {

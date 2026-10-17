@@ -101,7 +101,7 @@ Bots can propose routines too: ask in a chat, then press **Create routine** on t
 2. Name the team, switch on its members, pick a **Lead** as its Chief of Staff, and add shared instructions for every member. The team gets a pixel-art logo; **Reroll** draws another, or use your own picture.
 3. Send your requests to the Chief of Staff. It hands parts of the work to its teammates.
 
-With teams, the Bots screen gets a tab for each team, and **Other bots** for bots without one (a menu on phones); **+** next to the tabs adds a team, and right-clicking a tab edits it. A team file carries your bots and their teams: find it in **Settings → Plugins**, under **Bots** in the paseo-bots menu.
+With teams, the Bots screen gets a tab for each team, and **Other bots** for bots without one (a menu on phones); **+** next to the tabs adds a team, and right-clicking a tab edits it. A team can let its members ask each other without you approving every question (off by default; a bot set to never contact others still may not), and its Chief of Staff can ask several teammates at once. A team file carries your bots and their teams: find it in **Settings → Plugins**, under **Bots** in the paseo-bots menu.
 
 Whether a bot may ask others for help is set in its settings under **Permissions → Contact other bots**: **Ask first**, **Allowed** or **Off**.
 
