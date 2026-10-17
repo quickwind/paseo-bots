@@ -151,7 +151,10 @@ export class MemoryTidy {
     const bot = await this.host.bot(botId);
     if (!bot) throw new Error("There's no such bot.");
     if (bot.hostId) throw new Error("Memory is tidied on the host that stores the bot.");
-    const decision = await this.consider(bot, true);
+    // One after another with the timer's passes, so a double click (or a click during a pass) cannot start two chats.
+    const attempt = this.chain.then(() => this.consider(bot, true));
+    this.chain = attempt.then(() => {}, () => {});
+    const decision = await attempt;
     if (!decision.run) {
       throw new Error(decision.reason === "busy" ? "A chat of this bot is working; try again when it is done." : "It already ran six times today.");
     }

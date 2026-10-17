@@ -563,6 +563,14 @@ export function applyChanges(values: BotSettingsValues, changes: readonly Change
 
 const list = (items: readonly string[]) => items.join(", ");
 
+const PREVIEW_CHARS = 200;
+
+/** A text for the card, on one line and in a code span so its own Markdown does nothing; a long one is cut and its length said. */
+function preview(text: string): string {
+  const line = oneLine(text).replace(/`/g, "'");
+  return line.length > PREVIEW_CHARS ? `\`${line.slice(0, PREVIEW_CHARS)}…\` (${text.length} characters)` : `\`${line}\``;
+}
+
 function agentText(fields: BotFieldValues): string[] {
   const parts: string[] = [];
   if (fields.provider !== undefined) parts.push(`provider ${fields.provider}`);
@@ -575,8 +583,8 @@ function agentText(fields: BotFieldValues): string[] {
 function fieldsText(fields: BotFieldValues): string[] {
   const parts: string[] = [];
   if (fields.title !== undefined) parts.push(`title "${oneLine(fields.title)}"`);
-  if (fields.description !== undefined) parts.push("a new blurb");
-  if (fields.instructions !== undefined) parts.push("new instructions");
+  if (fields.description !== undefined) parts.push(`a new blurb ${preview(fields.description)}`);
+  if (fields.instructions !== undefined) parts.push(`new instructions ${preview(fields.instructions)}`);
   parts.push(...agentText(fields));
   if (fields.contact_bots !== undefined) parts.push({ ask: "asks before contacting other bots", allow: "contacts other bots freely", off: "doesn't contact other bots" }[fields.contact_bots]);
   if (fields.avatar) parts.push(fields.avatar.image_url ? "a picture" : fields.avatar.image_url === null ? "the pixel face back" : "a different face");
@@ -591,6 +599,13 @@ function scheduleText(input: z.infer<typeof ScheduleInput>): string {
   } catch {
     return input.type;
   }
+}
+
+/** The environment a new MCP server gets (variables can change how a program runs), and the names of the headers it sends. */
+function mcpExtras(change: Extract<Change, { type: "add_mcp_server" }>): string {
+  const env = Object.entries(change.env ?? {});
+  const headers = Object.keys(change.headers ?? {});
+  return [env.length ? `, with ${preview(env.map(([name, value]) => `${name}=${value}`).join(" "))}` : "", headers.length ? `, sends headers ${preview(headers.join(", "))} (values not shown)` : ""].join("");
 }
 
 /** One Markdown line for the card, as the user reads the change. */
@@ -625,11 +640,11 @@ export function describeChange(change: Change): string {
     case "delete_bot":
       return `**Delete bot ${change.bot}**; its chats stay in Paseo's history`;
     case "add_routine":
-      return `**${change.bot}**: new routine "${change.name}", ${scheduleText(change.schedule)}`;
+      return `**${change.bot}**: new routine "${oneLine(change.name)}", ${scheduleText(change.schedule)}${change.instructions?.trim() ? `: ${preview(change.instructions)}` : ""}`;
     case "update_routine": {
       const parts = [
-        ...(change.name !== undefined ? [`renamed to "${change.name}"`] : []),
-        ...(change.instructions !== undefined ? ["new instructions"] : []),
+        ...(change.name !== undefined ? [`renamed to "${oneLine(change.name)}"`] : []),
+        ...(change.instructions !== undefined ? [`new instructions ${preview(change.instructions)}`] : []),
         ...(change.schedule ? [scheduleText(change.schedule)] : []),
         ...(change.enabled !== undefined ? [change.enabled ? "resumed" : "paused"] : []),
       ];
@@ -642,7 +657,7 @@ export function describeChange(change: Change): string {
       const parts = [
         ...(change.lead ? [`led by ${change.lead}`] : []),
         ...(members.length ? [`with ${list(members)}`] : []),
-        ...(change.instructions?.trim() ? ["shared instructions"] : []),
+        ...(change.instructions?.trim() ? [`shared instructions ${preview(change.instructions)}`] : []),
         ...(change.ask_freely ? ["members ask each other without asking you"] : []),
       ];
       return `**New team ${oneLine(change.name)}**${parts.length ? `: ${parts.join("; ")}` : ""}`;
@@ -653,7 +668,7 @@ export function describeChange(change: Change): string {
         ...(change.lead !== undefined ? [change.lead ? `led by ${change.lead}` : "no Chief of Staff"] : []),
         ...(change.add_members?.length ? [`adds ${list(change.add_members)}`] : []),
         ...(change.remove_members?.length ? [`removes ${list(change.remove_members)}`] : []),
-        ...(change.instructions !== undefined ? ["new shared instructions"] : []),
+        ...(change.instructions !== undefined ? [`new shared instructions ${preview(change.instructions)}`] : []),
         ...(change.ask_freely !== undefined ? [change.ask_freely ? "members ask each other without asking you" : "members ask you before asking each other"] : []),
         ...(change.logo ? ["a new logo"] : []),
       ];
@@ -664,7 +679,7 @@ export function describeChange(change: Change): string {
     case "set_skill":
       return `**Skill ${change.skill}**: ${change.enabled ? "on" : "off"} for every bot that uses it`;
     case "add_mcp_server":
-      return `**New MCP server ${change.name}**: ${change.command ? `runs \`${[change.command, ...(change.args ?? [])].join(" ")}\`` : `connects to ${change.url}`}; off until it passes a test in Skills & Tools`;
+      return `**New MCP server ${change.name}**: ${change.command ? `runs ${preview([change.command, ...(change.args ?? [])].join(" "))}` : `connects to ${change.url}`}${mcpExtras(change)}; off until it passes a test in Skills & Tools`;
     case "set_mcp_server":
       return `**MCP server ${change.server}**: ${change.enabled ? "on" : "off"}`;
     case "remove_mcp_server":

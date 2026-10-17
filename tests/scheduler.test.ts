@@ -118,4 +118,26 @@ describe("the routine scheduler", () => {
       relay.stop();
     }
   });
+  it("records a run whose chat fails at once as failed, not running", async () => {
+    const { Relay } = await import("../server/relay");
+    const { RoutineScheduler } = await import("../server/scheduler");
+    const host = fakeHost([makeBot({ id: "bot-q", routines: [routine({ id: "rt-quick", createdAt: new Date().toISOString() })] })]);
+    const appended: { item: { data: { status: string; error: string | null } } }[] = [];
+    host.attach({ agents: { ref: () => ({ refresh: async () => ({ agent: { status: "idle", archivedAt: null } }), timeline: { append: async (item: never) => void appended.push({ item }) } }) } } as never);
+    const relay = new Relay(host, []);
+    const scheduler = new RoutineScheduler(host, relay);
+    scheduler.stop();
+    // The chat reports the end of its turn before startChat has returned, as one that fails at once does.
+    (scheduler as unknown as { newChat: (...args: unknown[]) => Promise<string> }).newChat = async (_bot, _routine, _prompt, agentId) => {
+      await scheduler.finished("rt-quick", agentId as string, { kind: "failed", error: { message: "no model" } } as never, "");
+      return agentId as string;
+    };
+    try {
+      await scheduler.runNow("bot-q", "rt-quick");
+      const { routines } = await scheduler.status();
+      expect(routines["rt-quick"]!.runs.map((run) => [run.status, run.error])).toEqual([["failed", "no model"]]);
+    } finally {
+      relay.stop();
+    }
+  });
 });

@@ -8,9 +8,10 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
 ## Where things are
 
 - Remotes: `origin` = `quickwind/paseo-bots` (our public fork), `upstream` = `oliexe/paseo-bots`.
-- Branches: `main` is the line to work on (it was fast-forwarded to `ask-followups` and tracks `origin/main`;
-  upstream's own history is `upstream/main`). The old `offline`, `memory-maintenance`, `file-tools` and
-  `ask-followups` branches are all contained in it and can be deleted.
+- Branches: `bot-crew` is the line to work on (it tracks `origin/bot-crew`). `main` (local and `origin/main`) was reset
+  to `upstream/main` (`39a7000`) on purpose, so it is upstream's code without our offline edition. The older
+  `ask-followups`, `review-fixes`, `offline`, `memory-maintenance` and `file-tools` branches are all contained in
+  `bot-crew` and can be deleted.
 - Package: `npm run pack:offline -- --out ~/irix-dist` makes `bot-crew-0.2.0-offline.<n>.zip` (it unzips into a folder `bot-crew-<version>`).
   Bump the version in `package.json` and `shared/version.ts` for every package, delete the older zip,
   keep only the latest in `~/irix-dist`. The Irix repo's `INSTALL-WINDOWS.md` names the zip; its

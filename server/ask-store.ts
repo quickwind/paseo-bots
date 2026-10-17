@@ -1,7 +1,8 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pluginDataPath } from "./bot-home";
 import type { BotsHost } from "./host";
+import { writeAtomic } from "./managed-files";
 
 // The questions one bot has asked another, kept in one file so a follow-up from the same chat can go
 // into the chat that already has the answer, whether the question came as a file or as the ask_bot tool.
@@ -23,7 +24,7 @@ export interface AskRequest {
   createdAt: string;
   /** "waiting": for the user's approval. "queued": approved, waiting for the other chat to be free. "running": the other bot is working. */
   status: "waiting" | "queued" | "running" | "answered" | "closed";
-  /** When the question was sent; the half hour is counted from here. */
+  /** When the question was sent, or approved and put in line behind a busy chat; the half hour is counted from here. */
   startedAt?: string;
   answeredAt?: string;
   /** "tool": asked with ask_bot, which waits for the answer itself, so nothing is pushed into the asking chat. */
@@ -49,8 +50,8 @@ export function updateRequests<T>(change: (requests: AskRequest[]) => T): Promis
   const run = async () => {
     const requests = await loadRequests();
     const result = change(requests);
-    await mkdir(pluginDataPath(), { recursive: true });
-    await writeFile(storePath(), JSON.stringify({ requests: requests.slice(-KEEP) }, null, 2), "utf8");
+    // Through a temporary file: readers outside the queue never see a half-written store, and a crash cannot leave one.
+    await writeAtomic(storePath(), JSON.stringify({ requests: requests.slice(-KEEP) }, null, 2));
     return result;
   };
   const next = queue.then(run);

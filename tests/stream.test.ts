@@ -271,6 +271,17 @@ describe("diffs", () => {
     ]);
   });
 
+  it("marks a very long changed line as changed as a whole instead of comparing its words one by one", () => {
+    // Over 250,000 word pairs, the table of a word-by-word comparison would take seconds and hundreds of megabytes.
+    const words = Array.from({ length: 800 }, (_, n) => `word${n}`);
+    const old = words.join(" ");
+    const updated = words.map((word, n) => (n === 400 ? "changed" : word)).join(" ");
+    const diff = buildLineDiff(old, updated);
+    expect(diff.map((line) => line.type)).toEqual(["remove", "add"]);
+    expect(diff[0]!.segments).toEqual([{ text: old, changed: true }]);
+    expect(diff[1]!.segments).toEqual([{ text: updated, changed: true }]);
+  });
+
   it("parses unified diffs", () => {
     expect(parseUnifiedDiff("--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b").map((line) => line.type)).toEqual(["header", "remove", "add"]);
   });

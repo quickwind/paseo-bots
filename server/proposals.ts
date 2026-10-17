@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Proposal } from "../shared/proposals";
 import { pluginDataPath } from "./bot-home";
 import { writeSkill } from "./library";
+import { writeAtomic } from "./managed-files";
 
 // Proposals wait in one file until the user saves or dismisses their card.
 // Only the newest are kept; an older card says it's no longer available.
@@ -30,8 +31,7 @@ let queue: Promise<unknown> = Promise.resolve();
 function update<T>(change: (proposals: Proposal[]) => { proposals: Proposal[]; result: T }): Promise<T> {
   const run = async () => {
     const { proposals, result } = change(await load());
-    await mkdir(pluginDataPath(), { recursive: true });
-    await writeFile(storePath(), JSON.stringify({ proposals: proposals.slice(-KEEP) }, null, 2), "utf8");
+    await writeAtomic(storePath(), JSON.stringify({ proposals: proposals.slice(-KEEP) }, null, 2));
     return result;
   };
   const next = queue.then(run);

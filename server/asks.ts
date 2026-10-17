@@ -85,7 +85,7 @@ export class Asks {
     if (existing?.busy) {
       await this.update((requests) => {
         const found = requests.find((entry) => entry.id === requestId);
-        if (found && found.status === "waiting") Object.assign(found, { status: "queued", toChat: existing.chat });
+        if (found && found.status === "waiting") Object.assign(found, { status: "queued", toChat: existing.chat, startedAt: new Date(this.now()).toISOString() });
       });
       return;
     }

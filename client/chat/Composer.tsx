@@ -336,7 +336,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
   const draining = useRef(false);
   useEffect(() => {
     const inFlight = draining.current || drain !== "idle" || processing;
-    if (!shouldDrainQueue({ running, queued: queue.length, inFlight, hasAgent: agentId !== null && !!host.api })) return;
+    if (!shouldDrainQueue({ running, queued: queue.length, inFlight, hasAgent: agentId !== null && !!host.api, statusKnown: agent != null })) return;
     const next = takeQueuedMessage(draftKey, queue[0]!.id);
     if (!next) return;
     draining.current = true;
@@ -352,7 +352,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
       .finally(() => {
         draining.current = false;
       });
-  }, [running, queue, drain, processing, agentId, host.api]);
+  }, [running, queue, drain, processing, agentId, host.api, agent]);
 
   const sendQueuedNow = async (item: QueuedMessage) => {
     if (!host.api || !takeQueuedMessage(draftKey, item.id)) return;

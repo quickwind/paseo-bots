@@ -68,6 +68,13 @@ export function ProposalCard({ colors, compact, proposalId }: { colors: Colors; 
         return;
       }
       if (proposal.kind === "changes") {
+        // The card on screen may be out of date (it was dismissed in another window): ask the server first, so nothing is applied for a card that is no longer pending.
+        const fresh = await get({ id: proposal.id });
+        if (fresh.proposal?.status !== "pending") {
+          queryClient.setQueryData(proposalQueryKey(proposal.id), fresh);
+          toast.error("This proposal was already handled, so nothing was changed.");
+          return;
+        }
         // Applied before the proposal counts as accepted: a change that no longer fits leaves the card pending.
         const context = { now: new Date().toISOString(), provider: proposal.data.provider };
         if (!(await commit((current) => applyChanges(current, proposal.data.changes, context)))) return;
@@ -75,7 +82,7 @@ export function ProposalCard({ colors, compact, proposalId }: { colors: Colors; 
         return;
       }
       const { proposal: saved, skill } = await accept({ id: proposal.id });
-      await commit((current) => {
+      const applied = await commit((current) => {
         if (proposal.kind === "routine") {
           const routine = { id: newRoutineId(), ...proposal.data, enabled: true, createdAt: new Date().toISOString() };
           return { ...current, bots: current.bots.map((entry) => (entry.id === saved.botId ? { ...entry, routines: [...entry.routines, routine] } : entry)) };
@@ -88,6 +95,8 @@ export function ProposalCard({ colors, compact, proposalId }: { colors: Colors; 
         };
       });
       queryClient.setQueryData(proposalQueryKey(proposal.id), { proposal: saved });
+      // The server counts it as accepted already, so the card can't be tried again: say what is missing.
+      if (!applied) toast.error(proposal.kind === "routine" ? "The proposal was accepted, but the routine could not be added to the bot's settings. Add it yourself in the bot's Routines." : "The skill was saved, but it could not be turned on for the bot. Turn it on in Skills & Tools.");
       if (skill) void queryClient.invalidateQueries({ queryKey: skillQueryKey(skill.id) });
     } catch (error) {
       toast.error(`Couldn't save it: ${errorText(error)}`);

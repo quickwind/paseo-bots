@@ -162,3 +162,36 @@ describe("formatDuration", () => {
     expect(formatDuration(-1)).toBe("0s");
   });
 });
+
+describe("long runs of the same character", () => {
+  // A streaming reply is parsed again on every update, so input that makes the parser slow freezes the screen.
+  const n = 31_000;
+  const cases: [string, string][] = [
+    ["spaces inside a paragraph", `a${" ".repeat(n)}b`],
+    ["spaces in a heading", `# h${" ".repeat(n)}x`],
+    ["spaces in a table delimiter", `| a |\n|${" ".repeat(n)}x`],
+    ["opening brackets", "[".repeat(n)],
+    ["asterisks", "*".repeat(n)],
+  ];
+  for (const [name, text] of cases) {
+    it(`parses ${name} quickly`, () => {
+      const started = performance.now();
+      parseMarkdown(text);
+      expect(Math.round(performance.now() - started)).toBeLessThan(250);
+    });
+  }
+});
+
+describe("closing hashes of a heading", () => {
+  const headingText = (source: string) => {
+    const block = parseMarkdown(source)[0] as Extract<Block, { kind: "heading" }>;
+    return block.inlines.map((inline) => ("text" in inline ? inline.text : "")).join("");
+  };
+  it("drops a closing run of # after a blank, and keeps a # that is part of a word", () => {
+    expect(headingText("# Title ##")).toBe("Title");
+    expect(headingText("## Title #  ")).toBe("Title");
+    expect(headingText("# C#")).toBe("C#");
+    expect(headingText("# a #b")).toBe("a #b");
+    expect(headingText("# ###")).toBe("");
+  });
+});

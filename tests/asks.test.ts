@@ -292,6 +292,26 @@ describe("asking another bot through a file", () => {
     expect(started).toHaveLength(2);
   });
 
+  it("counts a held follow-up's half hour from when the user approved it, not from when it was asked", async () => {
+    const { asks, sent, status, started, from } = await setup({ contactBots: "ask" });
+    const t0 = Date.now();
+    let now = t0;
+    (asks as unknown as { now: () => number }).now = () => now;
+    const first = await asks.request(from, { to: "Scout", message: "first" });
+    await asks.approved((await getProposal(first.proposalId!))! as never);
+    status[started[0]!.agentId] = "running";
+    const second = await asks.request(from, { to: "Scout", message: "held" });
+    // Still inside the hour a chat is reused for, so the follow-up is held behind the busy chat.
+    now = t0 + 50 * 60_000;
+    await asks.approved((await getProposal(second.proposalId!))! as never);
+    const heldId = ((await getProposal(second.proposalId!))! as { data: { requestId: string } }).data.requestId;
+    const closedHeld = () => sent.filter((message) => message.text.includes(heldId) && message.text.includes("no answer"));
+    await asks.sweep(now + 10 * 60_000);
+    expect(closedHeld()).toEqual([]);
+    await asks.sweep(now + 31 * 60_000);
+    expect(closedHeld()).toHaveLength(1);
+  });
+
   it("closes a held follow-up that never got its turn, and does not send it afterwards", async () => {
     const { asks, sent, status, started, from } = await setup();
     const t0 = Date.now();

@@ -122,9 +122,12 @@ export function takeQueued(queue: readonly QueuedMessage[], id: string): { item:
   return { item, rest: item ? queue.filter((entry) => entry.id !== id) : [...queue] };
 }
 
-/** Whether the next queued message should go out now: the agent is idle and nothing is in flight. */
-export function shouldDrainQueue(input: { running: boolean; queued: number; inFlight: boolean; hasAgent: boolean }): boolean {
-  return input.hasAgent && !input.running && input.queued > 0 && !input.inFlight;
+/**
+ * Whether the next queued message should go out now: the agent is idle and nothing is in flight.
+ * `statusKnown`: the chat's status has loaded. A reopened chat reads as idle until then, even if it is still working.
+ */
+export function shouldDrainQueue(input: { running: boolean; queued: number; inFlight: boolean; hasAgent: boolean; statusKnown: boolean }): boolean {
+  return input.hasAgent && input.statusKnown && !input.running && input.queued > 0 && !input.inFlight;
 }
 
 // ---------------------------------------------------------------- drafts

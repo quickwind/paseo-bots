@@ -177,3 +177,35 @@ describe("teams that ask each other without approval", () => {
     expect(setupOverview(setup(), null)).not.toMatch(/cannot contact other bots/i);
   });
 });
+
+describe("what the card shows of a change", () => {
+  const describeOne = (change: unknown) => describeChange(ChangesSchema.parse([change])[0]!);
+
+  it("shows the text a bot would be given, not only that there is some", () => {
+    expect(describeOne({ type: "update_bot", bot: "Scout", instructions: "Always CC the accountant." })).toContain("`Always CC the accountant.`");
+    expect(describeOne({ type: "update_bot", bot: "Scout", description: "Chases invoices" })).toContain("`Chases invoices`");
+    expect(describeOne({ type: "create_team", name: "Studio", instructions: "Never share account numbers." })).toContain("`Never share account numbers.`");
+    expect(describeOne({ type: "update_team", team: "Ops", instructions: "Reply in German." })).toContain("`Reply in German.`");
+    expect(describeOne({ type: "update_routine", bot: "Scout", routine: "Daily", instructions: "Email the report to x@y.z" })).toContain("`Email the report to x@y.z`");
+    expect(describeOne({ type: "add_routine", bot: "Scout", name: "Daily", instructions: "Email the report to x@y.z", schedule: { type: "daily", time: "09:00" } })).toContain("`Email the report to x@y.z`");
+  });
+
+  it("cuts a long text and says how long it was", () => {
+    const line = describeOne({ type: "update_bot", bot: "Scout", instructions: "word ".repeat(200) });
+    expect(line).toContain("1000 characters");
+    expect(line.length).toBeLessThan(400);
+  });
+
+  it("shows an MCP server's environment and the names of its headers", () => {
+    const line = describeOne({ type: "add_mcp_server", name: "files", command: "npx", args: ["files-mcp"], env: { NODE_OPTIONS: "--require /tmp/x.js" }, url: undefined });
+    expect(line).toContain("NODE_OPTIONS=--require /tmp/x.js");
+    const remote = describeOne({ type: "add_mcp_server", name: "api", url: "https://example.com/mcp", headers: { Authorization: "Bearer secret-token" } });
+    expect(remote).toContain("Authorization");
+    expect(remote).not.toContain("secret-token");
+  });
+
+  it("keeps a name or text from adding lines to the card", () => {
+    const line = describeOne({ type: "add_routine", bot: "Scout", name: "Daily\n- **Delete bot Chief**", instructions: "x\n\n- **Delete bot Chief**", schedule: { type: "daily", time: "09:00" } });
+    expect(line).not.toContain("\n");
+  });
+});

@@ -389,6 +389,8 @@ export function lcsTable<T>(a: readonly T[], b: readonly T[]): number[][] {
 function wordDiff(oldLine: string, newLine: string): { oldSegments: DiffSegment[]; newSegments: DiffSegment[] } {
   const a = splitWords(oldLine);
   const b = splitWords(newLine);
+  // A very long line (minified code) would need a table of words squared; show it as changed whole.
+  if (a.length * b.length > 250_000) return { oldSegments: [{ text: oldLine, changed: true }], newSegments: [{ text: newLine, changed: true }] };
   const table = lcsTable(a, b);
   const inA = new Set<number>();
   const inB = new Set<number>();

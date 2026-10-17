@@ -116,11 +116,15 @@ describe("queue", () => {
   });
 
   it("drains only when idle with nothing in flight", () => {
-    expect(shouldDrainQueue({ running: false, queued: 1, inFlight: false, hasAgent: true })).toBe(true);
-    expect(shouldDrainQueue({ running: true, queued: 1, inFlight: false, hasAgent: true })).toBe(false);
-    expect(shouldDrainQueue({ running: false, queued: 1, inFlight: true, hasAgent: true })).toBe(false);
-    expect(shouldDrainQueue({ running: false, queued: 0, inFlight: false, hasAgent: true })).toBe(false);
-    expect(shouldDrainQueue({ running: false, queued: 1, inFlight: false, hasAgent: false })).toBe(false);
+    expect(shouldDrainQueue({ running: false, queued: 1, inFlight: false, hasAgent: true, statusKnown: true })).toBe(true);
+    expect(shouldDrainQueue({ running: true, queued: 1, inFlight: false, hasAgent: true, statusKnown: true })).toBe(false);
+    expect(shouldDrainQueue({ running: false, queued: 1, inFlight: true, hasAgent: true, statusKnown: true })).toBe(false);
+    expect(shouldDrainQueue({ running: false, queued: 0, inFlight: false, hasAgent: true, statusKnown: true })).toBe(false);
+    expect(shouldDrainQueue({ running: false, queued: 1, inFlight: false, hasAgent: false, statusKnown: true })).toBe(false);
+  });
+
+  it("waits for the chat's status to load, as a chat that is still working reads as idle until then", () => {
+    expect(shouldDrainQueue({ running: false, queued: 1, inFlight: false, hasAgent: true, statusKnown: false })).toBe(false);
   });
 });
 

@@ -600,6 +600,15 @@ describe("the tidy service", () => {
     expect(started).toHaveLength(2);
   });
 
+  it("starts one tidy chat when run now is pressed twice at once", async () => {
+    const { tidy, folder, started } = await setup();
+    await writeFile(join(folder, "memory", "inbox.md"), "- note\n");
+    const results = await Promise.allSettled([tidy.runNow("tb"), tidy.runNow("tb")]);
+    expect(started).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect((await tidy.status("tb")).runsToday).toBe(1);
+  });
+
   it("run now refuses while a chat of the bot is working", async () => {
     const { tidy, activity } = await setup();
     activity.started("tb", "chat-x");

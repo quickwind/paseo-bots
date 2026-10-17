@@ -9,6 +9,7 @@ import type { Bot, Routine } from "../shared/bot";
 import { ROUTINE_LABEL } from "../shared/chat";
 import { ROUTINE_RUN_CARD, type RoutineRecord, type RoutineRun, type RoutineRunCard } from "../shared/rpc";
 import { decide } from "../shared/routines";
+import { newUuid } from "../shared/uuid";
 import { pluginDataPath } from "./bot-home";
 import { startChat } from "./chats";
 import type { BotsHost } from "./host";
@@ -202,13 +203,17 @@ export class RoutineScheduler {
     }
   }
 
-  private newChat(bot: Bot, routine: Routine, prompt: string): Promise<string> {
-    return startChat(this.host, this.relay, bot, { prompt, title: routine.name, labels: { [ROUTINE_LABEL]: routine.id } });
+  private newChat(bot: Bot, routine: Routine, prompt: string, agentId: string): Promise<string> {
+    return startChat(this.host, this.relay, bot, { prompt, title: routine.name, labels: { [ROUTINE_LABEL]: routine.id }, agentId });
   }
 
   /** Starts a run in a new chat, or records why it didn't; the results chat gets a card either way. */
   private async run(bot: Bot, routine: Routine, trigger: Trigger, due: Date, event?: WebhookEvent): Promise<RoutineRun> {
-    const run = await this.update(async (records) => {
+    // The run is recorded, with its chat's id, before the chat exists: a chat that fails at once can report
+    // the end of its turn before startChat returns, and that end must find the run.
+    const agentId = newUuid();
+    let start = false;
+    const first = await this.update(async (records) => {
       const record = records[routine.id] ?? { ...EMPTY_RECORD, runs: [] };
       records[routine.id] = record;
       const now = new Date().toISOString();
@@ -222,12 +227,34 @@ export class RoutineScheduler {
         let busy = 0;
         for (const entry of recent) if (await this.working(entry.agentId)) busy++;
         if (busy >= limit) Object.assign(run, { status: "skipped-busy", endedAt: now });
-        else run.agentId = await this.newChat(bot, routine, runPrompt(routine, event));
+        else {
+          run.agentId = agentId;
+          start = true;
+        }
       } catch (error) {
         Object.assign(run, { status: "failed", endedAt: now, error: error instanceof Error ? error.message : String(error) });
       }
       record.runs = [...record.runs, run].slice(-KEEP_RUNS);
-      return run;
+      return { ...run };
+    });
+    if (!start) {
+      await this.postCard(routine, first);
+      return first;
+    }
+    let started: string | null = null;
+    let failure: string | null = null;
+    try {
+      started = await this.newChat(bot, routine, runPrompt(routine, event), agentId);
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error);
+    }
+    // Normally the chat has the id given to it. If the turn already ended, the run is settled and stays so.
+    const run = await this.update((records) => {
+      const found = records[routine.id]?.runs.find((entry) => entry.id === first.id);
+      if (!found) return first;
+      if (failure !== null && found.status === "running") Object.assign(found, { status: "failed", endedAt: new Date().toISOString(), error: failure, agentId: null });
+      else if (started && started !== found.agentId) found.agentId = started;
+      return { ...found };
     });
     await this.postCard(routine, run);
     return run;
