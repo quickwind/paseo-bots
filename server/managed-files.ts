@@ -34,11 +34,28 @@ export async function dropLink(path: string): Promise<void> {
   if ((await lstat(path).catch(() => null))?.isSymbolicLink()) await unlink(path);
 }
 
+/** Windows will not replace a file while someone has it open (a reader, a scanner); it says one of these for a moment. */
+const BUSY = new Set(["EPERM", "EBUSY", "EACCES"]);
+const RENAME_TRIES = 10;
+
 export async function writeAtomic(path: string, text: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.tmp-${randomBytes(4).toString("hex")}`;
   await writeFile(temporary, text, "utf8");
-  await rename(temporary, path);
+  try {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await rename(temporary, path);
+        return;
+      } catch (error) {
+        if (attempt >= RENAME_TRIES || !BUSY.has((error as NodeJS.ErrnoException).code ?? "")) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 10 * attempt));
+      }
+    }
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 async function listFiles(dir: string, prefix = ""): Promise<string[]> {
