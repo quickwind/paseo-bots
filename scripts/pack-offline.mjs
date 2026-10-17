@@ -90,7 +90,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const outIndex = process.argv.indexOf("--out");
   const out = path.resolve(outIndex === -1 ? path.join(root, "dist") : (process.argv[outIndex + 1] ?? ""));
   const { version } = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
-  const folder = `paseo-bots-${version}`;
+  const folder = `bot-crew-${version}`;
 
   const entries = INCLUDE.flatMap(files)
     .sort()

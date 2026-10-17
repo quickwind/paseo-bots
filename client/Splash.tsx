@@ -30,7 +30,7 @@ export function Splash({ colors, background }: { colors: Colors; background?: st
         ))}
       </View>
       <View style={{ alignItems: "center", gap: 2 }}>
-        <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>paseo-bots</Text>
+        <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>Bot Crew</Text>
         <Text style={{ fontSize: ui(11), color: colors.foregroundMuted, opacity: 0.7 }}>v{PLUGIN_VERSION}</Text>
       </View>
     </View>

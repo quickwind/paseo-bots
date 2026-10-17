@@ -49,7 +49,7 @@ interface BotSidebarProps {
   localHost: LocalHost;
   /** Touch devices have no hover: row actions stay visible. */
   touch: boolean;
-  /** Phone layout: with no bots at all, show the Paseo Bots splash instead of the empty state. */
+  /** Phone layout: with no bots at all, show the Bot Crew splash instead of the empty state. */
   splash?: boolean;
   /** The home indicator: Paseo's mobile sidebar pads its panel by the bottom safe area. */
   bottomInset: number;

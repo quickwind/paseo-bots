@@ -35,7 +35,7 @@ export class BotsHost {
 
   /** The Paseo API, or an error a tool can show the agent. */
   requirePaseo(): PaseoApi {
-    if (!this.api) throw new Error("paseo-bots isn't connected to Paseo yet. Open the Bots screen once and try again.");
+    if (!this.api) throw new Error("Bot Crew isn't connected to Paseo yet. Open the Bots screen once and try again.");
     return this.api;
   }
 

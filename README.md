@@ -2,11 +2,11 @@
   <img src="docs/bots.svg" width="512" alt="Six pixel-art bots">
 </p>
 
-# paseo-bots, offline edition
+# Bot Crew, offline edition
 
-Personal bots for [Paseo](https://paseo.sh) and Irix: give each bot instructions, a model, memory, skills and tools, then chat with it in its own workspace or let it run routines.
+Bot Crew: personal bots for [Paseo](https://paseo.sh) and Irix: give each bot instructions, a model, memory, skills and tools, then chat with it in its own workspace or let it run routines.
 
-This is a fork of [oliexe/paseo-bots](https://github.com/oliexe/paseo-bots) 0.2.0 (MIT, by Ondrej Rehacek) for machines that must not send data to cloud services. **The plugin makes no network connections of its own.** Everything that needed one is gone, and a test keeps it that way.
+Bot Crew is based on [oliexe/paseo-bots](https://github.com/oliexe/paseo-bots) 0.2.0 (MIT, by Ondrej Rehacek) for machines that must not send data to cloud services. **The plugin makes no network connections of its own.** Everything that needed one is gone, and a test keeps it that way.
 
 ## What is different
 
@@ -44,8 +44,8 @@ Everything else is unchanged: bots, memory, routines and webhooks, teams, the sk
 Get the plugin folder onto the machine (the offline package unzips into one), then install it from that folder.
 
 ```bash
-irix plugin install /path/to/paseo-bots        # Irix
-paseo plugin install /path/to/paseo-bots       # Paseo
+irix plugin install /path/to/bot-crew          # Irix
+paseo plugin install /path/to/bot-crew         # Paseo
 ```
 
 Turn on **Settings → Plugins → Enable plugins** first. Requires Paseo 0.9.2 or later. Irix installs plugins from a local folder only, which is what this edition is for.
@@ -127,7 +127,7 @@ Bots get Paseo's own tools, so you can ask one in a chat to start other agents, 
 ```bash
 npm ci --ignore-scripts
 npm run typecheck && npm test
-node scripts/pack-offline.mjs --out ../paseo-bots-offline
+node scripts/pack-offline.mjs --out ../bot-crew-offline
 ```
 
 The package is a zip of the plugin's source files only (the daemon compiles them when the plugin starts). It has no runtime dependencies, so installing it needs no npm and no internet.

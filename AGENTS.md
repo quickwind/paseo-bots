@@ -8,9 +8,10 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
 ## Where things are
 
 - Remotes: `origin` = `quickwind/paseo-bots` (our public fork), `upstream` = `oliexe/paseo-bots`.
-- Branches (each contains the one before): `offline` (offline edition), `memory-maintenance`,
-  `file-tools`, `ask-followups` (newest). Not merged into one main line yet.
-- Package: `npm run pack:offline -- --out ~/irix-dist` makes `paseo-bots-0.2.0-offline.<n>.zip`.
+- Branches: `main` is the line to work on (it was fast-forwarded to `ask-followups` and tracks `origin/main`;
+  upstream's own history is `upstream/main`). The old `offline`, `memory-maintenance`, `file-tools` and
+  `ask-followups` branches are all contained in it and can be deleted.
+- Package: `npm run pack:offline -- --out ~/irix-dist` makes `bot-crew-0.2.0-offline.<n>.zip` (it unzips into a folder `bot-crew-<version>`).
   Bump the version in `package.json` and `shared/version.ts` for every package, delete the older zip,
   keep only the latest in `~/irix-dist`. The Irix repo's `INSTALL-WINDOWS.md` names the zip; its
   owner updates it, do not edit the Irix repo from here.
@@ -34,14 +35,17 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
 
 - Upstream is MIT (Ondrej Rehacek). Keep `LICENSE`, the author field and the notice in every copy.
   MIT has no trademark clause, so renaming is allowed.
-- Decided but not done: rebrand to "Irix Bots" in the light way (display name, package and zip
-  names, README, UI text) and keep the internal plugin id `paseo-bots`, the data folder and the
-  `paseo-bots.*` labels, because changing the id loses users' data and needs a migration. Full
-  rename only if the plugin must be installed beside the original in the same Paseo.
-- To do with the rebrand: say "based on oliexe/paseo-bots (MIT)" in the README, and add our own
-  copyright line to `LICENSE` (who holds it is for the company's legal team).
-- Open question: the code names "OpenMausBot" in about 27 comments as the design it follows. Its
-  licence is unknown; ask upstream whether any code was taken from it.
+- Rebranded as "Bot Crew" (light way, done): display name on the splash and error text, package and zip
+  names, README. Kept: the internal plugin id `paseo-bots`, the data folder, the `paseo-bots.*` labels
+  and the export format names, because changing the id loses users' data and needs a migration. Full
+  rename only if the plugin must be installed beside the original in the same Paseo. Not "Irix Bots":
+  IRIX is SGI's operating system. The sidebar item stays "Bots".
+- `LICENSE` has both lines: Ondrej Rehacek (upstream, must stay) and quickwind. `NOTICE` credits upstream
+  (MIT) and OpenMausBot (Apache-2.0, `milind-soni/OpenMausBot`, checked on GitHub; only its `enterprise/`
+  folder is under another licence). Its names and mascot are trademarks of Supamaus Software Private
+  Limited: never use them for this project (comments saying which design a piece follows are fine).
+- Open question: the code names "OpenMausBot" in about 27 comments as the design it follows. Whether any
+  code was copied from it is unchecked; if so, Apache-2.0 asks for the licence text and NOTICE to stay.
 - The fork is public (a fork of a public repo cannot be private). Three design documents say the
   company restricts MCP in Devin; reword them if that is unwanted.
 
@@ -140,5 +144,6 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
 - Minor, deferred: files with names the plugin rejects are ignored silently; file-name matching is
   case-insensitive; in-memory notice counters are not pruned; hand-opened chats in a bot's folder get
   the bot's saved shell-command approvals.
-- To decide: merge the branches into one line; light rebrand to Irix Bots; whether Devin bots should
-  have memory tidy off by default; whether to keep the three design documents' company remark public.
+- Decided, to do: Devin bots get memory tidy off by default and tidy prefers Paseo's "Metadata generation"
+  model; same-team asks without approval as a switch (default off); a leader gets a higher ask limit.
+- To decide: whether to keep the three design documents' company remark public.
