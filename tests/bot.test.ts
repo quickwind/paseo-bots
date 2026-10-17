@@ -284,3 +284,23 @@ describe("skill review", () => {
     expect(risky).toHaveLength(4);
   });
 });
+
+describe("paths in the prompt", () => {
+  it("are written with forward slashes, so a Unix-style shell on Windows does not read backslashes as escapes", () => {
+    const sections = promptSections(bot({ provider: "devin" }), {
+      memory: "",
+      memoryPath: "C:\\Users\\a\\bots\\scout\\MEMORY.md",
+      recentWork: [],
+      playbooks: [],
+      skills: [{ name: "weekly", description: "d", path: "C:\\Users\\a\\bots\\scout\\skills\\weekly\\SKILL.md" }],
+      paseoTools: false,
+      botTools: false,
+      botFiles: { home: "C:\\Users\\a\\bots\\scout" },
+    });
+    const text = sections.map((section) => section.text).join("\n");
+    expect(text).toContain("C:/Users/a/bots/scout/MEMORY.md");
+    expect(text).toContain("C:/Users/a/bots/scout/skills/weekly/SKILL.md");
+    expect(text).toContain("C:/Users/a/bots/scout/proposals/");
+    expect(text).not.toContain("\\");
+  });
+});
