@@ -24,6 +24,7 @@ const INCLUDE = [
   "shared",
   "docs",
   "LICENSE",
+  "NOTICE",
   "README.md",
 ];
 

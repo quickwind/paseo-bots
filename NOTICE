@@ -1,0 +1,16 @@
+paseo-bots (offline edition)
+
+Based on oliexe/paseo-bots, Copyright (c) 2026 Ondrej Rehacek, MIT License (see LICENSE).
+
+The design of the bots (teams with a Chief of Staff, memory and its journal, playbooks,
+routines and webhooks, saved commands, presets, skill review, the way one bot asks another)
+follows OpenMausBot, https://github.com/milind-soni/OpenMausBot, licensed under the
+Apache License 2.0. Where this code is derived from it, the Apache License 2.0 applies to
+that part: https://www.apache.org/licenses/LICENSE-2.0
+
+The names OpenMausBot and MausBot and its mascot are trademarks of Supamaus Software Private
+Limited. This project is not affiliated with or endorsed by them and does not use their
+names for itself; they appear in comments only to say which design a piece of code follows.
+
+This edition changes the original: it removes everything that connects to the network, and
+adds memory upkeep, Devin support and bot tools as files, and follow-up questions between bots.

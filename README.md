@@ -140,4 +140,4 @@ The package is a zip of the plugin's source files only (the daemon compiles them
 
 ## License
 
-MIT, as upstream. See `LICENSE`.
+MIT, as upstream. See `LICENSE`. The design follows OpenMausBot (Apache-2.0); see `NOTICE`.
