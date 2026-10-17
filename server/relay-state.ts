@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { writeAtomic } from "./managed-files";
 import { pluginDataPath } from "./bot-home";
 
 // The relay's own state: the secret that signs each chat's tool token, and the last port it
@@ -32,8 +33,6 @@ export async function readState(): Promise<State> {
 export async function writeState(patch: Partial<State>): Promise<State> {
   const next = { ...(await readState()), ...patch };
   cached = next;
-  await mkdir(dirname(statePath()), { recursive: true });
-  await writeFile(statePath(), JSON.stringify(next, null, 2), { encoding: "utf8", mode: 0o600 });
-  await chmod(statePath(), 0o600).catch(() => {});
+  await writeAtomic(statePath(), JSON.stringify(next, null, 2), 0o600);
   return next;
 }

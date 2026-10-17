@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,6 +36,14 @@ describe("writeAtomic", () => {
     await writeAtomic(join(dir, "store.json"), "{}");
     expect(await readFile(join(dir, "store.json"), "utf8")).toBe("{}");
     expect(await readdir(dir)).toEqual(["store.json"]);
+  });
+
+  it("keeps a file private when asked for a mode", async () => {
+    const { writeAtomic } = await import("../server/managed-files");
+    await writeAtomic(join(dir, "secret.json"), "{}", 0o600);
+    // Windows has no such mode bits.
+    if (process.platform !== "win32") expect((await stat(join(dir, "secret.json"))).mode & 0o777).toBe(0o600);
+    expect(await readFile(join(dir, "secret.json"), "utf8")).toBe("{}");
   });
 
   it("gives up with the error, and leaves no temporary file, when the file stays held", async () => {

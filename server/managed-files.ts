@@ -38,10 +38,11 @@ export async function dropLink(path: string): Promise<void> {
 const BUSY = new Set(["EPERM", "EBUSY", "EACCES"]);
 const RENAME_TRIES = 10;
 
-export async function writeAtomic(path: string, text: string): Promise<void> {
+/** Writes `text` to `path` through a temporary file and a rename; `mode` keeps a file private (0o600) from the start. */
+export async function writeAtomic(path: string, text: string, mode?: number): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.tmp-${randomBytes(4).toString("hex")}`;
-  await writeFile(temporary, text, "utf8");
+  await writeFile(temporary, text, mode === undefined ? "utf8" : { encoding: "utf8", mode });
   try {
     for (let attempt = 1; ; attempt++) {
       try {

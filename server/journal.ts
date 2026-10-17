@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { redactSecrets } from "../shared/activity";
 import { lineDiff } from "../shared/diff";
@@ -148,8 +148,7 @@ export class MemoryJournal {
       removed,
     };
     const entries = [...(await this.load(botId)), entry].slice(-KEEP);
-    await mkdir(join(pluginDataPath(), "journal"), { recursive: true });
-    await writeFile(journalPath(botId), entries.map((item) => JSON.stringify(item)).join("\n") + "\n", { encoding: "utf8", mode: 0o600 });
+    await writeAtomic(journalPath(botId), entries.map((item) => JSON.stringify(item)).join("\n") + "\n", 0o600);
   }
 
   private async load(botId: string): Promise<JournalEntry[]> {

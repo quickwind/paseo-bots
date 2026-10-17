@@ -101,6 +101,10 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
   already open (the tool permission itself is fixed when the chat starts). Several bots can be asked in one turn (one outbox file each, or
   `ask_bot` with `wait: false`); each answer comes as its own message, a slow one closes at 30 minutes
   with a notice, and the lead is told to answer without waiting for the slowest.
+- State files of the plugin (asks, proposals, tidy, routines, hooks, journal, relay secret, command rules) are written
+  with `writeAtomic` (temporary file, rename; `mode` 0o600 for secrets). Windows refuses to replace a file someone has
+  open, so it waits out EPERM/EBUSY/EACCES a few times. `tests/atomic-state.test.ts` fails on a plain `writeFile` in
+  `server/` outside its short allowlist.
 - A memory tidy chat runs in the bot's folder, so its identity file is the full one; the files its turn wrote
   in `proposals/` and `outbox/` are settled with a note and never become cards or go to a later chat
   (`FileTools.discardTurn`).

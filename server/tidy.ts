@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { writeAtomic } from "./managed-files";
 import type { PluginTurnOutcome } from "@getpaseo/plugin/server";
 import { foldText } from "../shared/activity";
 import type { Bot } from "../shared/bot";
@@ -97,8 +98,7 @@ export class MemoryTidy {
       const record = all[botId] ?? { ...EMPTY, runs: [] };
       const result = await change(record);
       all[botId] = record;
-      await mkdir(pluginDataPath(), { recursive: true });
-      await writeFile(statePath(), JSON.stringify(all, null, 2), "utf8");
+      await writeAtomic(statePath(), JSON.stringify(all, null, 2));
       return result;
     };
     const next = this.queue.then(run);

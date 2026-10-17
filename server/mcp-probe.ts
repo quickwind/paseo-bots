@@ -74,6 +74,8 @@ function probeStdio(config: Extract<McpServerConfig, { type: "stdio" }>, signal:
     signal.addEventListener("abort", onAbort);
 
     child.on("error", (error) => finish(new Error(`Couldn't start "${config.command}": ${error.message}`)));
+    // A write to a server that has closed its input (EPIPE) is reported on stdin; without a listener it would be an uncaught exception.
+    child.stdin.on("error", (error) => finish(new Error(`The server stopped reading its input: ${error.message}.${lastLine(stderr)}`)));
     child.on("exit", (code) => finish(new Error(`The server exited${code === null ? "" : ` with code ${code}`} before answering.${lastLine(stderr)}`)));
     child.stderr.on("data", (chunk: Buffer) => {
       stderr = (stderr + chunk.toString("utf8")).slice(-4000);

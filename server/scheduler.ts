@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import type { PaseoApi } from "./paseo";
@@ -13,6 +13,7 @@ import { newUuid } from "../shared/uuid";
 import { pluginDataPath } from "./bot-home";
 import { startChat } from "./chats";
 import type { BotsHost } from "./host";
+import { writeAtomic } from "./managed-files";
 import { readBody, type Relay } from "./relay";
 
 const TICK_MS = 30_000;
@@ -58,8 +59,7 @@ async function readJson<T>(path: string, fallback: T): Promise<T> {
 }
 
 async function writeJson(path: string, value: unknown, mode?: number): Promise<void> {
-  await mkdir(pluginDataPath(), { recursive: true });
-  await writeFile(path, JSON.stringify(value, null, 2), { encoding: "utf8", ...(mode ? { mode } : {}) });
+  await writeAtomic(path, JSON.stringify(value, null, 2), mode);
 }
 
 export interface WebhookEvent {
