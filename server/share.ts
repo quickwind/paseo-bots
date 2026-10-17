@@ -8,8 +8,6 @@ import { botDataPath } from "./bot-home";
 import { librarySkillPath, type ImportedSkill } from "./library";
 
 const FORMAT = "bot-crew";
-/** Files exported before the plugin was renamed are still read. */
-const FORMATS = z.enum([FORMAT, "paseo-bots", "paseo-bot"]);
 const MAX_FILES = 400;
 
 const BotFields = BotSchema.pick({
@@ -30,7 +28,7 @@ const SharedSkillSchema = z.object({ id: z.string(), description: z.string().def
 
 /** v2: skills and MCP servers travel next to the bot and join the importer's library. */
 const ExportV2Schema = z.object({
-  format: FORMATS,
+  format: z.literal(FORMAT),
   version: z.literal(2),
   bot: BotFields,
   skills: z.array(SharedSkillSchema).default([]),
@@ -40,7 +38,7 @@ const ExportV2Schema = z.object({
 
 /** v1 kept MCP servers and skills on the bot. */
 const ExportV1Schema = z.object({
-  format: FORMATS,
+  format: z.literal(FORMAT),
   version: z.literal(1),
   bot: BotFields.extend({
     mcpServers: z.array(BotMcpServerSchema).default([]),
@@ -192,14 +190,13 @@ export async function importBot({ botId, json }: { botId: string; json: string }
 // ---------------------------------------------------------------- team files
 
 const TEAM_FORMAT = "bot-crew-team";
-const TEAM_FORMATS: readonly unknown[] = [TEAM_FORMAT, "paseo-bots-team"];
 const MAX_TEAM = 50;
 
-const TeamSchema = z.object({ format: z.enum([TEAM_FORMAT, "paseo-bots-team"]), version: z.literal(1), bots: z.array(z.unknown()).min(1).max(MAX_TEAM), teams: z.array(TeamFileTeamSchema).max(MAX_TEAM).default([]) });
+const TeamSchema = z.object({ format: z.literal(TEAM_FORMAT), version: z.literal(1), bots: z.array(z.unknown()).min(1).max(MAX_TEAM), teams: z.array(TeamFileTeamSchema).max(MAX_TEAM).default([]) });
 
 export function isTeamFile(json: string): boolean {
   try {
-    return TEAM_FORMATS.includes((JSON.parse(json) as { format?: unknown }).format);
+    return (JSON.parse(json) as { format?: unknown }).format === TEAM_FORMAT;
   } catch {
     return false;
   }

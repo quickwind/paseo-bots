@@ -1,4 +1,3 @@
-import { lstatSync, renameSync, symlinkSync } from "node:fs";
 import { lstat, mkdir, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -11,30 +10,6 @@ function pluginDataRoot(): string {
 
 export function pluginDataPath(): string {
   return join(pluginDataRoot(), "bot-crew");
-}
-
-/**
- * The plugin was called paseo-bot before. Move its data (bots' folders, the
- * skill library) to the new name and leave a link behind,
- * so chats started in the old folders keep their working directory. Runs
- * once, synchronously, before anything reads the data folder.
- */
-export function migrateRenamedPluginData(): void {
-  const legacy = join(pluginDataRoot(), "paseo-bot");
-  const target = pluginDataPath();
-  try {
-    if (!lstatSync(legacy).isDirectory()) return;
-  } catch {
-    return;
-  }
-  try {
-    lstatSync(target);
-    return;
-  } catch {
-    // No data under the new name yet: move the old folder over.
-  }
-  renameSync(legacy, target);
-  symlinkSync(target, legacy, "junction");
 }
 
 /**

@@ -52,13 +52,12 @@ describe("team files", () => {
     const bots = [makeBot({ id: "bot-a", name: "Inbox", contactBots: "allow", routines: [routine] }), makeBot({ id: "bot-b", name: "Scout" })];
     const { json } = await exportTeam({ bots, groups: [], includeMemory: false }, EMPTY_LIBRARY);
     expect(isTeamFile(json)).toBe(true);
-    expect(isTeamFile(JSON.stringify({ format: "paseo-bots-team", version: 1, bots: [] }))).toBe(true);
     expect(isTeamFile(JSON.stringify({ format: "other" }))).toBe(false);
     const imported = await importTeam({ json });
     expect(imported.bots.map((entry) => entry.bot.name)).toEqual(["Inbox", "Scout"]);
     expect(imported.bots[0]!.bot).toMatchObject({ contactBots: "ask", routines: [{ name: "Daily", enabled: false, resultsChatId: null }] });
     expect(new Set(imported.bots.map((entry) => entry.bot.id)).size).toBe(2);
-    await expect(importTeam({ json: '{"format":"paseo-bots-team","version":1,"bots":[]}' })).rejects.toThrow("damaged");
+    await expect(importTeam({ json: '{"format":"bot-crew-team","version":1,"bots":[]}' })).rejects.toThrow("damaged");
   });
 
   it("brings the teams along and recreates them on import", async () => {

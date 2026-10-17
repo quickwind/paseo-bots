@@ -1,5 +1,5 @@
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
-import { ensureBotHome, ensureBotsHome, migrateRenamedPluginData } from "./server/bot-home";
+import { ensureBotHome, ensureBotsHome } from "./server/bot-home";
 import { turnEnded, turnStarted } from "./server/activity";
 import { CommandAllowlist } from "./server/commands";
 import { Asks } from "./server/asks";
@@ -61,12 +61,7 @@ import {
 } from "./shared/rpc";
 
 export default function contribute(server: PluginServerContext) {
-  try {
-    migrateRenamedPluginData();
-  } catch (error) {
-    console.error("bot-crew: couldn't move the data of the old paseo-bot plugin", error);
-  }
-  // Moves the old folder if needed and writes the Bots project icon.
+  // Writes the Bots project icon.
   void ensureBotsHome()
     .then(migrateBotSkills)
     .catch((error: unknown) => console.error("bot-crew: couldn't prepare the Bots folder", error));

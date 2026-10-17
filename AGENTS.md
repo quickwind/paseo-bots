@@ -37,9 +37,8 @@ Longer design documents are in `docs/superpowers/specs/` and plans in `docs/supe
   MIT has no trademark clause, so renaming is allowed.
 - Renamed to "Bot Crew", fully: plugin id `bot-crew`, data folder `plugin-data/bot-crew`, chat labels
   `bot-crew.*`, display names, package and zip names. Nothing was deployed under the old id, so there is
-  no migration from `paseo-bots` (anything left from test instances under `paseo-bots` is orphaned). Bot
-  and team files exported as `paseo-bots`, `paseo-bots-team` or `paseo-bot` are still imported. Not
-  "Irix Bots": IRIX is SGI's operating system. The sidebar item stays "Bots".
+  no migration from `paseo-bots` or the earlier `paseo-bot`, and old export files are not read. A test
+  Irix with the old plugin installed (the Windows PC) needs it removed first. Not "Irix Bots": IRIX is SGI's operating system. The sidebar item stays "Bots".
 - `LICENSE` has both lines: Ondrej Rehacek (upstream, must stay) and quickwind. `NOTICE` credits upstream
   (MIT) and OpenMausBot (Apache-2.0, `milind-soni/OpenMausBot`, checked on GitHub; only its `enterprise/`
   folder is under another licence). Its names and mascot are trademarks of Supamaus Software Private
