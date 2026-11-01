@@ -24,7 +24,7 @@ export default function contribute(client: PluginClientContext) {
   else client.addSurface("bots", BotsSurface);
   // The row is ours on every host (Paseo 0.13 and later have addSidebarHeaderItem): one status dot for all assistants. The host shows
   // one row per plugin and keeps the host in its own picker on the screen, so neither names a host.
-  client.addSidebarHeaderItem({ id: "bots", title: "Aydo", Component: BotsNav });
+  client.addSidebarHeaderItem({ id: "bots", title: messages.message("host.sidebarTitle"), Component: BotsNav });
   client.addSettingsScreen({ id: "bots", title: "Aydo", icon: "Bot", Component: BotsSettings });
   client.addCommandCenterItem({
     id: "open-bots",

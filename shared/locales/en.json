@@ -8,6 +8,7 @@
     "settingsUnreadable": "Settings can't be read."
   },
   "host": {
+    "sidebarTitle": "Aydo",
     "openBots": "Open Assistants",
     "newBot": "New assistant",
     "learn": "Save what the assistant just did as a skill",
