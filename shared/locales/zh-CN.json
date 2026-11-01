@@ -8,6 +8,7 @@
     "settingsUnreadable": "无法读取设置。"
   },
   "host": {
+    "sidebarTitle": "Aydo 个人助理",
     "openBots": "打开助理",
     "newBot": "新建助理",
     "learn": "把助理刚做的事存成技能",
