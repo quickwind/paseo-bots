@@ -10,13 +10,17 @@ project workspaces, approvals, languages); the sections below name the one that 
 ## Where things are
 
 - Remotes: `origin` = `quickwind/paseo-bots` (our public fork), `upstream` = `oliexe/paseo-bots`.
-- Branches: `aydo` is the main line (it tracks `origin/aydo`). Every change is made on a short-lived feature branch off `aydo` and merged back
-  into `aydo` when it is done (`--no-ff`); do not commit to `aydo` directly. `bot-crew` (an earlier stable line), `feature/project-workspaces`
-  (the line `aydo` was squashed from) and `main` (reset to `upstream/main` on purpose, so it is upstream's code without our changes) are not
-  worked on any more: do not commit to or merge into them unless the user says so. Nothing is pushed unless the user asks.
+- Branches:
+  - `main` is our line: all of the plugin's code and its changes. Do not commit to it directly.
+  - `upstream` holds upstream's code (`oliexe/paseo-bots`) as it came, without our changes. It is only moved by bringing in upstream's own
+    commits (fetch the `upstream` remote, fast-forward this branch to its `main`); then the wanted changes are merged or cherry-picked into `main`.
+    Nothing of ours goes on it.
+  - Every change is made on a short-lived development branch off `main`: code and tests there, run `npx tsc --noEmit && npm test`, then
+    squash-merge it into `main` as one commit (`git merge --squash`) and delete the branch.
+  - A release is made from `main` (see Releases). Nothing is pushed unless the user asks.
 - Releases: the user says when to release; then, and only then, bump the version in `package.json`, `package-lock.json` (two places) and
-  `shared/version.ts` (plain semver). Do not bump it with each change and do not build zips: another session publishes the package
-  (`paseo-aydo`). `npm run pack -- --out <dir>` still makes `aydo-<version>.zip`, if one is asked for.
+  `shared/version.ts` (plain semver) on a development branch and squash-merge it. Do not bump it with each change and do not build zips:
+  another session publishes the package (`paseo-aydo`). `npm run pack -- --out <dir>` still makes `aydo-<version>.zip`, if one is asked for.
 - Tests: `npx tsc --noEmit && npm test` (includes `tests/no-network.test.ts`).
 
 ## Decisions
@@ -62,7 +66,7 @@ project workspaces, approvals, languages); the sections below name the one that 
   There is no migration: nothing was deployed under an older id, so an install of "Bot Crew" or "Aidy" is a different plugin to
   the host, needs removing, and its chats keep their old labels (`bot-crew.*`, `aidy.*`) that Aydo does not read (an old chat in a
   bot's folder still counts as the bot's, by its folder). Old export files (`format: "bot-crew"` or `"aidy"`) are not read.
-  Kept on purpose: the git branch `bot-crew` (the stable line, renaming a branch is the user's call), the repo names
+  Kept on purpose: the repo names
   `quickwind/paseo-bots` and `oliexe/paseo-bots`, the MCP server name `bots`, internal names such as `Bot`, `BotsSurface`, and
   internal names such as `Bot`. Since build 65 every screen text says "assistant" (English `en.json` has no "bot" in a value; prompts the agent reads, such as the overview and tool texts, still say "bot").
 - `LICENSE` has both lines: Ondrej Rehacek (upstream, must stay) and Qiang Wei (the repo owner; the GitHub account is quickwind). `NOTICE` credits upstream
