@@ -5,6 +5,8 @@ import { Pressable, Text, View } from "react-native";
 import type { PlanOutcome } from "../../../shared/tools";
 import { Markdown } from "../../Markdown";
 import { ui } from "../../typography";
+import { useT } from "../../i18n/use-t";
+import type { Translate } from "../../../shared/translate";
 
 type Colors = PluginTheme["colors"];
 
@@ -18,11 +20,16 @@ interface PlanCardProps {
   disableOuterSpacing?: boolean;
 }
 
-const TITLES: Record<Exclude<PlanOutcome, "pending">, string> = {
-  rejected: "Rejected plan",
-  approved: "Approved plan",
-  canceled: "Canceled plan",
-};
+function outcomeTitle(t: Translate, outcome: Exclude<PlanOutcome, "pending">): string {
+  switch (outcome) {
+    case "rejected":
+      return t("cards.plan.rejected");
+    case "approved":
+      return t("cards.plan.approved");
+    case "canceled":
+      return t("cards.plan.canceled");
+  }
+}
 
 /** Paseo's PlanCard (components/plan-card.tsx): a collapsible plan with an optional action footer. */
 export function PlanCard(props: PlanCardProps) {
@@ -31,8 +38,9 @@ export function PlanCard(props: PlanCardProps) {
 }
 
 function PlanCardContent({ colors, title, description, text, outcome, footer, disableOuterSpacing = false }: PlanCardProps) {
+  const { t } = useT();
   const [expanded, setExpanded] = useState(outcome !== "rejected" && outcome !== "canceled");
-  const resolvedTitle = title ?? (!outcome || outcome === "pending" ? "Plan" : TITLES[outcome]);
+  const resolvedTitle = title ?? (!outcome || outcome === "pending" ? t("chat.permission.plan") : outcomeTitle(t, outcome));
   return (
     <View
       style={{

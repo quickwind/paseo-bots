@@ -3,8 +3,10 @@ import { Icon, Modal, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { botProblems, type Bot, type BotGroup, type HistoryEntry, type Library } from "../../shared/bot";
+import type { Translate } from "../../shared/translate";
 import { useBotHost, type LocalHost } from "../data";
 import { nativeTokens, useHover } from "../native";
+import { useT } from "../i18n/use-t";
 import { ui } from "../typography";
 import { AccessSection, ModelSection, PermissionsSection } from "./AgentSections";
 import { Alert, SearchField, useCompact } from "./controls";
@@ -29,47 +31,52 @@ interface SectionEntry {
   modal?: boolean;
 }
 
-// OpenMausBot's order (bot-settings/sections.ts), minus sections Paseo has no equivalent for,
-// grouped like Paseo's settings sidebar.
-const GROUPS: { label: string; sections: SectionEntry[] }[] = [
-  {
-    label: "Bot",
-    sections: [
-      { id: "overview", label: "Overview", icon: "LayoutDashboard", rows: ["Set up with the bot", "System prompt"], keywords: "summary setup prompt preview tokens" },
-      { id: "identity", label: "Identity", icon: "IdCard", rows: ["Avatar", "Colour", "Shape", "Image URL", "Name", "Title", "Blurb", "Voice", "Read replies aloud"], keywords: "description picture color face upload generate speech speak tts" },
-      { id: "soul", label: "Soul", icon: "ScrollText", rows: ["Standing instructions"], keywords: "system prompt soul behaviour behavior" },
-    ],
-  },
-  {
-    label: "Knowledge",
-    sections: [
-      { id: "skills", label: "Skills", icon: "Puzzle", rows: ["Library skills"], keywords: "skill github SKILL.md library" },
-      { id: "playbooks", label: "Playbooks", icon: "BookOpenCheck", rows: ["New playbook", "Trigger words", "Steps"], keywords: "playbook process guidance triggers steps procedure" },
-      { id: "memory", label: "Memory", icon: "Brain", rows: ["MEMORY.md", "Topic files", "Changes", "Daily log", "New topic file"], keywords: "memory notes remember undo journal log" },
-    ],
-  },
-  {
-    label: "Automation",
-    sections: [{ id: "routines", label: "Routines", icon: "CalendarClock", rows: ["New routine", "Cadence", "Run now"], keywords: "schedule routine daily interval cron automation" }],
-  },
-  {
-    label: "Agent",
-    sections: [
-      { id: "access", label: "Access", icon: "KeyRound", rows: ["Working folder", "Paseo tools", "MCP servers", "Connected apps", "Always allowed"], keywords: "folder directory path mcp tools apps composio gmail slack grants library" },
-      { id: "model", label: "Model", icon: "Sparkles", rows: ["Host", "Agent profile", "Provider", "Model", "Thinking"], keywords: "effort reasoning" },
-      { id: "permissions", label: "Permissions", icon: "Shield", rows: ["Mode", "Contact other bots", "Allowed commands"], keywords: "approval permissions ask auto bots contact delegate commands allowlist shell" },
-    ],
-  },
-  {
-    label: "Activity",
-    sections: [
-      { id: "history", label: "History", icon: "History", rows: ["Earlier versions"], keywords: "undo restore changes", modal: true },
-      { id: "usage", label: "Usage", icon: "ChartNoAxesColumn", rows: ["Chats", "Tokens", "Cost"], keywords: "usage", modal: true },
-    ],
-  },
-];
+interface SectionGroup {
+  label: string;
+  sections: SectionEntry[];
+}
 
-const SECTIONS = GROUPS.flatMap((group) => group.sections);
+// OpenMausBot's order (bot-settings/sections.ts), minus sections Paseo has no equivalent for,
+// grouped like Paseo's settings sidebar. A function, so the labels follow the language.
+function sectionGroups(t: Translate): SectionGroup[] {
+  return [
+    {
+      label: t("panel.group.bot"),
+      sections: [
+        { id: "overview", label: t("panel.overview"), icon: "LayoutDashboard", rows: [t("panel.setUp"), t("panel.systemPrompt")], keywords: t("panel.keywords.overview") },
+        { id: "identity", label: t("panel.identity"), icon: "IdCard", rows: [t("panel.avatar"), t("panel.colour"), t("panel.shape"), t("panel.imageUrl"), t("teams.name"), t("panel.title"), t("panel.blurb"), t("panel.voice"), t("panel.readReplies")], keywords: t("panel.keywords.identity") },
+        { id: "soul", label: t("panel.soul"), icon: "ScrollText", rows: [t("panel.standingInstructions")], keywords: t("panel.keywords.soul") },
+      ],
+    },
+    {
+      label: t("panel.group.knowledge"),
+      sections: [
+        { id: "skills", label: t("panel.skills"), icon: "Puzzle", rows: [t("panel.librarySkills")], keywords: t("panel.keywords.skills") },
+        { id: "playbooks", label: t("panel.playbooks"), icon: "BookOpenCheck", rows: [t("panel.newPlaybook"), t("panel.triggerWords"), t("panel.steps")], keywords: t("panel.keywords.playbooks") },
+        { id: "memory", label: t("panel.memory"), icon: "Brain", rows: ["MEMORY.md", t("panel.topicFiles"), t("panel.changes"), t("panel.dailyLog"), t("panel.newTopicFile")], keywords: t("panel.keywords.memory") },
+      ],
+    },
+    {
+      label: t("panel.group.automation"),
+      sections: [{ id: "routines", label: t("panel.routines"), icon: "CalendarClock", rows: [t("panel.newRoutine"), t("panel.cadence"), t("panel.runNow")], keywords: t("panel.keywords.routines") }],
+    },
+    {
+      label: t("panel.agent"),
+      sections: [
+        { id: "access", label: t("panel.access"), icon: "KeyRound", rows: [t("panel.workingFolder"), t("panel.paseoTools"), t("panel.mcpServers"), t("panel.alwaysAllowed")], keywords: t("panel.keywords.access") },
+        { id: "model", label: t("settings.defaults.model"), icon: "Sparkles", rows: [t("panel.host"), t("panel.agentProfile"), t("settings.defaults.provider"), t("settings.defaults.model"), t("panel.thinking")], keywords: t("panel.keywords.model") },
+        { id: "permissions", label: t("panel.permissions"), icon: "Shield", rows: [t("settings.defaults.mode"), t("panel.contactBots"), t("panel.allowedCommands")], keywords: t("panel.keywords.permissions") },
+      ],
+    },
+    {
+      label: t("panel.group.activity"),
+      sections: [
+        { id: "history", label: t("panel.history"), icon: "History", rows: [t("panel.earlierVersions")], keywords: t("panel.keywords.history"), modal: true },
+        { id: "usage", label: t("panel.usage"), icon: "ChartNoAxesColumn", rows: [t("panel.chats"), t("panel.tokens"), t("panel.cost")], keywords: t("panel.keywords.usage"), modal: true },
+      ],
+    },
+  ];
+}
 
 export interface PanelProps {
   colors: Colors;
@@ -105,11 +112,14 @@ interface BotPanelProps extends PanelProps {
  */
 export function BotPanel(props: BotPanelProps) {
   const { colors, bot, localHost, section, onSection, onClose, bottomInset } = props;
+  const { t } = useT();
+  const groups = sectionGroups(t);
+  const sections = groups.flatMap((group) => group.sections);
   const compact = useCompact(props.compact);
   const [query, setQuery] = useState("");
   const host = useBotHost(bot.hostId, localHost);
-  const problems = botProblems(bot, host.isLocal);
-  const open = section ? SECTIONS.find((entry) => entry.id === section && !entry.modal) : undefined;
+  const problems = botProblems(bot, host.isLocal, t);
+  const open = section ? sections.find((entry) => entry.id === section && !entry.modal) : undefined;
   const [sheet, setSheet] = useState<SectionEntry | null>(null);
   const choose = (entry: SectionEntry) => (entry.modal ? setSheet(entry) : onSection(entry.id));
 
@@ -126,7 +136,7 @@ export function BotPanel(props: BotPanelProps) {
 
   const needle = query.trim().toLowerCase();
   const matches = needle
-    ? SECTIONS.flatMap((entry) => {
+    ? sections.flatMap((entry) => {
         const rows = entry.rows.filter((row) => row.toLowerCase().includes(needle));
         const hit = rows.length > 0 || `${entry.label} ${entry.keywords}`.toLowerCase().includes(needle);
         return hit ? [{ entry, rows }] : [];
@@ -135,23 +145,23 @@ export function BotPanel(props: BotPanelProps) {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
-      <PanelHeader colors={colors} compact={compact} title={bot.name || "Untitled bot"} onClose={onClose} />
+      <PanelHeader colors={colors} compact={compact} title={bot.name || t("panel.untitled")} onClose={onClose} />
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 + bottomInset }}>
         <View style={{ paddingHorizontal: 8, paddingTop: 8, gap: 8 }}>
-          <SearchField colors={colors} value={query} onChangeText={setQuery} placeholder="Search settings" />
-          {problems.length > 0 ? <Alert colors={colors} variant="warning" title="Needs attention" description={problems} /> : null}
+          <SearchField colors={colors} value={query} onChangeText={setQuery} placeholder={t("panel.searchSettings")} />
+          {problems.length > 0 ? <Alert colors={colors} variant="warning" title={t("panel.needsAttention")} description={problems} /> : null}
         </View>
         {needle ? (
           <View style={{ paddingVertical: 8, paddingHorizontal: 8, gap: 2 }}>
             {matches.map(({ entry, rows }) => (
-              <SectionRow key={entry.id} colors={colors} compact={compact} entry={entry} hint={rows.join(", ")} onPress={() => choose(entry)} />
+              <SectionRow key={entry.id} colors={colors} compact={compact} entry={entry} hint={rows.join(t("text.change.listSep"))} onPress={() => choose(entry)} />
             ))}
             {matches.length === 0 ? (
-              <Text style={{ fontSize: ui(14), color: colors.foregroundMuted, textAlign: "center", paddingVertical: 32 }}>No settings match "{query.trim()}"</Text>
+              <Text style={{ fontSize: ui(14), color: colors.foregroundMuted, textAlign: "center", paddingVertical: 32 }}>{t("panel.noMatch", { query: query.trim() })}</Text>
             ) : null}
           </View>
         ) : (
-          GROUPS.map((group) => (
+          groups.map((group) => (
             <View key={group.label} style={{ paddingVertical: 8, paddingHorizontal: 8, gap: 2 }}>
               <Text style={{ fontSize: ui(14), color: nativeTokens(colors).foregroundExtraMuted, paddingHorizontal: 8, paddingVertical: 4 }}>{group.label}</Text>
               {group.sections.map((entry) => (
@@ -245,6 +255,7 @@ function SectionRow({ colors, compact, entry, hint, onPress }: { colors: Colors;
  * the title is ScreenTitle (14pt, weight 300 desktop / 400 compact).
  */
 function PanelHeader({ colors, compact, title, onBack, onClose }: { colors: Colors; compact: boolean; title: string; onBack?: () => void; onClose(): void }) {
+  const { t } = useT();
   return (
     <View
       style={{
@@ -259,11 +270,11 @@ function PanelHeader({ colors, compact, title, onBack, onClose }: { colors: Colo
         backgroundColor: colors.surface0,
       }}
     >
-      {onBack ? <HeaderButton colors={colors} compact={compact} icon="ArrowLeft" label="Back to bot settings" iconSize={20} onPress={onBack} /> : null}
+      {onBack ? <HeaderButton colors={colors} compact={compact} icon="ArrowLeft" label={t("panel.backToSettings")} iconSize={20} onPress={onBack} /> : null}
       <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: ui(14), fontWeight: compact ? "400" : "300", color: colors.foreground }}>
         {title}
       </Text>
-      <HeaderButton colors={colors} compact={compact} icon="X" label="Close bot settings" iconSize={18} onPress={onClose} />
+      <HeaderButton colors={colors} compact={compact} icon="X" label={t("panel.closeSettings")} iconSize={18} onPress={onClose} />
     </View>
   );
 }

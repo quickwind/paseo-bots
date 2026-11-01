@@ -7,11 +7,10 @@ import { matchesQuery, mcpTarget } from "../../shared/library";
 import type { LibraryTarget } from "../navigation";
 import { nativeTokens, useHover } from "../native";
 import { SearchField } from "../panel/controls";
-import { connectedApps, useAppsAccounts, useAppsCatalog, useAppsStatus } from "./apps";
-import { AppLogo } from "./parts";
 import { ui } from "../typography";
 import { measureAnchor } from "../ui/Menu";
 import { tooltip } from "../ui/Tooltip";
+import { useT } from "../i18n/use-t";
 
 type Colors = PluginTheme["colors"];
 
@@ -38,6 +37,7 @@ interface LibraryListProps {
  * a group per kind with its items and an add button.
  */
 export function LibraryList({ colors, library, query, onQuery, selected, onSelect, onAddSkill, onAddServer, touch, onBack, bottomInset }: LibraryListProps) {
+  const { t } = useT();
   const skills = library.skills
     .filter((skill) => matchesQuery(query, skill.id, skill.description, skill.source))
     .sort((a, b) => a.id.localeCompare(b.id));
@@ -46,69 +46,46 @@ export function LibraryList({ colors, library, query, onQuery, selected, onSelec
     .sort((a, b) => a.name.localeCompare(b.name));
   const searching = query.trim().length > 0;
   const is = (kind: LibraryTarget["kind"], id?: string) => selected?.kind === kind && (id === undefined || ("id" in selected && selected.id === id));
-  const appsStatus = useAppsStatus();
-  const configured = appsStatus.data?.configured ?? false;
-  const accounts = useAppsAccounts(configured);
-  const catalog = useAppsCatalog(configured);
-  const apps = connectedApps(accounts.data?.accounts ?? [], catalog.data?.apps ?? []).filter((app) => matchesQuery(query, app.name, app.slug));
 
   return (
     <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 + bottomInset }}>
       {/* Paseo's sidebar header group: its rows over a full-width divider (left-sidebar.tsx sidebarHeaderGroup). */}
       <View style={{ paddingHorizontal: 8, paddingTop: 8, paddingBottom: 8, gap: 2, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        {onBack ? <NavRow colors={colors} icon="ArrowLeft" label="Back to bots" selected={false} touch={touch} onPress={onBack} /> : null}
-        <SearchField colors={colors} value={query} onChangeText={onQuery} placeholder="Search skills and tools" />
+        {onBack ? <NavRow colors={colors} icon="ArrowLeft" label={t("sidebar.backToBots")} selected={false} touch={touch} onPress={onBack} /> : null}
+        <SearchField colors={colors} value={query} onChangeText={onQuery} placeholder={t("library.searchPlaceholder")} />
       </View>
 
-      <Group colors={colors} label="Skills" addLabel="Add skill" onAdd={onAddSkill}>
+      <Group colors={colors} label={t("panel.skills")} addLabel={t("library.addSkill")} onAdd={onAddSkill}>
         {skills.map((skill) => (
           <NavRow
             key={skill.id}
             colors={colors}
             icon="Puzzle"
             label={skill.id}
-            note={skill.reviewedSha === null ? "Review" : skill.enabled ? undefined : "Off"}
+            note={skill.reviewedSha === null ? t("library.review") : skill.enabled ? undefined : t("settings.defaults.contactOff")}
             selected={is("skill", skill.id)}
             touch={touch}
             onPress={() => onSelect({ kind: "skill", id: skill.id })}
           />
         ))}
-        {skills.length === 0 ? <GroupNote colors={colors} text={searching ? "No matching skills" : "No skills yet"} /> : null}
+        {skills.length === 0 ? <GroupNote colors={colors} text={searching ? t("library.noMatchingSkills") : t("library.noSkillsYet")} /> : null}
       </Group>
       <Divider colors={colors} />
 
-      <Group colors={colors} label="MCP servers" addLabel="Add MCP server" onAdd={onAddServer}>
+      <Group colors={colors} label={t("panel.mcpServers")} addLabel={t("library.addMcpServer")} onAdd={onAddServer}>
         {servers.map((server) => (
           <NavRow
             key={server.id}
             colors={colors}
             icon="Plug"
             label={server.name}
-            note={server.enabled ? undefined : "Off"}
+            note={server.enabled ? undefined : t("settings.defaults.contactOff")}
             selected={is("mcp", server.id)}
             touch={touch}
             onPress={() => onSelect({ kind: "mcp", id: server.id })}
           />
         ))}
-        {servers.length === 0 ? <GroupNote colors={colors} text={searching ? "No matching servers" : "No MCP servers yet"} /> : null}
-      </Group>
-      <Divider colors={colors} />
-
-      <Group colors={colors} label="Connected apps" addLabel={configured ? "Connect an app" : "Set up connected apps"} onAdd={() => onSelect({ kind: "apps" })}>
-        {apps.map((app) => (
-          <NavRow
-            key={app.slug}
-            colors={colors}
-            icon="AppWindow"
-            leading={<AppLogo colors={colors} app={app} size={16} />}
-            label={app.name}
-            note={app.status === "connected" ? undefined : app.status === "pending" ? "Pending" : "Failed"}
-            selected={is("app", app.slug)}
-            touch={touch}
-            onPress={() => onSelect({ kind: "app", id: app.slug })}
-          />
-        ))}
-        {apps.length === 0 ? <GroupNote colors={colors} text={searching ? "No matching apps" : configured ? "No apps connected yet" : "Not set up yet"} /> : null}
+        {servers.length === 0 ? <GroupNote colors={colors} text={searching ? t("library.noMatchingServers") : t("library.noServersYet")} /> : null}
       </Group>
     </ScrollView>
   );

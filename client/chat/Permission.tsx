@@ -8,6 +8,8 @@ import { botToolName } from "../../shared/bot-tools";
 import { shellCommand } from "../../shared/commands";
 import { commandAllowRpc } from "../../shared/rpc";
 import { humanizeToolName, type ToolCallDetail } from "../../shared/tools";
+import type { Translate } from "../../shared/translate";
+import { useT } from "../i18n/use-t";
 import { errorText } from "../native";
 import { ui } from "../typography";
 import { ToolCallDetailsContent } from "./stream/details";
@@ -33,6 +35,7 @@ interface PermissionCardProps {
 
 /** Paseo's PermissionRequestCard (agent-stream/view.tsx): plan, question and tool requests. */
 export function PermissionCard({ colors, permission, api, agentId, compact = false, botId, cwd }: PermissionCardProps) {
+  const { t } = useT();
   const toast = useToast();
   const allowCommand = useRpc(commandAllowRpc);
   const shell = botId && cwd && permission.kind === "tool" ? shellCommand(permission, cwd) : null;
@@ -53,7 +56,7 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
     } catch (error) {
       setResponding(false);
       setRespondingId(null);
-      toast.error(`Couldn't answer: ${errorText(error)}`);
+      toast.error(t("chat.permission.couldntAnswer", { error: errorText(error) }));
     }
   };
 
@@ -61,10 +64,10 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
     if (permission.kind === "question") return [];
     if (permission.actions?.length) return permission.actions;
     return [
-      { id: "reject", label: "Deny", behavior: "deny", variant: "danger", intent: "dismiss" },
-      { id: "accept", label: isPlan ? "Implement" : "Accept", behavior: "allow", variant: "primary" },
+      { id: "reject", label: t("chat.permission.deny"), behavior: "deny", variant: "danger", intent: "dismiss" },
+      { id: "accept", label: isPlan ? t("chat.permission.implement") : t("chat.permission.accept"), behavior: "allow", variant: "primary" },
     ];
-  }, [permission, isPlan]);
+  }, [permission, isPlan, t]);
 
   const planText = useMemo(() => {
     const fromMetadata = permission.metadata?.planText;
@@ -90,7 +93,7 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
       await allowCommand({ botId, command: shell.command, cwd: shell.cwd });
     } catch (error) {
       setRespondingId(null);
-      toast.error(`Couldn't save the command: ${errorText(error)}`);
+      toast.error(t("chat.permission.couldntSaveCommand", { error: errorText(error) }));
       return;
     }
     await respond({ behavior: "allow" });
@@ -101,12 +104,12 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
     void respond(action.behavior === "allow" ? { behavior: "allow", selectedActionId: action.id } : { behavior: "deny", selectedActionId: action.id, message: "Denied by user" });
   };
 
-  const title = isPlan ? "Plan" : (permission.title ?? permissionTitle(permission) ?? "Permission Required");
+  const title = isPlan ? t("chat.permission.plan") : (permission.title ?? permissionTitle(permission, t) ?? t("chat.permission.required"));
   const description = permission.description ?? "";
 
   const footer = (
     <>
-      <Text style={{ fontSize: ui(14), marginVertical: 4, color: colors.foregroundMuted }}>How would you like to proceed?</Text>
+      <Text style={{ fontSize: ui(14), marginVertical: 4, color: colors.foregroundMuted }}>{t("chat.permission.proceed")}</Text>
       <View style={compact ? { gap: 8 } : { gap: 8, flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-start", alignItems: "center", width: "100%" }}>
         {actions.map((action) => (
           <CardButton
@@ -115,12 +118,12 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
             label={action.label}
             icon={action.behavior === "allow" ? "Check" : "X"}
             primary={action.variant === "primary"}
-            busy={responding}
+            busy={responding || respondingId !== null}
             spinning={responding && respondingId === action.id}
             onPress={() => press(action)}
           />
         ))}
-        {shell ? <CardButton colors={colors} label="Always allow" icon="CheckCheck" busy={responding || respondingId === "always"} spinning={respondingId === "always"} onPress={() => void always()} /> : null}
+        {shell ? <CardButton colors={colors} label={t("chat.permission.alwaysAllow")} icon="CheckCheck" busy={responding || respondingId === "always"} spinning={respondingId === "always"} onPress={() => void always()} /> : null}
       </View>
     </>
   );
@@ -133,7 +136,7 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
     <View style={{ marginVertical: 12, padding: 12, borderRadius: 8, borderWidth: 1, gap: 8, backgroundColor: colors.surface1, borderColor: colors.border }}>
       <Text style={{ fontSize: ui(14), lineHeight: 22, color: colors.foreground }}>{title}</Text>
       {description ? <Text style={{ fontSize: ui(14), lineHeight: 20, color: colors.foregroundMuted }}>{description}</Text> : null}
-      {planText ? <PlanCard colors={colors} title="Proposed plan" text={planText} disableOuterSpacing /> : null}
+      {planText ? <PlanCard colors={colors} title={t("chat.permission.proposedPlan")} text={planText} disableOuterSpacing /> : null}
       {!isPlan ? <ToolCallDetailsContent colors={colors} detail={detail} maxHeight={200} /> : null}
       {footer}
     </View>
@@ -141,9 +144,9 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
 }
 
 /** "Ask Helper" for a request to another bot; other tools by their readable name. */
-function permissionTitle(permission: Permission): string | null {
+function permissionTitle(permission: Permission, t: Translate): string | null {
   if (!permission.name) return null;
   const bot = permission.input?.bot;
-  if (botToolName(permission.name) === "ask_bot" && typeof bot === "string" && bot.trim()) return `Ask ${bot.trim()}`;
-  return humanizeToolName(permission.name);
+  if (botToolName(permission.name) === "ask_bot" && typeof bot === "string" && bot.trim()) return t("chat.permission.askBot", { name: bot.trim() });
+  return humanizeToolName(permission.name, t);
 }

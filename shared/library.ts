@@ -1,5 +1,6 @@
-import { EMPTY_LIBRARY, joinArgs, newGroupId, numberedName, RESERVED_MCP_NAMES, uniqueName, type Bot, type BotMcpServer, type BotSettingsValues, type Library, type LibraryMcpServer, type LibrarySkill, type TeamFileTeam } from "./bot";
+import { EMPTY_LIBRARY, isRemoteMcp, joinArgs, newGroupId, numberedName, RESERVED_MCP_NAMES, uniqueName, type Bot, type BotMcpServer, type BotSettingsValues, type Library, type LibraryMcpServer, type LibrarySkill, type TeamFileTeam } from "./bot";
 import { saveTeam } from "./groups";
+import { withToolModeFor } from "./tools-mode";
 
 // The shared library of skills and MCP servers. Bots only hold ids; these
 // helpers keep the ids, names and bot references consistent.
@@ -104,6 +105,15 @@ export function mcpServerTested(server: Pick<LibraryMcpServer, "tools" | "checkE
   return server.tools !== null && !server.checkError;
 }
 
+/**
+ * Whether a server can be turned on. One this plugin can reach (a program to start, or an address on
+ * this computer) must pass a test first. A remote one cannot be tested from here, since the plugin
+ * never connects to the network, so the user turns it on knowing the agent will connect to it.
+ */
+export function mcpServerCanEnable(server: Pick<LibraryMcpServer, "tools" | "checkError" | "config">): boolean {
+  return isRemoteMcp(server.config) || mcpServerTested(server);
+}
+
 /** One line describing how a server connects: the command line, or transport and URL. */
 export function mcpTarget(config: BotMcpServer["config"]): string {
   return config.type === "stdio" ? [config.command, joinArgs(config.args)].filter(Boolean).join(" ") : `${config.type.toUpperCase()} · ${config.url}`;
@@ -125,6 +135,11 @@ export interface ImportedBot {
  * Adds imported bots, numbering names already in use; their skills (unreviewed, so
  * off) and MCP servers join the library, and a team file's teams come along.
  */
+/** A team or bot file may name no provider (so the file works wherever it is imported): those bots get the default one, as a new bot does. */
+export function withDefaultProvider<T extends { bot: { provider: string } }>(imported: readonly T[], provider: string): T[] {
+  return imported.map((entry) => (entry.bot.provider || !provider ? entry : { ...entry, bot: withToolModeFor({ ...entry.bot, provider }) }));
+}
+
 export function addImportedBots(values: BotSettingsValues, imported: readonly ImportedBot[], teams: readonly TeamFileTeam[] = [], now: string = new Date().toISOString()): BotSettingsValues {
   let library = values.library ?? EMPTY_LIBRARY;
   const bots = [...values.bots];

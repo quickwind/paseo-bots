@@ -2,6 +2,7 @@ import { useSettings } from "@getpaseo/plugin/client";
 import { useToast } from "@getpaseo/plugin/client/react-native";
 import { useRef } from "react";
 import { botSettings, type BotSettingsValues } from "../shared/bot";
+import { useT } from "./i18n/use-t";
 
 export type BotSettingsState = ReturnType<typeof useBotSettingsState>;
 
@@ -17,6 +18,7 @@ function useBotSettingsState() {
 export function useBotSettings() {
   const settings = useBotSettingsState();
   const toast = useToast();
+  const { t } = useT();
   const latest = useRef(settings);
   latest.current = settings;
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -34,7 +36,7 @@ export function useBotSettings() {
         await current.reload();
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
-      toast.error(latest.current.saveError ?? "Couldn't save bots. Try again.");
+      toast.error(latest.current.saveError ?? t("surface.couldntSaveBots"));
       return false;
     };
     const result = queue.current.then(run);

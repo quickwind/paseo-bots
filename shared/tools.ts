@@ -1,4 +1,5 @@
 import { botToolName } from "./bot-tools";
+import { englishTranslate, type Translate } from "./translate";
 
 // Tool call presentation, ported from Paseo: labels and summaries from
 // protocol/src/tool-call-display.ts (buildToolCallDisplayModel), icons from
@@ -73,13 +74,25 @@ function paseoLeafName(name: string): string | null {
   return normalized.split(".").slice(1).join(".");
 }
 
+/** The translated name of a tool the plugin has a word for; null when there is none (a translator may throw or echo the key). */
+function knownToolName(leaf: string, t: Translate): string | null {
+  if (!/^[a-z0-9_]+$/.test(leaf)) return null;
+  const key = `text.tool.${leaf}`;
+  try {
+    const text = t(key);
+    return text && text !== key ? text : null;
+  } catch {
+    return null;
+  }
+}
+
 /** A tool's name as people read it: Paseo's and this plugin's tools get plain names, others stay as they are. */
-export function humanizeToolName(name: string): string {
+export function humanizeToolName(name: string, t: Translate = englishTranslate): string {
   const trimmed = name.trim();
   if (!trimmed) return name;
   // Paseo's own tools and this plugin's read as plain names ("Create agent", "Search chats").
   const leaf = paseoLeafName(trimmed) ?? botToolName(trimmed);
-  if (leaf) return humanizeToolName(leaf);
+  if (leaf) return knownToolName(leaf, t) ?? humanizeToolName(leaf, t);
   if (/[:./]/.test(trimmed) || trimmed.includes("__")) return trimmed;
   return trimmed
     .replace(/[._-]+/g, " ")
@@ -110,51 +123,51 @@ function formatErrorText(error: unknown): string | undefined {
   }
 }
 
-function canonicalDisplay(input: ToolCallDisplayInput): { displayName?: string; summary?: string } {
+function canonicalDisplay(input: ToolCallDisplayInput, t: Translate): { displayName?: string; summary?: string } {
   const detail = input.detail;
   switch (detail.type) {
     case "shell":
-      return { displayName: "Shell", summary: detail.command };
+      return { displayName: t("chat.stream.tool.shell"), summary: detail.command };
     case "read":
-      return { displayName: "Read", summary: stripCwdPrefix(detail.filePath, input.cwd) };
+      return { displayName: t("chat.stream.tool.read"), summary: stripCwdPrefix(detail.filePath, input.cwd) };
     case "edit":
-      return { displayName: "Edit", summary: stripCwdPrefix(detail.filePath, input.cwd) };
+      return { displayName: t("teams.edit"), summary: stripCwdPrefix(detail.filePath, input.cwd) };
     case "write":
-      return { displayName: "Write", summary: stripCwdPrefix(detail.filePath, input.cwd) };
+      return { displayName: t("chat.stream.tool.write"), summary: stripCwdPrefix(detail.filePath, input.cwd) };
     case "search":
-      return { displayName: "Search", summary: detail.query };
+      return { displayName: t("chat.stream.tool.search"), summary: detail.query };
     case "fetch":
-      return { displayName: "Fetch", summary: detail.url };
+      return { displayName: t("chat.stream.tool.fetch"), summary: detail.url };
     case "worktree_setup":
-      return { displayName: "Worktree setup", summary: detail.branchName };
+      return { displayName: t("chat.stream.tool.worktreeSetup"), summary: detail.branchName };
     case "sub_agent":
-      return { displayName: readString(detail.subAgentType) ?? "Task", summary: readString(detail.description) };
+      return { displayName: readString(detail.subAgentType) ?? t("chat.stream.tool.task"), summary: readString(detail.description) };
     case "plain_text":
       return { summary: detail.label };
     case "plan":
-      return { displayName: "Plan" };
+      return { displayName: t("chat.permission.plan") };
     default:
       return {};
   }
 }
 
-function unknownDetailOverride(input: ToolCallDisplayInput): { displayName?: string; summary?: string } {
+function unknownDetailOverride(input: ToolCallDisplayInput, t: Translate): { displayName?: string; summary?: string } {
   const lower = input.name.trim().toLowerCase();
   if (input.detail.type === "unknown" && lower === "task") {
-    return { displayName: "Task", summary: isRecord(input.metadata) ? readString(input.metadata.subAgentActivity) : undefined };
+    return { displayName: t("chat.stream.tool.task"), summary: isRecord(input.metadata) ? readString(input.metadata.subAgentActivity) : undefined };
   }
-  if (input.detail.type === "unknown" && lower === "thinking") return { displayName: "Thinking" };
+  if (input.detail.type === "unknown" && lower === "thinking") return { displayName: t("panel.thinking") };
   if (lower === "terminal") {
-    return { displayName: "Terminal", summary: input.detail.type === "plain_text" ? readString(input.detail.label) : undefined };
+    return { displayName: t("chat.stream.tool.terminal"), summary: input.detail.type === "plain_text" ? readString(input.detail.label) : undefined };
   }
   return {};
 }
 
 /** Paseo's buildToolCallDisplayModel: "Shell" + command, "Read" + path, "Search" + query… */
-export function buildToolCallDisplayModel(input: ToolCallDisplayInput): ToolCallDisplayModel {
-  const canonical = canonicalDisplay(input);
-  const override = unknownDetailOverride(input);
-  const displayName = override.displayName ?? canonical.displayName ?? humanizeToolName(input.name);
+export function buildToolCallDisplayModel(input: ToolCallDisplayInput, t: Translate = englishTranslate): ToolCallDisplayModel {
+  const canonical = canonicalDisplay(input, t);
+  const override = unknownDetailOverride(input, t);
+  const displayName = override.displayName ?? canonical.displayName ?? humanizeToolName(input.name, t);
   const summary = override.summary ?? canonical.summary;
   const errorText = input.status === "failed" ? formatErrorText(input.error) : undefined;
   return { displayName, ...(summary ? { summary } : {}), ...(errorText ? { errorText } : {}) };
@@ -249,8 +262,8 @@ export interface ToolCallPresentation extends ToolCallDisplayModel {
 export type PlanOutcome = "pending" | "approved" | "rejected" | "canceled";
 
 /** Paseo's buildToolCallPresentation (tool-calls/presentation.ts). */
-export function buildToolCallPresentation(input: ToolCallDisplayInput): ToolCallPresentation {
-  const model = buildToolCallDisplayModel(input);
+export function buildToolCallPresentation(input: ToolCallDisplayInput, t: Translate = englishTranslate): ToolCallPresentation {
+  const model = buildToolCallDisplayModel(input, t);
   const running = input.status === "running";
   const isLoadingDetails = running && input.error == null && !hasMeaningfulToolCallDetail(input.detail);
   const hasDetails = Boolean(input.error) || hasMeaningfulToolCallDetail(input.detail);
@@ -389,6 +402,8 @@ export function lcsTable<T>(a: readonly T[], b: readonly T[]): number[][] {
 function wordDiff(oldLine: string, newLine: string): { oldSegments: DiffSegment[]; newSegments: DiffSegment[] } {
   const a = splitWords(oldLine);
   const b = splitWords(newLine);
+  // A very long line (minified code) would need a table of words squared; show it as changed whole.
+  if (a.length * b.length > 250_000) return { oldSegments: [{ text: oldLine, changed: true }], newSegments: [{ text: newLine, changed: true }] };
   const table = lcsTable(a, b);
   const inA = new Set<number>();
   const inB = new Set<number>();

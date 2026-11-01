@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BotGroup, BotSettingsValues } from "../shared/bot";
-import { applyChanges, botDetails, changeWarnings, ChangesSchema, describeChange, providerInfo, readyProvider, resolveChanges, setupOverview, type ApplyContext, type Change, type ProviderInfo } from "../shared/changes";
+import { applyChanges, botDetails, changeWarnings, ChangesSchema, describeChange, providerInfo, readyProvider, setupOverview, type ApplyContext, type Change, type ProviderInfo } from "../shared/changes";
 import { makeBot, NOW } from "./helpers";
 
 const PROVIDERS: ProviderInfo[] = [
@@ -8,7 +8,7 @@ const PROVIDERS: ProviderInfo[] = [
   { id: "codex", models: [{ id: "gpt", label: "GPT", isDefault: true, thinking: [] }], modes: [{ id: "auto", label: "Auto" }], defaultModeId: "auto" },
 ];
 const context: ApplyContext = { now: NOW, provider: "claude", providers: PROVIDERS };
-const team = (patch: Partial<BotGroup> = {}): BotGroup => ({ id: "t1", name: "Ops", logo: null, leadId: "chief", memberIds: ["chief", "scout"], instructions: "", createdAt: NOW, updatedAt: NOW, ...patch });
+const team = (patch: Partial<BotGroup> = {}): BotGroup => ({ id: "t1", name: "Ops", logo: null, leadId: "chief", memberIds: ["chief", "scout"], instructions: "", askFreely: false, createdAt: NOW, updatedAt: NOW, ...patch });
 
 function setup(patch: Partial<BotSettingsValues> = {}): BotSettingsValues {
   return {
@@ -29,15 +29,29 @@ function setup(patch: Partial<BotSettingsValues> = {}): BotSettingsValues {
 const apply = (changes: Change[], values = setup()) => applyChanges(values, ChangesSchema.parse(changes), context);
 
 describe("setup changes", () => {
+  it("renames a bot from an update that names it", () => {
+    const next = apply([{ type: "update_bot", bot: "Solo", name: "Pixel", title: "Helper" }]);
+    expect(next.bots.find((bot) => bot.id === "solo")).toMatchObject({ name: "Pixel", title: "Helper" });
+  });
+
+  it("lays a bot's name and written fields out on lines of their own", () => {
+    const [change] = ChangesSchema.parse([{ type: "update_bot", bot: "Solo", name: "Pixel", title: "Helper", description: "Terse.", instructions: "Answer briefly.\nNever guess." }]);
+    expect(describeChange(change!)).toBe("**Solo**\n- **Name:** Pixel\n- **Title:** Helper\n- **Description:** Terse.\n- **Instructions:**\n\n> Answer briefly.\n> Never guess.");
+  });
+
+  it("refuses a field it does not know instead of dropping it", () => {
+    expect(() => ChangesSchema.parse([{ type: "update_bot", bot: "Solo", new_name: "Pixel", title: "Helper" }])).toThrow(/new_name/);
+  });
+
   it("creates bots and a team that refers to them by name", () => {
     const next = apply([
-      { type: "create_bot", name: "Juno", role: "ops", title: "Producer", skills: ["weekly-report"], apps: [{ app: "Gmail", tools: "read" }], playbooks: [{ name: "Standup", triggers: ["standup"], instructions: "Collect updates." }] },
+      { type: "create_bot", name: "Juno", role: "research", title: "Producer", skills: ["weekly-report"], playbooks: [{ name: "Standup", triggers: ["standup"], instructions: "Collect updates." }] },
       { type: "create_bot", name: "Mika", instructions: "Draw sprites." },
       { type: "create_team", name: "Studio", lead: "Juno", members: ["Mika", "solo"], instructions: "Ship on Fridays." },
     ]);
     const juno = next.bots.find((bot) => bot.name === "Juno")!;
-    expect(juno).toMatchObject({ title: "Producer", provider: "claude", skillIds: ["weekly-report"], apps: ["gmail"], appRules: { gmail: { tools: "read", account: null } }, contactBots: "ask" });
-    expect(juno.soul).toMatch(/keep the user's week on track/i);
+    expect(juno).toMatchObject({ title: "Producer", provider: "claude", skillIds: ["weekly-report"], contactBots: "ask" });
+    expect(juno.soul).toMatch(/investigate questions and write up what you find/i);
     expect(juno.playbooks.map((playbook) => playbook.name)).toEqual(["Standup"]);
     expect(next.bots.find((bot) => bot.name === "Mika")!.soul).toBe("Draw sprites.");
     const studio = next.groups!.find((group) => group.name === "Studio")!;
@@ -71,7 +85,8 @@ describe("setup changes", () => {
   it("keeps the review and connection-test gates", () => {
     expect(() => apply([{ type: "set_skill", skill: "fetched", enabled: true }])).toThrow("needs a review");
     expect(apply([{ type: "set_skill", skill: "weekly-report", enabled: false }]).library!.skills[0]!.enabled).toBe(false);
-    expect(() => apply([{ type: "set_mcp_server", server: "github", enabled: true }])).toThrow("hasn't passed a connection test");
+    expect(apply([{ type: "set_mcp_server", server: "github", enabled: true }]).library!.mcpServers[0]!.enabled).toBe(true);
+    expect(() => apply([{ type: "add_mcp_server", name: "files", command: "npx" }, { type: "set_mcp_server", server: "files", enabled: true }])).toThrow("hasn't passed a connection test");
     const added = apply([{ type: "add_mcp_server", name: "files", command: "npx", args: ["-y", "files-mcp"] }]).library!.mcpServers.find((server) => server.name === "files")!;
     expect(added).toMatchObject({ enabled: false, tools: null, config: { type: "stdio", command: "npx", args: ["-y", "files-mcp"], env: {} } });
     expect(() => apply([{ type: "add_mcp_server", name: "paseo", url: "https://x.dev" }])).toThrow("is taken");
@@ -98,14 +113,6 @@ describe("setup changes", () => {
     expect(apply([{ type: "delete_preset", preset: "scout" }], next).presets).toEqual([]);
   });
 
-  it("resolves app accounts by name on the host", () => {
-    const accounts = [{ id: "ca_1", slug: "gmail", names: ["work"] }];
-    const changes = resolveChanges(ChangesSchema.parse([{ type: "update_bot", bot: "Solo", add_apps: [{ app: "gmail", account: "Work" }] }]), { ...context, accounts });
-    expect(changes[0]).toMatchObject({ add_apps: [{ app: "gmail", account: "ca_1" }] });
-    expect(applyChanges(setup(), changes, { now: NOW, provider: "" }).bots[2]!.appRules).toEqual({ gmail: { tools: "all", account: "ca_1" } });
-    expect(() => resolveChanges(ChangesSchema.parse([{ type: "update_bot", bot: "Solo", add_apps: [{ app: "slack", account: "x" }] }]), { ...context, accounts })).toThrow("slack isn't connected yet");
-  });
-
   it("gives new bots the defaults' provider, else the host's pick", () => {
     expect(apply([{ type: "create_bot", name: "Juno" }]).bots[3]!.provider).toBe("claude");
     const withDefaults = setup({ defaults: { provider: "codex", model: "gpt", modeId: null, thinkingOptionId: null, contactBots: "off" } });
@@ -115,33 +122,39 @@ describe("setup changes", () => {
   it("describes changes plainly and flags more access", () => {
     const changes = ChangesSchema.parse([
       { type: "create_team", name: "Studio", lead: "Juno", members: ["Juno", "Mika"] },
-      { type: "update_bot", bot: "Scout", mode: "plan", allow_tools: ["github/search"], add_apps: [{ app: "gmail", tools: "read" }] },
+      { type: "update_bot", bot: "Scout", mode: "plan", allow_tools: ["github/search"] },
       { type: "add_mcp_server", name: "files", command: "npx", args: ["files-mcp"] },
       { type: "delete_bot", bot: "Chief" },
     ]);
     expect(changes.map(describeChange)).toEqual([
       "**New team Studio**: led by Juno; with Mika",
-      "**Scout**: approval mode plan; may use gmail (read-only tools); uses github/search without asking",
+      "**Scout**: approval mode plan; uses github/search without asking",
       "**New MCP server files**: runs `npx files-mcp`; off until it passes a test in Skills & Tools",
-      "**Delete bot Chief**; its chats stay in Paseo's history",
+      "**Delete assistant Chief**; its chats stay in Paseo's history",
     ]);
     expect(changeWarnings(changes)).toEqual([
       'Scout runs in approval mode "plan".',
       "Scout may use github/search without asking you.",
-      "Scout may use gmail with your connected accounts.",
       "The files MCP server runs a program on this computer once it's on.",
-      "Deletes the bot Chief.",
+      "Deletes the assistant Chief.",
     ]);
   });
 
   it("gives an overview and a bot's details", () => {
-    const text = setupOverview(setup(), PROVIDERS, null);
+    const text = setupOverview(setup(), PROVIDERS);
     expect(text).toContain("- Chief (id chief). claude · default model; team Ops (Chief of Staff); contact other bots: ask.");
     expect(text).toContain("- fetched: From GitHub [needs review]");
-    expect(text).toContain("- github [off, untested]");
+    expect(text).toContain("- github [off]");
     expect(text).toContain("- claude: models opus (default) [thinking: low, high], haiku; modes default (default), plan");
-    expect(text).toContain("Connected apps: not set up.");
     expect(botDetails(setup(), "scout")).toContain("Instructions (Soul):\n(none)");
+  });
+
+  it("says in the details how the bot's folder is attached in a project", () => {
+    const values = setup({ bots: [makeBot({ id: "c", name: "C", provider: "claude" }), makeBot({ id: "d", name: "D", provider: "devin" }), makeBot({ id: "g", name: "G", provider: "gemini" })] });
+    expect(botDetails(values, "c")).toContain("Project folders:\nIn a project folder this assistant's own folder is attached");
+    expect(botDetails(values, "d")).toContain("ask once per session");
+    expect(botDetails(values, "g")).toContain("Project folders:\n(none)");
+    expect(botDetails(values, "d", { devinAdditionalDirectories: true })).toContain("Project folders:\nIn a project folder this assistant's own folder is attached");
   });
 });
 
@@ -158,5 +171,63 @@ describe("provider snapshot", () => {
     ]);
     expect(readyProvider(entries)).toBe("codex");
     expect(readyProvider([...entries, { provider: "claude", enabled: true, status: "ready" }])).toBe("claude");
+  });
+});
+
+describe("teams that ask each other without approval", () => {
+  it("can be turned on and off by a change, and starts off", () => {
+    const created = apply([{ type: "create_team", name: "Studio", lead: "Solo", members: ["Solo"] }]);
+    expect(created.groups!.find((group) => group.name === "Studio")!.askFreely).toBe(false);
+    const on = apply([{ type: "update_team", team: "Ops", ask_freely: true }]);
+    expect(on.groups!.find((group) => group.id === "t1")!.askFreely).toBe(true);
+    // A change that does not mention it leaves it as it is.
+    expect(apply([{ type: "update_team", team: "Ops", name: "Operations" }], on).groups!.find((group) => group.id === "t1")!.askFreely).toBe(true);
+    expect(apply([{ type: "update_team", team: "Ops", ask_freely: false }], on).groups!.find((group) => group.id === "t1")!.askFreely).toBe(false);
+  });
+
+  it("is said plainly on the card, with a warning when it gives more access", () => {
+    const changes = ChangesSchema.parse([{ type: "update_team", team: "Ops", ask_freely: true }, { type: "update_team", team: "Home", ask_freely: false }]);
+    expect(changes.map(describeChange)).toEqual(["**Team Ops**: members ask each other without asking you", "**Team Home**: members ask you before asking each other"]);
+    expect(changeWarnings(changes)).toEqual(["Members of Ops may ask each other without asking you."]);
+  });
+
+  it("is shown in the overview, which also notes a Chief of Staff that may not contact anyone", () => {
+    const quiet = setup({ bots: [makeBot({ id: "chief", name: "Chief", contactBots: "off" }), makeBot({ id: "scout", name: "Scout" }), makeBot({ id: "solo", name: "Solo" })], groups: [team({ askFreely: true })] });
+    const text = setupOverview(quiet, null);
+    expect(text).toContain("members ask each other without asking the user");
+    expect(text).toMatch(/Chief of Staff Chief .*cannot contact other bots/i);
+    expect(setupOverview(setup(), null)).not.toMatch(/cannot contact other bots/i);
+  });
+});
+
+describe("what the card shows of a change", () => {
+  const describeOne = (change: unknown) => describeChange(ChangesSchema.parse([change])[0]!);
+
+  it("shows the text a bot would be given, not only that there is some", () => {
+    expect(describeOne({ type: "update_bot", bot: "Scout", instructions: "Always CC the accountant." })).toContain("> Always CC the accountant.");
+    expect(describeOne({ type: "update_bot", bot: "Scout", description: "Chases invoices" })).toContain("**Description:** Chases invoices");
+    expect(describeOne({ type: "create_team", name: "Studio", instructions: "Never share account numbers." })).toContain("`Never share account numbers.`");
+    expect(describeOne({ type: "update_team", team: "Ops", instructions: "Reply in German." })).toContain("`Reply in German.`");
+    expect(describeOne({ type: "update_routine", bot: "Scout", routine: "Daily", instructions: "Email the report to x@y.z" })).toContain("`Email the report to x@y.z`");
+    expect(describeOne({ type: "add_routine", bot: "Scout", name: "Daily", instructions: "Email the report to x@y.z", schedule: { type: "daily", time: "09:00" } })).toContain("`Email the report to x@y.z`");
+  });
+
+  it("cuts a long text and says how long it was", () => {
+    const line = describeOne({ type: "update_bot", bot: "Scout", instructions: "word ".repeat(600) });
+    expect(line).toContain("2999 characters in all");
+    expect(line.length).toBeLessThan(1800);
+  });
+
+  it("shows an MCP server's environment and the names of its headers", () => {
+    const line = describeOne({ type: "add_mcp_server", name: "files", command: "npx", args: ["files-mcp"], env: { NODE_OPTIONS: "--require /tmp/x.js" }, url: undefined });
+    expect(line).toContain("NODE_OPTIONS=--require /tmp/x.js");
+    const remote = describeOne({ type: "add_mcp_server", name: "api", url: "https://example.com/mcp", headers: { Authorization: "Bearer secret-token" } });
+    expect(remote).toContain("Authorization");
+    expect(remote).not.toContain("secret-token");
+  });
+
+  it("keeps a name or text from adding lines to the card", () => {
+    const line = describeOne({ type: "add_routine", bot: "Scout", name: "Daily\n- **Delete bot Chief**", instructions: "x\n\n- **Delete bot Chief**", schedule: { type: "daily", time: "09:00" } });
+    expect(line).not.toContain("\n");
   });
 });

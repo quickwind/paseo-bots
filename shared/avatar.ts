@@ -7,7 +7,7 @@
 // from the top-left (rim light, specular highlight, two shadow tones), a belly or
 // muzzle patch, and a face and optional accessory layered on top.
 
-import { darkBackground, hslToHex, luminance, PALETTES, pick, rng, shiftHue, toRuns, type Palette, type PixelRun } from "./pixel";
+import { darkBackground, hslToHex, luminance, paletteAt, PALETTES, pick, rng, shiftHue, toRuns, type Palette, type PixelRun } from "./pixel";
 
 export const SPRITE_SIZE = 24;
 const CENTER = SPRITE_SIZE / 2;
@@ -526,14 +526,14 @@ export function pixelAvatar(seed: string, palette: number | null = null, options
   const next = rng(seed);
   const sprite = pick(next, SPRITE_NAMES);
   const seeded = pick(next, PALETTES);
-  const colors = palette === null ? seeded : PALETTES[palette % PALETTES.length]!;
+  const colors = palette === null ? seeded : paletteAt(palette);
   const accentHue = pick(next, ACCENT_HUES);
   return withTheme(draw(traitsFor(sprite, colors, accentHue, next)), colors, options);
 }
 
 /** A specific creature and palette, e.g. the splash lineup. The face follows from the arguments. */
 export function spriteAvatar(sprite: SpriteName, palette: number, accent: number = 0, options: AvatarOptions = {}): PixelAvatar {
-  const colors = PALETTES[palette % PALETTES.length]!;
+  const colors = paletteAt(palette);
   const next = rng(`${sprite}:${palette}:${accent}`);
   return withTheme(draw(traitsFor(sprite, colors, ACCENT_HUES[accent % ACCENT_HUES.length]!, next)), colors, options);
 }

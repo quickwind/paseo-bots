@@ -3,36 +3,23 @@ import type { PaseoApi } from "./paseo";
 import { recentWork } from "../shared/activity";
 import { selectPlaybooks } from "../shared/playbooks";
 import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
-import type { AppAccount, PromptApp } from "../shared/apps";
-import { accounts, catalog, readState } from "./composio";
 import { botSkills, composeSystemPrompt, promptSections, type Bot, type BotGroup, type BotSettingsValues, type Library, type PromptContext } from "../shared/bot";
 import { teamOf, teamPrompt } from "../shared/groups";
+import { usesFiles, type ToolMode } from "../shared/tools-mode";
+import { botDataPath, teamReportsPath } from "./bot-home";
 import { linkBotSkills, skillSha } from "./library";
-import { injectedMemory, MAIN_MEMORY, memoryFolder, recentLogEntries } from "./memory";
-
-/**
- * The connected apps a bot may use right now (allowed for it and signed in on
- * this host), with their accounts when it picks one of several, and its limits.
- */
-async function botApps(bot: Bot): Promise<PromptApp[]> {
-  if (bot.apps.length === 0 || !(await readState()).apiKey) return [];
-  const connected = (await accounts().catch(() => ({ accounts: [] as AppAccount[] }))).accounts.filter((account) => account.status === "connected");
-  const slugs = bot.apps.filter((slug) => connected.some((account) => account.slug === slug));
-  if (slugs.length === 0) return [];
-  const names = new Map((await catalog().catch(() => ({ apps: [] }))).apps.map((app) => [app.slug, app.name]));
-  return slugs.map((slug) => {
-    const rule = bot.appRules[slug];
-    // A bot kept to one account doesn't pick; the relay fills it in.
-    const mine = rule?.account ? [] : connected.filter((account) => account.slug === slug);
-    return { name: names.get(slug) ?? slug, accounts: mine.length > 1 ? mine.map((account) => ({ account: account.alias ?? account.id, name: account.name })) : [], tools: rule?.tools ?? "all" };
-  });
-}
+import { injectedMemory, MAIN_MEMORY, memoryFolder, memoryUsage, recentLogEntries, topicIndex } from "./memory";
+import { teamStatusLines } from "./reports";
 
 export interface ChatStart {
   /** The chat's first message, which picks the playbooks. */
   message?: string;
   /** The bot's team and every bot, when it's on one. */
   team?: { group: BotGroup; bots: Bot[] };
+  /** How bots get the plugin's tools; automatic when unset. */
+  toolMode?: ToolMode;
+  /** What a team's lead is given of the reports: the newest lines (default), or only where to read (a memory tidy chat, the always-on identity). */
+  reports?: "lines" | "path";
 }
 
 /**
@@ -42,9 +29,10 @@ export interface ChatStart {
 export async function promptContext(bot: Bot, local: boolean, library: Library, paseoTools: boolean, start: ChatStart = {}): Promise<PromptContext> {
   // Playbooks and teams live in the settings, so they travel with the bot to any host.
   const playbooks = selectPlaybooks(start.message ?? "", bot.playbooks);
-  const team = start.team ? teamPrompt(start.team.group, bot, start.team.bots) : null;
-  // Connected apps go through this host's relay, so bots on other hosts can't reach them.
-  if (!local) return { memory: "", memoryPath: null, recentWork: [], playbooks, team, skills: [], paseoTools, botTools: false, apps: [] };
+  // How the bot can ask a teammate depends on how it gets the plugin's tools; off the plugin's host it can't.
+  const files = usesFiles(start.toolMode, bot.provider, bot.toolMode);
+  const team = start.team ? teamPrompt(start.team.group, bot, start.team.bots, !local ? "none" : files ? "file" : "tool", local ? teamReportsPath(start.team.group.id) : undefined) : null;
+  if (!local) return { memory: "", memoryPath: null, recentWork: [], playbooks, team, skills: [], paseoTools, botTools: false };
   // Only skills whose SKILL.md is still what the user reviewed.
   const skills: typeof library.skills = [];
   for (const skill of botSkills(bot, library)) {
@@ -62,13 +50,17 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
     team,
     skills: skills.map((skill) => ({ name: skill.id, description: skill.description, path: paths.get(skill.id)! })),
     paseoTools,
-    botTools: true,
-    apps: await botApps(bot),
+    botTools: !files,
+    botFiles: files ? { home: botDataPath(bot.id) } : null,
+    topics: await topicIndex(bot.id),
+    memoryUsage: await memoryUsage(bot.id),
+    // The lead of a team reads its team's reports; they are written on this host, so only a bot here gets them.
+    teamReports: start.team?.group.leadId === bot.id ? { path: teamReportsPath(start.team.group.id), lines: start.reports === "path" ? null : await teamStatusLines(start.team.group.id, 15) } : null,
   };
 }
 
 /** Whether this host gives the provider's agents Paseo's tools. Assumes yes when the config can't be read. */
-async function paseoToolsOn(paseo: PaseoApi | null, provider: string): Promise<boolean> {
+export async function paseoToolsOn(paseo: PaseoApi | null, provider: string): Promise<boolean> {
   if (!paseo) return true;
   try {
     const { config } = await paseo.config.get();
@@ -79,10 +71,21 @@ async function paseoToolsOn(paseo: PaseoApi | null, provider: string): Promise<b
 }
 
 /** The system prompt for a new chat; `settings` supplies the bot's team. */
-export async function systemPrompt({ bot, local, message }: { bot: Bot; local: boolean; message?: string }, library: Library, paseo: PaseoApi | null, settings?: BotSettingsValues | null) {
+export async function systemPrompt({ bot, local, message, maintenance }: { bot: Bot; local: boolean; message?: string; maintenance?: boolean }, library: Library, paseo: PaseoApi | null, settings?: BotSettingsValues | null) {
   const group = teamOf(bot.id, settings?.groups ?? []);
-  const start: ChatStart = { ...(message !== undefined ? { message } : {}), ...(group && settings ? { team: { group, bots: settings.bots } } : {}) };
+  const start: ChatStart = { ...(message !== undefined ? { message } : {}), ...(group && settings ? { team: { group, bots: settings.bots } } : {}), ...(settings?.toolMode ? { toolMode: settings.toolMode } : {}), ...(maintenance ? { reports: "path" as const } : {}) };
   // Another host's config isn't readable from here; Paseo gives agents its tools by default.
   const context = await promptContext(bot, local, library, local ? await paseoToolsOn(paseo, bot.provider) : true, start);
   return { systemPrompt: composeSystemPrompt(bot, context), sections: promptSections(bot, context) };
+}
+
+/**
+ * The prompt sections that belong to the bot rather than to one chat: no playbooks, which are
+ * picked by a chat's first message. This is what the Devin rules file carries.
+ */
+export async function identitySections(bot: Bot, library: Library, paseo: PaseoApi | null, settings?: BotSettingsValues | null) {
+  const group = teamOf(bot.id, settings?.groups ?? []);
+  const start: ChatStart = { ...(group && settings ? { team: { group, bots: settings.bots } } : {}), ...(settings?.toolMode ? { toolMode: settings.toolMode } : {}), reports: "path" };
+  const context = await promptContext(bot, true, library, await paseoToolsOn(paseo, bot.provider), start);
+  return promptSections(bot, { ...context, playbooks: [] });
 }

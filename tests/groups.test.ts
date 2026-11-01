@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { promptSections, type BotGroup } from "../shared/bot";
-import { groupBots, OTHER_BOTS_TAB, saveTeam, tabOf, teamLogoOf, teamOf, teamPrompt, teamTabs, withoutBot } from "../shared/groups";
+import { ASK_PREAPPROVED_LABEL, askLimit, askPreapproval, groupBots, mayAskWithoutAsking, OTHER_BOTS_TAB, saveTeam, tabOf, teamLogoOf, teamOf, teamPrompt, teamTabs, withBot, withoutBot } from "../shared/groups";
 import { LOGO_SIZE, MOTIF_NAMES, teamLogo, type TeamLogoImage } from "../shared/team-logo";
 import { makeBot } from "./helpers";
 
 const NOW = "2026-09-27T00:00:00.000Z";
-const team = (patch: Partial<BotGroup> = {}): BotGroup => ({ id: "t1", name: "Ops", logo: null, leadId: "chief", memberIds: ["chief", "scout", "inbox"], instructions: "", createdAt: NOW, updatedAt: NOW, ...patch });
+const team = (patch: Partial<BotGroup> = {}): BotGroup => ({ id: "t1", name: "Ops", logo: null, leadId: "chief", memberIds: ["chief", "scout", "inbox"], instructions: "", askFreely: false, createdAt: NOW, updatedAt: NOW, ...patch });
 const bots = [makeBot({ id: "chief", name: "Chief", title: "Runs the house" }), makeBot({ id: "scout", name: "Scout", title: "Researcher" }), makeBot({ id: "inbox", name: "Inbox", archived: true }), makeBot({ id: "solo", name: "Solo" })];
 
 describe("teams", () => {
@@ -26,7 +26,7 @@ describe("teams", () => {
     const scout = teamPrompt(withInstructions, bots[1]!, bots);
     expect(scout).toMatch(/^You're on the "Ops" team\. Chief leads it\./);
     expect(scout).toContain("- Chief (Chief of Staff): Runs the house");
-    expect(promptSections(bots[1]!, { memory: "", memoryPath: null, recentWork: [], playbooks: [], team: scout, skills: [], paseoTools: false, botTools: false, apps: [] }).map((section) => section.title)).toEqual(["Persona", "Team"]);
+    expect(promptSections(bots[1]!, { memory: "", memoryPath: null, recentWork: [], playbooks: [], team: scout, skills: [], paseoTools: false, botTools: false }).map((section) => section.title)).toEqual(["Persona", "Team"]);
   });
 
   it("keeps a bot on one team and drops leads that aren't members", () => {
@@ -39,6 +39,22 @@ describe("teams", () => {
     ]);
     expect(saveTeam([team()], "t1", { name: "Ops", logo: null, leadId: "ghost", memberIds: ["chief"], instructions: "" }, "x", NOW)[0]!.leadId).toBeNull();
     expect(withoutBot([team()], "chief", NOW)[0]).toMatchObject({ leadId: null, memberIds: ["scout", "inbox"] });
+  });
+});
+
+describe("adding a bot to a team", () => {
+  it("makes the bot a member of that team, and leaves the others alone", () => {
+    const other = team({ id: "t2", leadId: null, memberIds: ["x"] });
+    const next = withBot([team(), other], "t1", "new", NOW);
+    expect(next[0].memberIds).toEqual(["chief", "scout", "inbox", "new"]);
+    expect(next[0].updatedAt).toBe(NOW);
+    expect(next[1]).toBe(other);
+  });
+
+  it("does nothing for an unknown team or a bot already on it", () => {
+    const groups = [team()];
+    expect(withBot(groups, "gone", "new", NOW)).toBe(groups);
+    expect(withBot(groups, "t1", "scout", NOW)).toBe(groups);
   });
 });
 
@@ -90,5 +106,59 @@ describe("team logos", () => {
       for (const y of [0, LOGO_SIZE - 1]) expect(rows[y]!.every((run) => run.color === null), `${motif} row ${y}`).toBe(true);
       for (const runs of rows) expect(runs[0]!.x === 0 && runs[0]!.color === null && runs[runs.length - 1]!.color === null, motif).toBe(true);
     }
+  });
+});
+
+describe("asking inside a team", () => {
+  it("lets teammates ask each other without asking the user only when the team allows it", () => {
+    const free = [team({ askFreely: true })];
+    expect(mayAskWithoutAsking("chief", "scout", free)).toBe(true);
+    expect(mayAskWithoutAsking("scout", "chief", free)).toBe(true);
+    expect(mayAskWithoutAsking("scout", "solo", free)).toBe(false);
+    expect(mayAskWithoutAsking("solo", "scout", free)).toBe(false);
+    expect(mayAskWithoutAsking("chief", "scout", [team()])).toBe(false);
+    // Two teams: only inside the one that allows it.
+    const other = team({ id: "t2", leadId: "solo", memberIds: ["solo"], askFreely: true });
+    expect(mayAskWithoutAsking("solo", "scout", [team({ askFreely: true }), other])).toBe(false);
+  });
+
+  it("gives the Chief of Staff a higher hourly limit than the others", () => {
+    expect(askLimit("chief", [team()])).toBe(20);
+    expect(askLimit("scout", [team()])).toBe(5);
+    expect(askLimit("solo", [team()])).toBe(5);
+  });
+
+  it("keeps the switch when a team is saved, and it starts off", () => {
+    const draft = { name: "Ops", logo: null, leadId: "chief", memberIds: ["chief", "scout"], instructions: "" };
+    expect(saveTeam([], null, draft, "t9", NOW)[0]!.askFreely).toBe(false);
+    expect(saveTeam([], null, { ...draft, askFreely: true }, "t9", NOW)[0]!.askFreely).toBe(true);
+  });
+
+  it("tells the Chief of Staff how it can ask, and not to when it can't", () => {
+    const chief = bots[0]!;
+    const by = (how: "tool" | "file" | "none", patch = {}) => teamPrompt(team(), { ...chief, ...patch }, bots, how);
+    expect(by("tool")).toContain("ask_bot");
+    expect(by("tool")).toMatch(/several teammates at once/i);
+    expect(by("file")).toContain("outbox");
+    expect(by("file")).not.toContain("ask_bot");
+    expect(by("file")).toMatch(/several teammates at once/i);
+    for (const none of [by("none"), by("tool", { contactBots: "off" })]) {
+      expect(none).not.toContain("ask_bot");
+      expect(none).not.toContain("outbox");
+      expect(none).toMatch(/can't contact/i);
+    }
+    // A member's text does not depend on it.
+    expect(teamPrompt(team(), bots[1]!, bots, "none")).toMatch(/^You're on the "Ops" team\./);
+  });
+});
+
+describe("how ask_bot was pre-approved when a chat started", () => {
+  it("records the basis: the bot is set to Allow, or its team lets members ask freely", () => {
+    expect(ASK_PREAPPROVED_LABEL).toBe("aydo.ask-preapproved");
+    expect(askPreapproval(makeBot({ contactBots: "allow" }), false)).toBe("all");
+    expect(askPreapproval(makeBot({ contactBots: "allow" }), true)).toBe("all");
+    expect(askPreapproval(makeBot({ contactBots: "ask" }), true)).toBe("team");
+    expect(askPreapproval(makeBot({ contactBots: "ask" }), false)).toBeNull();
+    expect(askPreapproval(makeBot({ contactBots: "off" }), true)).toBeNull();
   });
 });

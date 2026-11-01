@@ -1,4 +1,5 @@
 // Composer attachments and their wire format (Paseo's `images` and AgentAttachment).
+import { englishTranslate, type Translate } from "./translate";
 
 export type ComposerAttachment =
   | { kind: "image"; id: string; name: string; mimeType: string; size: number; data: string }
@@ -23,10 +24,16 @@ export function classifyFile(name: string, mimeType: string): AttachmentKind {
 }
 
 /** Classifies a file and checks its size before any bytes are read. */
-export function preflightFile(name: string, mimeType: string, size: number, canUpload: boolean): { kind: AttachmentKind; reason: string | null } {
+export function preflightFile(
+  name: string,
+  mimeType: string,
+  size: number,
+  canUpload: boolean,
+  t: Translate = englishTranslate,
+): { kind: AttachmentKind; reason: string | null } {
   let kind = classifyFile(name, mimeType);
   if (kind === "text" && size > TEXT_MAX_BYTES) kind = "file";
-  return { kind, reason: rejectReason(kind, size, canUpload) };
+  return { kind, reason: rejectReason(kind, size, canUpload, t) };
 }
 
 /** Normalises clipboard/drop MIME types (`image/jpg`, parameters) the way Paseo does. */
@@ -45,11 +52,11 @@ export function getFileTypeLabel(name: string): string | null {
 }
 
 /** Why a picked file can't be attached, or null. */
-export function rejectReason(kind: AttachmentKind, size: number, canUpload: boolean): string | null {
-  if (kind === "image" && size > IMAGE_MAX_BYTES) return "Images can be up to 10 MB.";
-  if (kind === "text" && size > TEXT_MAX_BYTES) return canUpload ? null : "Text files can be up to 1 MB.";
-  if (kind === "file" && !canUpload) return "Other files can only be attached for bots running on this host.";
-  if (size > FILE_MAX_BYTES) return "Files can be up to 25 MB.";
+export function rejectReason(kind: AttachmentKind, size: number, canUpload: boolean, t: Translate = englishTranslate): string | null {
+  if (kind === "image" && size > IMAGE_MAX_BYTES) return t("chat.composer.imageTooLarge");
+  if (kind === "text" && size > TEXT_MAX_BYTES) return canUpload ? null : t("chat.composer.textTooLarge");
+  if (kind === "file" && !canUpload) return t("chat.composer.fileNotOnHost");
+  if (size > FILE_MAX_BYTES) return t("chat.composer.fileTooLarge");
   return null;
 }
 

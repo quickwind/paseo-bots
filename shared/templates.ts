@@ -1,8 +1,11 @@
 import { randomSeed } from "./avatar";
+import { newMemory } from "./memory-maintenance";
+import { withToolModeFor } from "./tools-mode";
+import { englishTranslate, type Translate } from "./translate";
 import { newBotId, type Bot, type Preset } from "./bot";
 
-// Starting points for a new bot, from OpenMausBot's New bot roles
-// (src/lib/bot-roles.ts): a name, a job and standing instructions.
+// Starting points for a new bot: a name, a job and standing instructions. The idea of ready-made roles follows OpenMausBot's
+// (src/lib/ready-bots.ts); the texts here were rewritten for Aydo (see NOTICE).
 
 export interface BotTemplate {
   id: string;
@@ -13,59 +16,51 @@ export interface BotTemplate {
   avatarSeed: string;
   /** Standing instructions. */
   soul: string;
+  /** Resource keys of the name, title and description in the app language. */
+  nameKey: string;
+  titleKey: string;
+  descriptionKey: string;
 }
 
 export const BOT_TEMPLATES: readonly BotTemplate[] = [
   {
     id: "assistant",
     name: "Assistant",
-    title: "General assistant",
-    description: "Answers questions, drafts text, and takes on whatever you hand it.",
+    title: "Everyday helper",
+    description: "Handles questions, writing and small jobs you pass along.",
+    nameKey: "templates.assistant.name",
+    titleKey: "templates.assistant.title",
+    descriptionKey: "templates.assistant.description",
     avatarSeed: "assistant-7",
-    soul: "You are a capable, plain-spoken assistant. Ask one clarifying question when a request is ambiguous; otherwise do the work and show the result. Keep replies short and concrete.",
-  },
-  {
-    id: "inbox",
-    name: "Inbox",
-    title: "Email triage",
-    description: "Reads your inbox, flags what needs you, and drafts replies for approval.",
-    avatarSeed: "inbox-5",
-    soul: "You manage the user's email. Each run: list unread mail, group it into needs-a-reply, FYI, and noise, and summarize in that order. Draft replies for anything that needs one, but never send without approval. Never unsubscribe, delete, or forward mail on your own.",
+    soul: "You are a practical assistant who speaks plainly. If a request could mean two different things, check with the user first; if it is clear, just do it and report what you did. Be brief and specific.",
   },
   {
     id: "research",
     name: "Scout",
-    title: "Researcher",
-    description: "Digs through the web and your files, and comes back with a sourced brief.",
+    title: "Research assistant",
+    description: "Searches the web and your files and returns a short, sourced summary.",
+    nameKey: "templates.research.name",
+    titleKey: "templates.research.title",
+    descriptionKey: "templates.research.description",
     avatarSeed: "research-5",
-    soul: "You research questions and return a brief: the answer first, then the evidence with links, then what you could not verify. Prefer primary sources. Say clearly when sources disagree. Never present a guess as a finding.",
-  },
-  {
-    id: "community",
-    name: "Watch",
-    title: "Community monitor",
-    description: "Watches Discord, Slack, or forums and reports what matters, on a schedule.",
-    avatarSeed: "community",
-    soul: "You monitor the user's community channels. Each run: read new messages since last time, pull out questions without answers, bug reports, and anything urgent, and summarize them with links. Never post or reply in the channels yourself; you report to the user.",
-  },
-  {
-    id: "ops",
-    name: "Ops",
-    title: "Operations",
-    description: "Keeps calendars, tasks, and follow-ups moving; nudges you before things slip.",
-    avatarSeed: "ops-7",
-    soul: "You keep the user's week on track. Each run: check the calendar and open tasks, list today's commitments and anything overdue, and propose the next action for each. Draft messages when a follow-up is due, but always ask before sending.",
+    soul: "You investigate questions and write up what you find. Lead with the conclusion, then the supporting evidence with links, then anything still uncertain. Favor original sources, point out where they conflict, and never state a guess as a fact.",
   },
 ];
 
-/** A new bot on `provider`: blank, or from a template (a role). */
-export function newBot(provider: string, template?: BotTemplate): Bot {
+/** A template's name, title and description in the language of the moment (the soul is a prompt and stays English). */
+export function templateText(template: BotTemplate, t: Translate): { name: string; title: string; description: string } {
+  return { name: t(template.nameKey), title: t(template.titleKey), description: t(template.descriptionKey) };
+}
+
+/** A new bot on `provider`: blank, or from a template (a role). The texts are stored as plain values. */
+export function newBot(provider: string, template?: BotTemplate, t: Translate = englishTranslate): Bot {
   const now = new Date().toISOString();
-  return {
+  const text = template ? templateText(template, t) : undefined;
+  return withToolModeFor({
     id: newBotId(),
-    name: template?.name ?? "New bot",
-    title: template?.title ?? "",
-    description: template?.description ?? "",
+    name: text?.name ?? t("templates.newBotName"),
+    title: text?.title ?? "",
+    description: text?.description ?? "",
     avatar: { seed: template?.avatarSeed ?? randomSeed(), palette: null, shape: "circle", imageUrl: null },
     hostId: null,
     provider,
@@ -76,10 +71,9 @@ export function newBot(provider: string, template?: BotTemplate): Bot {
     mcpServerIds: [],
     alwaysAllow: [],
     skillIds: [],
-    apps: [],
-    appRules: {},
     voice: { name: null, readReplies: false },
     contactBots: "ask",
+    memory: newMemory(provider),
     routines: [],
     playbooks: [],
     cwd: null,
@@ -87,11 +81,11 @@ export function newBot(provider: string, template?: BotTemplate): Bot {
     archived: false,
     createdAt: now,
     updatedAt: now,
-  };
+  });
 }
 
 /** A new bot from a preset: its identity, instructions, playbooks and skills. */
-export function botFromPreset(provider: string, preset: Preset): Bot {
+export function botFromPreset(provider: string, preset: Preset, t: Translate = englishTranslate): Bot {
   const { id: _id, createdAt: _createdAt, ...fields } = preset;
-  return { ...newBot(provider), ...fields };
+  return { ...newBot(provider, undefined, t), ...fields };
 }

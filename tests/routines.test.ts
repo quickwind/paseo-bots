@@ -70,18 +70,9 @@ describe("migration, history and grants", () => {
   });
 });
 
-import { parseSkillFrontmatter, parseSkillSource, sanitizeSkillName } from "../shared/skills";
+import { parseSkillFrontmatter, sanitizeSkillName } from "../shared/skills";
 
-describe("skill sources", () => {
-  it("parses shorthand, GitHub URLs and raw links", () => {
-    expect(parseSkillSource("anthropics/skills")).toEqual({ kind: "github", owner: "anthropics", repo: "skills", ref: null, path: "" });
-    expect(parseSkillSource("anthropics/skills/document-skills/pdf")).toMatchObject({ path: "document-skills/pdf" });
-    expect(parseSkillSource("https://github.com/o/r/blob/main/skills/x/SKILL.md")).toEqual({ kind: "github", owner: "o", repo: "r", ref: "main", path: "skills/x" });
-    expect(parseSkillSource("https://github.com/o/r/tree/dev/skills")).toMatchObject({ ref: "dev", path: "skills" });
-    expect(parseSkillSource("https://example.com/a/SKILL.md")).toEqual({ kind: "raw", url: "https://example.com/a/SKILL.md" });
-    expect(() => parseSkillSource("nonsense")).toThrow();
-  });
-
+describe("skill files", () => {
   it("reads frontmatter and sanitizes names", () => {
     expect(parseSkillFrontmatter('---\nname: "PDF Tools"\ndescription: Work with PDFs\n---\n# body')).toEqual({ name: "PDF Tools", description: "Work with PDFs" });
     expect(parseSkillFrontmatter("# no frontmatter")).toEqual({ name: null, description: null });

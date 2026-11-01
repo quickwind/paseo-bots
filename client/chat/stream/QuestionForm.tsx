@@ -16,6 +16,7 @@ import {
   type QuestionFormQuestion,
 } from "./question";
 import { isWeb, Spinner } from "./ui";
+import { useT } from "../../i18n/use-t";
 
 type Colors = PluginTheme["colors"];
 
@@ -29,6 +30,7 @@ interface QuestionFormCardProps {
 
 /** Paseo's QuestionFormCard (components/question-form-card.tsx). */
 export function QuestionFormCard({ colors, input, compact, isResponding, onRespond }: QuestionFormCardProps) {
+  const { t } = useT();
   const tokens = nativeTokens(colors);
   const questions = useMemo(() => parseQuestionFormQuestions(input), [input]);
   const [selections, setSelections] = useState<Record<number, Set<number>>>({});
@@ -45,8 +47,8 @@ export function QuestionFormCard({ colors, input, compact, isResponding, onRespo
   const activeAnswered = isQuestionAnswered(question, index, selections, otherTexts);
   const isLast = index === questions.length - 1;
   const primaryDisabled = isResponding || (isLast ? !allAnswered : !activeAnswered);
-  const primaryLabel = isLast ? "Submit" : "Next";
-  const dismissLabel = resolveDismissLabel(questions);
+  const primaryLabel = isLast ? t("chat.stream.submit") : t("chat.stream.next");
+  const dismissLabel = resolveDismissLabel(questions, t);
   const selected = selections[index] ?? new Set<number>();
   const otherText = otherTexts[index] ?? "";
 
@@ -103,7 +105,7 @@ export function QuestionFormCard({ colors, input, compact, isResponding, onRespo
     submit();
   };
 
-  const placeholder = question.placeholder ?? (question.options.length === 0 ? "Type your answer..." : "Other...");
+  const placeholder = question.placeholder ?? (question.options.length === 0 ? t("chat.stream.typeAnswer") : t("chat.stream.other"));
 
   return (
     <View style={{ padding: 12, borderRadius: 8, borderWidth: 1, gap: 12, backgroundColor: colors.surface1, borderColor: colors.border }}>
@@ -228,11 +230,12 @@ export function QuestionFormCard({ colors, input, compact, isResponding, onRespo
 }
 
 function NavButton({ colors, label, index, total, active, answered, disabled, onPress }: { colors: Colors; label: string; index: number; total: number; active: boolean; answered: boolean; disabled: boolean; onPress(): void }) {
+  const { t } = useT();
   const [hovered, setHovered] = useState(false);
   return (
     <Pressable
       accessibilityRole="tab"
-      accessibilityLabel={`Question ${index + 1} of ${total}`}
+      accessibilityLabel={t("chat.stream.questionOf", { index: index + 1, total })}
       accessibilityState={{ selected: active }}
       onPress={onPress}
       disabled={disabled}

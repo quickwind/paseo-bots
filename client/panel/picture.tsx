@@ -1,10 +1,11 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { SettingsAction } from "@getpaseo/plugin/client/ui";
-import { useState } from "react";
 import { Pressable, View } from "react-native";
 import { PALETTE_COUNT, paletteSwatch } from "../../shared/pixel";
+import { englishTranslate, type Translate } from "../../shared/translate";
+import { useT } from "../i18n/use-t";
 import { pickFileHandles, squareImage } from "../web";
-import { InputField, StackedRow } from "./controls";
+import { StackedRow } from "./controls";
 
 // The picture controls bot avatars and team logos share.
 
@@ -12,25 +13,25 @@ type Colors = PluginTheme["colors"];
 
 /** Pictures are stored with the bot or team, so they're scaled down to this many pixels. */
 export const PICTURE_SIZE = 192;
-const IMAGE_URL = /^(https?:\/\/\S+|data:image\/\S+)$/i;
 const MAX_UPLOAD = 20 * 1024 * 1024;
 
 /** Picks an image file (web) and returns it as a square data URL; null when nothing was picked. */
-export async function pickPicture(): Promise<string | null> {
+export async function pickPicture(t: Translate = englishTranslate): Promise<string | null> {
   const [file] = await pickFileHandles({ accept: "image/png,image/jpeg,image/webp,image/gif", multiple: false });
   if (!file) return null;
-  if (file.size > MAX_UPLOAD) throw new Error("Pick a picture under 20 MB.");
-  return squareImage(`data:${file.mimeType};base64,${await file.readBase64()}`, PICTURE_SIZE);
+  if (file.size > MAX_UPLOAD) throw new Error(t("panel.pictureTooLarge"));
+  return squareImage(`data:${file.mimeType};base64,${await file.readBase64(t)}`, PICTURE_SIZE, t);
 }
 
 /** The generated picture's colour: automatic, or one of the palettes. */
 export function ColourRow({ colors, value, onChange }: { colors: Colors; value: number | null; onChange(palette: number | null): void }) {
+  const { t } = useT();
   return (
-    <StackedRow colors={colors} label="Colour">
+    <StackedRow colors={colors} label={t("panel.colour")}>
       <View accessibilityRole="radiogroup" style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
-        <Swatch colors={colors} label="Automatic colour" color={null} selected={value === null} onPress={() => onChange(null)} />
+        <Swatch colors={colors} label={t("panel.automaticColour")} color={null} selected={value === null} onPress={() => onChange(null)} />
         {Array.from({ length: PALETTE_COUNT }, (_, index) => (
-          <Swatch key={index} colors={colors} label={`Colour ${index + 1}`} color={paletteSwatch(index)} selected={value === index} onPress={() => onChange(index)} />
+          <Swatch key={index} colors={colors} label={t("panel.colourN", { n: index + 1 })} color={paletteSwatch(index)} selected={value === index} onPress={() => onChange(index)} />
         ))}
       </View>
     </StackedRow>
@@ -64,28 +65,12 @@ function Swatch({ colors, label, color, selected, onPress }: { colors: Colors; l
   );
 }
 
-/** A stored picture (uploaded or generated) with Remove, or the Image URL field. */
-export function PictureSource(props: { colors: Colors; imageUrl: string | null; hint: string; placeholder: string; onChange(imageUrl: string | null): void }) {
-  if (props.imageUrl?.startsWith("data:")) return <SettingsAction label="Image" hint="Uploaded or generated" actionLabel="Remove" onPress={() => props.onChange(null)} />;
-  return <ImageUrlField {...props} />;
-}
-
-function ImageUrlField({ colors, imageUrl, hint, placeholder, onChange }: { colors: Colors; imageUrl: string | null; hint: string; placeholder: string; onChange(imageUrl: string | null): void }) {
-  const [text, setText] = useState(imageUrl ?? "");
-  return (
-    <InputField
-      colors={colors}
-      label="Image URL"
-      hint={hint}
-      error={text.trim() && !IMAGE_URL.test(text.trim()) ? "Use an https:// or data:image URL" : null}
-      initialValue={text}
-      placeholder={placeholder}
-      onChangeText={(url) => {
-        setText(url);
-        const trimmed = url.trim();
-        if (!trimmed) onChange(null);
-        else if (IMAGE_URL.test(trimmed)) onChange(trimmed);
-      }}
-    />
-  );
+/**
+ * An uploaded picture with Remove. Pictures are stored as data: URLs; there is no field for an
+ * address on the web, because showing one would make the browser fetch it.
+ */
+export function PictureSource(props: { colors: Colors; imageUrl: string | null; onChange(imageUrl: string | null): void }) {
+  const { t } = useT();
+  if (!props.imageUrl?.startsWith("data:")) return null;
+  return <SettingsAction label={t("panel.image")} hint={t("panel.uploaded")} actionLabel={t("attachment.remove")} onPress={() => props.onChange(null)} />;
 }

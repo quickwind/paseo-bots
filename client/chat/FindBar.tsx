@@ -1,10 +1,12 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useRef } from "react";
+import { isImeComposing } from "./composer/logic";
 import { ActivityIndicator, Platform, Pressable, Text, TextInput, View, type NativeSyntheticEvent, type TextInputKeyPressEventData } from "react-native";
 import { CONTENT_MAX_WIDTH, nativeTokens, useHover } from "../native";
 import { ui } from "../typography";
 import { tooltip } from "../ui/Tooltip";
+import { useT } from "../i18n/use-t";
 
 type Colors = PluginTheme["colors"];
 
@@ -35,11 +37,14 @@ export function FindBar({
   onNewer(): void;
   onClose(): void;
 }) {
+  const { t } = useT();
   const tokens = nativeTokens(colors);
   const input = useRef<TextInput>(null);
   useEffect(() => input.current?.focus(), []);
   const onKeyPress = (event: NativeSyntheticEvent<TextInputKeyPressEventData & { shiftKey?: boolean }>) => {
     const { key, shiftKey } = event.nativeEvent;
+    // Enter that confirms an IME candidate is not a request to jump to the previous match.
+    if (isImeComposing(event.nativeEvent as { isComposing?: boolean; keyCode?: number })) return;
     if (key === "Escape") onClose();
     else if (key === "Enter") {
       event.preventDefault();
@@ -68,13 +73,13 @@ export function FindBar({
         <Icon name="Search" size={14} color={colors.foregroundMuted} />
         <TextInput
           ref={input}
-          accessibilityLabel="Find in this chat"
+          accessibilityLabel={t("chat.find.placeholder")}
           value={query}
           onChangeText={onQuery}
           onKeyPress={Platform.OS === "web" ? onKeyPress : undefined}
           onSubmitEditing={Platform.OS === "web" ? undefined : onOlder}
           blurOnSubmit={false}
-          placeholder="Find in this chat"
+          placeholder={t("chat.find.placeholder")}
           placeholderTextColor={colors.foregroundMuted}
           selectionColor={colors.foreground}
           autoCapitalize="none"
@@ -83,10 +88,10 @@ export function FindBar({
           style={{ flex: 1, minWidth: 0, padding: 0, height: 24, fontSize: ui(14), color: colors.foreground, outlineWidth: 0 }}
         />
         {busy ? <ActivityIndicator size="small" color={colors.foregroundMuted} /> : null}
-        {!busy && query.trim() ? <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>{total ? `${position} of ${total}` : "No matches"}</Text> : null}
-        <FindButton colors={colors} icon="ChevronUp" label="Older match" onPress={onOlder} />
-        <FindButton colors={colors} icon="ChevronDown" label="Newer match" onPress={onNewer} />
-        <FindButton colors={colors} icon="X" label="Close find" onPress={onClose} />
+        {!busy && query.trim() ? <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>{total ? t("chat.find.position", { position, total }) : t("chat.find.noMatches")}</Text> : null}
+        <FindButton colors={colors} icon="ChevronUp" label={t("chat.find.older")} onPress={onOlder} />
+        <FindButton colors={colors} icon="ChevronDown" label={t("chat.find.newer")} onPress={onNewer} />
+        <FindButton colors={colors} icon="X" label={t("chat.find.close")} onPress={onClose} />
       </View>
     </View>
   );

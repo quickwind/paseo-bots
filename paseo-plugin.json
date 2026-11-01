@@ -1,7 +1,7 @@
 {
-  "id": "paseo-bots",
-  "description": "Personal bots with their own instructions, agent, memory, routines, skills, tools and connected apps.",
+  "id": "aydo",
+  "description": "Aydo: personal assistants with their own instructions, agent, memory, routines, skills and local tools. No network connections of its own.",
   "requirements": {
-    "paseo": ">=0.9.2"
+    "paseo": ">=0.13.0"
   }
 }

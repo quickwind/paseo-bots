@@ -3,6 +3,8 @@
 // renders (utils/assistant-markdown-parser.ts): html off, linkify on, tables and
 // strikethrough on, soft line breaks kept as line breaks (message.tsx softbreak).
 
+import { englishTranslate, type Translate } from "./translate";
+
 export type Inline =
   | { kind: "text"; text: string }
   | { kind: "bold"; children: Inline[] }
@@ -273,10 +275,10 @@ export function parseInline(source: string, options: ParseOptions = {}, referenc
     }
 
     if (char === "\n") {
-      text = text.replace(/[ \t]+$/, "");
+      text = trimBlanksEnd(text);
       flushText();
       const last = tokens[tokens.length - 1];
-      if (last?.kind === "text") last.text = last.text.replace(/[ \t]+$/, "");
+      if (last?.kind === "text") last.text = trimBlanksEnd(last.text);
       tokens.push({ kind: "break" });
       i++;
       while (src[i] === " " || src[i] === "\t") i++;
@@ -481,6 +483,31 @@ const LIST_ITEM = /^( {0,3})([-*+]|\d{1,9}[.)])(?:([ \t]+)(.*))?$/;
 const REFERENCE = /^ {0,3}\[([^\]]+)\]:[ \t]*<?([^\s>]+)>?(?:[ \t]+(?:"[^"]*"|'[^']*'|\([^)]*\)))?[ \t]*$/;
 const TABLE_DELIMITER = /^ {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
 
+// A regex like /[ \t]+$/ tries every start inside a long run of blanks, so these walk the text once instead.
+function trimBlanksEnd(text: string): string {
+  let end = text.length;
+  while (end > 0 && (text[end - 1] === " " || text[end - 1] === "\t")) end--;
+  return end === text.length ? text : text.slice(0, end);
+}
+
+/** A table's delimiter row. Runs of blanks count as one, so a row padded with thousands of them is not slow to test. */
+function isTableDelimiter(line: string): boolean {
+  const indent = /^ */.exec(line)![0].length;
+  if (indent > 3) return false;
+  return TABLE_DELIMITER.test(`${" ".repeat(indent)}${line.slice(indent).replace(/[ \t]+/g, " ")}`);
+}
+
+/** The text of an ATX heading without its closing run of #: "Title ##" is "Title", and a line of only # is empty. */
+function withoutClosingHashes(content: string): string {
+  const text = trimBlanksEnd(content);
+  let end = text.length;
+  while (end > 0 && text[end - 1] === "#") end--;
+  if (end === text.length) return text.trim();
+  if (end === 0) return "";
+  // The hashes close the heading only after a blank; "C#" keeps its #.
+  return text[end - 1] === " " || text[end - 1] === "\t" ? trimBlanksEnd(text.slice(0, end)).trim() : text.trim();
+}
+
 function indentOf(line: string): number {
   let width = 0;
   for (const char of line) {
@@ -541,7 +568,7 @@ function splitRow(line: string): string[] {
 function isTableStart(lines: string[], i: number): boolean {
   const header = lines[i];
   const delimiter = lines[i + 1];
-  if (header === undefined || delimiter === undefined || !header.includes("|") || !TABLE_DELIMITER.test(delimiter)) return false;
+  if (header === undefined || delimiter === undefined || !header.includes("|") || !isTableDelimiter(delimiter)) return false;
   if (indentOf(header) >= 4) return false;
   return splitRow(header).length === splitRow(delimiter).length;
 }
@@ -583,7 +610,7 @@ function parseBlocks(lines: string[], tail: boolean, references: References): Bl
 
   const flush = (streaming = false) => {
     if (paragraph.length === 0) return;
-    const content = paragraph.join("\n").replace(/^[ \t]+/, "").replace(/[ \t]+$/, "");
+    const content = trimBlanksEnd(paragraph.join("\n").replace(/^[ \t]+/, ""));
     paragraph = [];
     if (content) blocks.push({ kind: "paragraph", inlines: parseInline(content, { streaming }, references) });
   };
@@ -634,7 +661,7 @@ function parseBlocks(lines: string[], tail: boolean, references: References): Bl
     const atx = ATX.exec(line);
     if (atx) {
       flush();
-      const content = atx[2]!.replace(/[ \t]+#+[ \t]*$/, "").replace(/^#+[ \t]*$/, "").trim();
+      const content = withoutClosingHashes(atx[2]!);
       blocks.push({ kind: "heading", level: atx[1]!.length, inlines: parseInline(content, {}, references) });
       i++;
       continue;
@@ -823,18 +850,18 @@ export function utf8ByteLength(message: string): number {
  * Paseo's duration format (utils/time.ts formatDuration): whole seconds under a
  * minute, then "2m 12s" / "2m", then "1h 5m" / "1h". Always floors.
  */
-export function formatDuration(durationMs: number): string {
-  if (!Number.isFinite(durationMs) || durationMs < 0) return "0s";
+export function formatDuration(durationMs: number, t: Translate = englishTranslate): string {
+  if (!Number.isFinite(durationMs) || durationMs < 0) return t("text.duration.seconds", { seconds: 0 });
   const totalSeconds = durationMs / 1000;
-  if (totalSeconds < 60) return `${Math.floor(totalSeconds)}s`;
+  if (totalSeconds < 60) return t("text.duration.seconds", { seconds: Math.floor(totalSeconds) });
   const totalMinutes = Math.floor(totalSeconds / 60);
   if (totalMinutes < 60) {
     const seconds = Math.floor(totalSeconds) % 60;
-    return seconds === 0 ? `${totalMinutes}m` : `${totalMinutes}m ${seconds}s`;
+    return seconds === 0 ? t("text.duration.minutes", { minutes: totalMinutes }) : t("text.duration.minutesSeconds", { minutes: totalMinutes, seconds });
   }
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+  return minutes === 0 ? t("text.duration.hours", { hours }) : t("text.duration.hoursMinutes", { hours, minutes });
 }
 
 function calendarDaysBetween(earlier: Date, later: Date): number {

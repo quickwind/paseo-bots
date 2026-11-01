@@ -3,6 +3,7 @@ import { ScrollView } from "@getpaseo/plugin/client/react-native";
 import { Pressable, Text, View } from "react-native";
 import { nativeTokens } from "../../native";
 import { ui } from "../../typography";
+import { useT } from "../../i18n/use-t";
 import type { SlashCommand } from "./logic";
 
 type Colors = PluginTheme["colors"];
@@ -29,8 +30,9 @@ export function CommandMenu({
   onHover(index: number): void;
   onSelect(command: SlashCommand): void;
 }) {
+  const { t } = useT();
   const tokens = nativeTokens(colors);
-  const empty = loading ? "Loading..." : error ?? "No results found.";
+  const empty = loading ? t("settings.loading") : error ?? t("chat.commands.noResults");
   return (
     <View
       accessibilityRole="menu"

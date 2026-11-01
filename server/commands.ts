@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
+import { writeAtomic } from "./managed-files";
 import { redactSecrets } from "../shared/activity";
 import { pluginDataPath } from "./bot-home";
 
@@ -47,8 +48,7 @@ export class CommandAllowlist {
   private change<T>(edit: (rules: StoredRule[]) => { rules: StoredRule[]; result: T }): Promise<T> {
     const run = async () => {
       const { rules, result } = edit(await this.load());
-      await mkdir(pluginDataPath(), { recursive: true });
-      await writeFile(storePath(), JSON.stringify({ version: 1, rules }, null, 2), { encoding: "utf8", mode: 0o600 });
+      await writeAtomic(storePath(), JSON.stringify({ version: 1, rules }, null, 2), 0o600);
       return result;
     };
     const next = this.queue.then(run);
@@ -66,7 +66,7 @@ export class CommandAllowlist {
       const mine = rules.filter((rule) => rule.botId === botId);
       const same = mine.find((rule) => rule.command === command && rule.cwd === cwd);
       if (same) return { rules, result: { id: same.id, command, cwd } };
-      if (mine.length >= MAX_RULES_PER_BOT) throw new Error(`A bot can have at most ${MAX_RULES_PER_BOT} allowed commands.`);
+      if (mine.length >= MAX_RULES_PER_BOT) throw new Error(`An assistant can have at most ${MAX_RULES_PER_BOT} allowed commands.`);
       const rule: CommandRule = { id: randomUUID(), command, cwd };
       return { rules: [...rules, { ...rule, botId }], result: rule };
     });

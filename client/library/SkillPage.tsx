@@ -7,10 +7,12 @@ import { useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { skillNeedsReview, type Bot, type LibrarySkill } from "../../shared/bot";
 import { skillImportRpc, skillReadRpc } from "../../shared/rpc";
+import { isLocalFolder } from "../../shared/skills";
 import { errorText, MONO_FONT, MONO_PROPS } from "../native";
 import { Alert, Button, CardNote, SectionLink } from "../panel/controls";
 import { code, codeLine } from "../typography";
 import { BotsCard, DangerZone, PageTitle } from "./parts";
+import { useT } from "../i18n/use-t";
 import { EditSkillSheet, ReviewSkillSheet, type SavedSkill } from "./SkillSheets";
 
 type Colors = PluginTheme["colors"];
@@ -27,15 +29,15 @@ interface SkillPageProps {
   onDelete(): void;
 }
 
-export const skillQueryKey = (id: string) => ["paseo-bots", "library-skill", id];
+export const skillQueryKey = (id: string) => ["aydo", "library-skill", id];
 
-/** Imports stored as "github.com/owner/repo/path" update from "owner/repo/path"; links update from themselves. */
+/** A skill imported from a folder on this computer updates by reading that folder again. */
 function updateSource(source: string): string | null {
-  if (source.startsWith("github.com/")) return source.slice("github.com/".length);
-  return /^https?:\/\//i.test(source) ? source : null;
+  return isLocalFolder(source) ? source : null;
 }
 
 export function SkillPage({ colors, skill, bots, showTitle, onPatch, onToggleBot, onImported, onDelete }: SkillPageProps) {
+  const { t } = useT();
   const read = useRpc(skillReadRpc);
   const importSkills = useRpc(skillImportRpc);
   const queryClient = useQueryClient();
@@ -55,9 +57,9 @@ export function SkillPage({ colors, skill, bots, showTitle, onPatch, onToggleBot
       const { skills } = await importSkills({ source });
       onImported(skills);
       await queryClient.invalidateQueries({ queryKey: skillQueryKey(skill.id) });
-      toast.show("Skill updated", { variant: "success" });
+      toast.show(t("library.skillUpdated"), { variant: "success" });
     } catch (error) {
-      toast.error(`Couldn't update: ${errorText(error)}`);
+      toast.error(t("library.couldntUpdate", { error: errorText(error) }));
     } finally {
       setUpdating(false);
     }
@@ -71,32 +73,32 @@ export function SkillPage({ colors, skill, bots, showTitle, onPatch, onToggleBot
           <Alert
             colors={colors}
             variant="warning"
-            title={changedSinceReview ? "SKILL.md changed since you reviewed it" : "Review before bots use it"}
-            description={changedSinceReview ? "Bots stop using it until you read the new version." : "Skills from outside arrive switched off. Read it, then turn it on."}
+            title={changedSinceReview ? t("library.skillChanged") : t("library.reviewBeforeUse")}
+            description={changedSinceReview ? t("library.changedInfo") : t("library.outsideSkillInfo")}
           />
           <View style={{ alignItems: "flex-start" }}>
-            <Button colors={colors} variant="outline" icon="ScanEye" label="Review" onPress={() => setReviewing(true)} />
+            <Button colors={colors} variant="outline" icon="ScanEye" label={t("library.review")} onPress={() => setReviewing(true)} />
           </View>
         </View>
       ) : null}
-      <SettingsSection title="Skill">
+      <SettingsSection title={t("library.skill")}>
         <SettingsCard>
           <SettingsSwitch
-            label="Enabled"
-            hint={needsReview ? "Review it to turn it on" : "When off, no bot gets this skill"}
+            label={t("library.enabled")}
+            hint={needsReview ? t("library.reviewToEnable") : t("library.skillOffHint")}
             value={skill.enabled && !needsReview}
             onValueChange={(enabled) => (enabled && needsReview ? setReviewing(true) : onPatch({ enabled }))}
           />
-          {source ? <SettingsAction label="Source" hint={skill.source} actionLabel={updating ? "Updating..." : "Update"} disabled={updating} onPress={() => void update()} /> : null}
+          {source ? <SettingsAction label={t("library.source")} hint={skill.source} actionLabel={updating ? t("library.updating") : t("library.update")} disabled={updating} onPress={() => void update()} /> : null}
         </SettingsCard>
       </SettingsSection>
 
-      <BotsCard colors={colors} bots={bots} noun="skill" uses={(bot) => bot.skillIds.includes(skill.id)} onToggle={onToggleBot} />
+      <BotsCard colors={colors} bots={bots} info={t("library.botsInfoSkill")} uses={(bot) => bot.skillIds.includes(skill.id)} onToggle={onToggleBot} />
 
       <SettingsSection
         title="SKILL.md"
-        info="What a bot reads before a task this skill covers."
-        trailing={file.data && !file.data.missing ? <SectionLink colors={colors} icon="Pencil" label="Edit" onPress={() => setEditing(true)} /> : undefined}
+        info={t("library.skillMdInfo")}
+        trailing={file.data && !file.data.missing ? <SectionLink colors={colors} icon="Pencil" label={t("teams.edit")} onPress={() => setEditing(true)} /> : undefined}
       >
         <SettingsCard>
           {file.isLoading ? (
@@ -104,7 +106,7 @@ export function SkillPage({ colors, skill, bots, showTitle, onPatch, onToggleBot
               <ActivityIndicator size="small" color={colors.foregroundMuted} />
             </View>
           ) : file.data?.missing ? (
-            <CardNote colors={colors} text={source ? "SKILL.md is missing. Update the skill to fetch it again." : "SKILL.md is missing."} />
+            <CardNote colors={colors} text={source ? t("library.skillMissingUpdate") : t("library.skillMissing")} />
           ) : (
             <View style={{ padding: 16 }}>
               <Text selectable {...MONO_PROPS} style={{ fontFamily: MONO_FONT, fontSize: code(), lineHeight: codeLine(), color: colors.foreground }}>
@@ -116,11 +118,11 @@ export function SkillPage({ colors, skill, bots, showTitle, onPatch, onToggleBot
       </SettingsSection>
 
       <DangerZone
-        label="Delete skill"
-        hint="Removes it from the library and from every bot"
-        actionLabel="Delete"
-        confirmTitle="Delete skill?"
-        confirmMessage={`Delete "${skill.id}"? Its files are removed and no bot will get it any more.`}
+        label={t("library.deleteSkill")}
+        hint={t("library.removeEverywhere")}
+        actionLabel={t("settings.delete")}
+        confirmTitle={t("library.deleteSkillTitle")}
+        confirmMessage={t("library.deleteSkillMessage", { name: skill.id })}
         onConfirm={onDelete}
       />
 

@@ -9,7 +9,7 @@ import { makeBot } from "./helpers";
 describe("allowed commands", () => {
   let home: string;
   beforeAll(async () => {
-    home = await mkdtemp(join(tmpdir(), "paseo-bots-commands-"));
+    home = await mkdtemp(join(tmpdir(), "aydo-commands-"));
     process.env.PASEO_HOME = home;
   });
   afterAll(async () => {
@@ -44,15 +44,14 @@ describe("allowed commands", () => {
 
 describe("what a bot won't do", () => {
   it("follows its settings", () => {
-    expect(botLimits(makeBot(), { local: true, appsConfigured: true })).toEqual([
+    expect(botLimits(makeBot(), { local: true })).toEqual([
       "Asks before running commands and tools it isn't allowed to use.",
-      "Asks before contacting other bots.",
-      "Has no connected apps.",
+      "Asks before contacting other assistants.",
       "Won't act on a schedule.",
       "Keeps skills and routines only after you confirm them.",
     ]);
-    const busy = makeBot({ modeId: "bypassPermissions", contactBots: "allow", apps: ["gmail"], routines: [{ id: "r", name: "r", prompt: "p", enabled: true, schedule: { kind: "webhook" }, resultsChatId: null, createdAt: "" }] });
-    expect(botLimits(busy, { local: true, appsConfigured: true })).toEqual(["Keeps skills and routines only after you confirm them."]);
-    expect(botLimits(busy, { local: false, appsConfigured: true })).toEqual(["Can't contact other bots.", "Has no connected apps."]);
+    const busy = makeBot({ modeId: "bypassPermissions", contactBots: "allow", routines: [{ id: "r", name: "r", prompt: "p", enabled: true, schedule: { kind: "webhook" }, resultsChatId: null, createdAt: "" }] });
+    expect(botLimits(busy, { local: true })).toEqual(["Keeps skills and routines only after you confirm them."]);
+    expect(botLimits(busy, { local: false })).toEqual(["Can't contact other assistants."]);
   });
 });

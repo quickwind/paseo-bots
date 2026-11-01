@@ -1,6 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon } from "@getpaseo/plugin/client/react-native";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View, type LayoutRectangle } from "react-native";
 import type { toWire } from "../shared/attachments";
 import type { Bot } from "../shared/bot";
@@ -8,13 +8,18 @@ import { displayTitle } from "../shared/chat";
 import { Avatar } from "./Avatar";
 import { Composer } from "./chat/Composer";
 import { ChatStream } from "./chat/Stream";
-import type { BotHost } from "./data";
+import { chatEngineLabel } from "./chat-engine";
+import { useProviders, type BotHost } from "./data";
+import { nativeAgentView } from "./native-agent-view";
 import { nativeTokens, useHover } from "./native";
 import { ui } from "./typography";
+import { SearchableSelect } from "./ui/SearchableSelect";
+import { chatWhere, workspaceLabels, type WorkspaceChoice } from "./workspace-choice";
 import { measureAnchor } from "./ui/Menu";
 import { listenForFind } from "./web";
 import type { ChatState } from "./useChat";
 import { tooltip } from "./ui/Tooltip";
+import { useT } from "./i18n/use-t";
 
 type Colors = PluginTheme["colors"];
 
@@ -37,6 +42,10 @@ export interface ChatPaneProps {
   onStart(message: OutgoingMessage): Promise<void>;
   /** Shows another chat of this bot (a routine run's own chat). */
   onOpenChat(chatId: string): void;
+  /** For a new chat: the workspaces it can start in, the chosen one ("" is the bot's own folder), and the change handler. */
+  workspaces?: readonly WorkspaceChoice[];
+  newChatWorkspaceId?: string;
+  onNewChatWorkspaceChange?(workspaceId: string): void;
 }
 
 export interface OutgoingMessage {
@@ -46,11 +55,27 @@ export interface OutgoingMessage {
   attachments: ReturnType<typeof toWire>["attachments"];
 }
 
-export function ChatPane({ colors, bot, host, chat, chatId, panelOpen, layout, keyboardOpen, typeVersion, onBack, onBotMenu, onTogglePanel, onStart, onOpenChat }: ChatPaneProps) {
+export function ChatPane({ colors, bot, host, chat, chatId, panelOpen, layout, keyboardOpen, typeVersion, onBack, onBotMenu, onTogglePanel, onStart, onOpenChat, workspaces = [], newChatWorkspaceId = "", onNewChatWorkspaceChange }: ChatPaneProps) {
+  const { t } = useT();
   const running = chat.agent?.status === "running" || chat.agent?.status === "initializing";
   const empty = chat.entries.length === 0 && !chat.loading && !chat.error && (chat.agent?.pendingPermissions.length ?? 0) === 0;
-  const title = chatId ? displayTitle(chat.agent?.title) : "New chat";
-  const canFind = chatId !== null && !empty;
+  const title = chatId ? displayTitle(chat.agent?.title, t) : t("text.chat.newChat");
+  // The host's own chat (models, modes, other plugins' cards) when it has one; the first message still comes from our composer.
+  const NativeView = nativeAgentView();
+  const workspaceId = chat.agent?.workspaceId;
+  // A chat in a project workspace says which one, next to the bot's name.
+  const labels = useMemo(() => workspaceLabels(workspaces), [workspaces]);
+  const where = chatId ? chatWhere(chat.agent, labels) : null;
+  // Which provider and model the chat runs on: the open chat's own, else what a new chat of this assistant will use.
+  const providers = useProviders(host);
+  const engine = chatEngineLabel(chat.agent && chatId ? { provider: chat.agent.provider, model: chat.agent.model ?? null } : { provider: bot.provider, model: bot.model ?? null }, providers.data);
+  const subtitleParts = [bot.name, where, engine].filter((part): part is string => !!part);
+  // An open chat is the host's from the start, not only once its first entries arrive: our own stream never shows for it.
+  const nativeChat = NativeView !== null && chatId !== null && !chat.error;
+  const native = nativeChat && workspaceId ? { View: NativeView, workspaceId } : null;
+  // Find in chat searches our own stream only.
+  const canFind = chatId !== null && !empty && !nativeChat;
+
   const [findOpen, setFindOpen] = useState(false);
   useEffect(() => setFindOpen(false), [chatId]);
   // ⌘F / Ctrl+F finds in the open chat on the desktop.
@@ -61,7 +86,7 @@ export function ChatPane({ colors, bot, host, chat, chatId, panelOpen, layout, k
       <Header
         colors={colors}
         title={title}
-        subtitle={bot.name}
+        subtitle={subtitleParts.join(" · ")}
         hostBadge={host.isLocal ? null : host.label}
         compact={layout.compact}
         panelOpen={panelOpen}
@@ -70,7 +95,11 @@ export function ChatPane({ colors, bot, host, chat, chatId, panelOpen, layout, k
         onTogglePanel={onTogglePanel}
         onFind={canFind ? () => setFindOpen((open) => !open) : undefined}
       />
-      {chatId === null || empty ? (
+      {nativeChat ? (
+        <View style={{ flex: 1, minHeight: 0 }}>
+          {native && chatId ? <native.View key={chatId} agentId={chatId} serverId={host.key} workspaceId={native.workspaceId} /> : null}
+        </View>
+      ) : chatId === null || empty ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 24 }}>
           <Avatar avatar={bot.avatar} size={56} />
           <Text style={{ color: colors.foreground, fontSize: ui(18), fontWeight: "500" }}>{bot.name}</Text>
@@ -81,7 +110,19 @@ export function ChatPane({ colors, bot, host, chat, chatId, panelOpen, layout, k
       ) : (
         <ChatStream key={chatId} colors={colors} chat={chat} api={host.api} agentId={chatId} compact={layout.compact} platform={layout.platform} typeVersion={typeVersion} onOpenChat={onOpenChat} voice={bot.voice} findOpen={findOpen} onCloseFind={() => setFindOpen(false)} {...(host.isLocal ? { botId: bot.id } : {})} />
       )}
-      <Composer colors={colors} bot={bot} host={host} agentId={chatId} agent={chat.agent} running={running} layout={layout} keyboardOpen={keyboardOpen} onStart={onStart} />
+      {chatId === null && host.isLocal && workspaces.length > 0 && onNewChatWorkspaceChange ? (
+        <View style={{ paddingHorizontal: 20, paddingBottom: 6 }}>
+          <SearchableSelect
+            compact
+            colors={colors}
+            label={t("chat.pane.workIn")}
+            value={newChatWorkspaceId}
+            options={[{ label: t("chat.pane.ownFolder"), value: "" }, ...workspaces.map((choice) => ({ label: choice.label, value: choice.id }))]}
+            onValueChange={onNewChatWorkspaceChange}
+          />
+        </View>
+      ) : null}
+      {nativeChat ? null : <Composer colors={colors} bot={bot} host={host} agentId={chatId} agent={chat.agent} running={running} layout={layout} keyboardOpen={keyboardOpen} onStart={onStart} />}
     </View>
   );
 }
@@ -108,6 +149,7 @@ interface HeaderProps {
 // with the title (weight 400) over a 12pt subtitle row. Icon buttons are 26 (desktop) or
 // 32 (phones) with 16pt glyphs; the back arrow is Paseo's BackHeader (ArrowLeft 20, 44pt box).
 function Header({ colors, title, subtitle, hostBadge, compact, panelOpen, onBack, onMenu, onTogglePanel, onFind }: HeaderProps) {
+  const { t } = useT();
   const tokens = nativeTokens(colors);
   const menuButton = useRef<View>(null);
   const openMenu = () => void measureAnchor(menuButton).then(onMenu);
@@ -117,7 +159,7 @@ function Header({ colors, title, subtitle, hostBadge, compact, panelOpen, onBack
       {onBack ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Back to bots"
+          accessibilityLabel={t("sidebar.backToBots")}
           onPress={onBack}
           style={({ pressed }) => ({ padding: compact ? 12 : 8, borderRadius: 8, backgroundColor: pressed ? tokens.interactionHighlight : "transparent" })}
         >
@@ -150,19 +192,19 @@ function Header({ colors, title, subtitle, hostBadge, compact, panelOpen, onBack
       )}
       {compact ? null : (
         <View ref={menuButton} collapsable={false}>
-          <HeaderButton colors={colors} compact={false} icon="Ellipsis" label="Bot actions" onPress={openMenu} />
+          <HeaderButton colors={colors} compact={false} icon="Ellipsis" label={t("sidebar.botActions")} onPress={openMenu} />
         </View>
       )}
       <View style={{ flex: 1 }} />
       {compact ? (
         <View ref={menuButton} collapsable={false}>
-          <HeaderButton colors={colors} compact icon="Ellipsis" label="Bot actions" onPress={openMenu} />
+          <HeaderButton colors={colors} compact icon="Ellipsis" label={t("sidebar.botActions")} onPress={openMenu} />
         </View>
       ) : null}
-      {onFind ? <HeaderButton colors={colors} compact={compact} icon="Search" label="Find in chat" onPress={onFind} /> : null}
+      {onFind ? <HeaderButton colors={colors} compact={compact} icon="Search" label={t("chat.pane.findInChat")} onPress={onFind} /> : null}
       {/* On desktop the open panel owns its close button, so the toggle hides (workspace-explorer-toggle.tsx). */}
       {compact || !panelOpen ? (
-        <HeaderButton colors={colors} compact={compact} icon="PanelRight" label="Show bot settings" expanded={panelOpen} onPress={onTogglePanel} />
+        <HeaderButton colors={colors} compact={compact} icon="PanelRight" label={t("chat.pane.showBotSettings")} expanded={panelOpen} onPress={onTogglePanel} />
       ) : null}
     </View>
   );

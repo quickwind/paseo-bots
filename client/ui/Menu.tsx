@@ -2,6 +2,7 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon, Modal } from "@getpaseo/plugin/client/react-native";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ActivityIndicator, Platform, Pressable, Text, View, type LayoutRectangle } from "react-native";
+import { useT } from "../i18n/use-t";
 import { nativeTokens, useHover } from "../native";
 import { ui } from "../typography";
 
@@ -125,6 +126,7 @@ export function MenuProvider({ colors, compact, children }: { colors: Colors; co
 }
 
 function Popover({ colors, spec, origin, onClose }: { colors: Colors; spec: MenuSpec; origin: LayoutRectangle; onClose(): void }) {
+  const { t } = useT();
   const tokens = nativeTokens(colors);
   const [height, setHeight] = useState(0);
   const width = spec.width ?? 220;
@@ -135,7 +137,7 @@ function Popover({ colors, spec, origin, onClose }: { colors: Colors; spec: Menu
   const top = height && below + height > origin.height - 8 ? Math.max(8, anchor.y - height - 4) : below;
   return (
     <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000 }}>
-      <Pressable accessibilityLabel="Close menu" onPress={onClose} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
+      <Pressable accessibilityLabel={t("common.closeMenu")} onPress={onClose} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
       <View
         accessibilityRole="menu"
         onLayout={(event) => setHeight(event.nativeEvent.layout.height)}

@@ -1,33 +1,20 @@
-export type SkillSource =
-  | { kind: "raw"; url: string }
-  | { kind: "github"; owner: string; repo: string; ref: string | null; path: string };
+import { englishTranslate, type Translate } from "./translate";
 
-const trimSlashes = (path: string) => path.replace(/^\/+|\/+$/g, "");
+/** An absolute path on this computer: `/…`, `~`, a Windows drive (`C:\…`) or a UNC path (`\\server\…`). */
+const LOCAL_FOLDER = /^(\/|~([\\/]|$)|[A-Za-z]:[\\/]|\\\\)/;
 
-/** Accepts "owner/repo", "owner/repo/path", github.com URLs (repo, tree, blob) and raw SKILL.md URLs. */
-export function parseSkillSource(input: string): SkillSource {
-  const source = input.trim();
-  if (/^https?:\/\//i.test(source)) {
-    const url = new URL(source);
-    if (url.hostname === "github.com") {
-      const [owner, repo, mode, ref, ...rest] = trimSlashes(url.pathname).split("/");
-      if (!owner || !repo) throw new Error("That GitHub URL doesn't name a repository.");
-      if (mode === "blob" || mode === "tree") {
-        let path = rest.join("/");
-        if (mode === "blob") path = path.replace(/\/?SKILL\.md$/i, "");
-        return { kind: "github", owner, repo: repo.replace(/\.git$/, ""), ref: ref ?? null, path };
-      }
-      return { kind: "github", owner, repo: repo.replace(/\.git$/, ""), ref: null, path: "" };
-    }
-    if (/SKILL\.md$/i.test(url.pathname)) return { kind: "raw", url: source };
-    throw new Error("Use a GitHub repository, a GitHub folder, or a link to a SKILL.md file.");
+/** Whether a skill's source is a folder on this computer, which an update can read again without a network. */
+export function isLocalFolder(source: string): boolean {
+  return LOCAL_FOLDER.test(source.trim());
+}
+
+/** The folder a skill import reads from. Skills come from this computer only, never from the network. */
+export function parseSkillFolder(input: string, t: Translate = englishTranslate): string {
+  const folder = input.trim();
+  if (!isLocalFolder(folder)) {
+    throw new Error(t("library.skillFolderPath"));
   }
-  const parts = trimSlashes(source).split("/");
-  if (parts.length < 2 || parts.some((part) => !/^[A-Za-z0-9._-]+$/.test(part))) {
-    throw new Error('Use "owner/repo", "owner/repo/path/to/skill" or a GitHub URL.');
-  }
-  const [owner, repo, ...rest] = parts;
-  return { kind: "github", owner: owner!, repo: repo!, ref: null, path: rest.join("/").replace(/\/?SKILL\.md$/i, "") };
+  return folder;
 }
 
 /** Reads `name` and `description` from SKILL.md frontmatter. */
@@ -74,15 +61,17 @@ export function expandLearn(text: string): string | null {
 }
 
 /**
- * Things worth a second look before a skill reaches a bot, as OpenMausBot's
- * scanSkillText flags them. They warn; the user decides.
+ * Things worth a second look before a skill reaches a bot. They warn; the user decides.
+ *
+ * Adapted from OpenMausBot's scanSkillText (shared/skill-md.ts; Apache License 2.0, Copyright 2026 Milind Soni and OpenMausBot
+ * contributors; see NOTICE and licenses/Apache-2.0.txt). Changed here: different thresholds and wording, two more checks.
  */
-export function scanSkillText(text: string): string[] {
+export function scanSkillText(text: string, t: Translate = englishTranslate): string[] {
   const warnings: string[] = [];
-  if (/[A-Za-z0-9+/]{400,}={0,2}/.test(text)) warnings.push("It contains a long encoded blob that could hide instructions or a program.");
-  if (/\b(curl|wget)\b[^\n|]*\|\s*(sudo\s+)?(ba|z)?sh\b/.test(text)) warnings.push("It pipes a download straight into a shell.");
-  if (/[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/.test(text)) warnings.push("It contains invisible characters, which can hide text from you.");
-  if (/\b(ignore|disregard)\b[^\n]{0,30}\b(previous|prior|above|all)\b[^\n]{0,20}\binstructions\b/i.test(text)) warnings.push("It tells the bot to ignore its other instructions.");
-  if (/\b(rm\s+-rf\s+[~/]|mkfs\b|dd\s+if=)/.test(text)) warnings.push("It includes commands that can erase data.");
+  if (/[A-Za-z0-9+/]{400,}={0,2}/.test(text)) warnings.push(t("library.warnEncodedBlob"));
+  if (/\b(curl|wget)\b[^\n|]*\|\s*(sudo\s+)?(ba|z)?sh\b/.test(text)) warnings.push(t("library.warnPipeToShell"));
+  if (/[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/.test(text)) warnings.push(t("library.warnInvisible"));
+  if (/\b(ignore|disregard)\b[^\n]{0,30}\b(previous|prior|above|all)\b[^\n]{0,20}\binstructions\b/i.test(text)) warnings.push(t("library.warnIgnore"));
+  if (/\b(rm\s+-rf\s+[~/]|mkfs\b|dd\s+if=)/.test(text)) warnings.push(t("library.warnErase"));
   return warnings;
 }

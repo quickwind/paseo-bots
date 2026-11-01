@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { McpServerConfig, McpTool } from "../shared/bot";
+import { isRemoteMcp, type McpServerConfig, type McpTool } from "../shared/bot";
 import { PLUGIN_VERSION } from "../shared/version";
 
 // Connects to an MCP server the way an agent would, lists its tools and
@@ -23,7 +23,7 @@ interface JsonRpcResponse {
 type Request = (method: string, params?: unknown) => Promise<unknown>;
 type Notify = (method: string) => Promise<void>;
 
-const initializeParams = { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "paseo-bots", version: PLUGIN_VERSION } };
+const initializeParams = { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "aydo", version: PLUGIN_VERSION } };
 
 async function listTools(request: Request, notify: Notify): Promise<McpTool[]> {
   await request("initialize", initializeParams);
@@ -67,6 +67,9 @@ function probeStdio(config: Extract<McpServerConfig, { type: "stdio" }>, signal:
       settled = true;
       signal.removeEventListener("abort", onAbort);
       child.kill();
+      // Requests still waiting for an answer that will not come.
+      for (const waiter of pending.values()) waiter.reject(error ?? new Error("The probe is finished."));
+      pending.clear();
       if (error) reject(error);
       else resolve(tools ?? []);
     };
@@ -74,6 +77,8 @@ function probeStdio(config: Extract<McpServerConfig, { type: "stdio" }>, signal:
     signal.addEventListener("abort", onAbort);
 
     child.on("error", (error) => finish(new Error(`Couldn't start "${config.command}": ${error.message}`)));
+    // A write to a server that has closed its input (EPIPE) is reported on stdin; without a listener it would be an uncaught exception.
+    child.stdin.on("error", (error) => finish(new Error(`The server stopped reading its input: ${error.message}.${lastLine(stderr)}`)));
     child.on("exit", (code) => finish(new Error(`The server exited${code === null ? "" : ` with code ${code}`} before answering.${lastLine(stderr)}`)));
     child.stderr.on("data", (chunk: Buffer) => {
       stderr = (stderr + chunk.toString("utf8")).slice(-4000);
@@ -256,6 +261,9 @@ function redact(text: string, config: McpServerConfig): string {
 }
 
 export async function probeMcpServer({ config }: { config: McpServerConfig }): Promise<ProbeResult> {
+  // This plugin makes no network connections. A remote server is the agent's to connect to, so it is
+  // never tested from here.
+  if (isRemoteMcp(config)) return { ok: false, error: "This server is at a remote address. The agent connects to it; this plugin does not, so it can't test it." };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {

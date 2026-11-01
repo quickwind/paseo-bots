@@ -7,6 +7,7 @@ import { fieldStateStyle, multilineStyle } from "../theme";
 import { code, ui } from "../typography";
 import { measureAnchor } from "../ui/Menu";
 import { tooltip } from "../ui/Tooltip";
+import { useT } from "../i18n/use-t";
 
 // Paseo primitives the plugin SDK doesn't hand out, rebuilt from their source:
 // Button (components/ui/button.tsx), FormTextInput (form-field.tsx), SettingsTextArea
@@ -230,6 +231,7 @@ export function InputField({ colors, label, hint, error, initialValue, monospace
 
 /** Paseo's SearchField: 6/12 padding, radius 6, focus lifts to surface2 + borderAccent, clear X. */
 export function SearchField({ colors, value, onChangeText, placeholder }: { colors: Colors; value: string; onChangeText(text: string): void; placeholder: string }) {
+  const { t } = useT();
   const [focused, setFocused] = useState(false);
   const tokens = nativeTokens(colors);
   return (
@@ -262,7 +264,7 @@ export function SearchField({ colors, value, onChangeText, placeholder }: { colo
         style={{ flex: 1, minWidth: 0, padding: 0, height: 20, fontSize: ui(14), color: colors.foreground, outlineWidth: 0 }}
       />
       {value.length > 0 ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="Clear search" {...tooltip("Clear search")} hitSlop={8} onPress={() => onChangeText("")}>
+        <Pressable accessibilityRole="button" accessibilityLabel={t("panel.clearSearch")} {...tooltip(t("panel.clearSearch"))} hitSlop={8} onPress={() => onChangeText("")}>
           <Icon name="X" size={14} color={colors.foregroundMuted} />
         </Pressable>
       ) : null}
@@ -429,16 +431,17 @@ export function DrillRow({ colors, label, hint, error, trailing, onPress, hintLi
  * when open) and the medium-weight label. Settings people rarely need wait behind it.
  */
 export function AdvancedToggle({ colors, open, onToggle }: { colors: Colors; open: boolean; onToggle(): void }) {
+  const { t } = useT();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={open ? "Hide advanced" : "Show advanced"}
+      accessibilityLabel={open ? t("panel.hideAdvanced") : t("panel.showAdvanced")}
       accessibilityState={{ expanded: open }}
       onPress={onToggle}
       style={{ flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start", paddingVertical: 4, marginBottom: open ? 16 : 0 }}
     >
       <Icon name={open ? "ChevronDown" : "ChevronRight"} size={16} color={colors.foregroundMuted} />
-      <Text style={{ fontSize: ui(14), fontWeight: "500", color: colors.foreground }}>Advanced</Text>
+      <Text style={{ fontSize: ui(14), fontWeight: "500", color: colors.foreground }}>{t("panel.advanced")}</Text>
     </Pressable>
   );
 }

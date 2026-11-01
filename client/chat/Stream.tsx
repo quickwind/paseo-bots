@@ -25,9 +25,11 @@ import type { ChatState } from "../useChat";
 import { PermissionCard } from "./Permission";
 import { FindBar } from "./FindBar";
 import { buildRows, findRows, layoutStream, retainLayout, type StreamEntry, type StreamLayout, type StreamLayoutItem, type StreamRow } from "./stream/model";
+import { nextFollow } from "./follow";
 import { CompletedTurnFooter, RowContent, RowFrame, WorkingIndicator, type RowContext } from "./stream/rows";
 import { SecondaryButton } from "./stream/ui";
 import { tooltip } from "../ui/Tooltip";
+import { useT } from "../i18n/use-t";
 
 type Colors = PluginTheme["colors"];
 
@@ -83,6 +85,10 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
 
   const [nearBottom, setNearBottom] = useState(true);
   const nearBottomRef = useRef(true);
+  /** Whether new messages scroll into view: on until the reader scrolls up (see follow.ts). */
+  const followRef = useRef(true);
+  /** Until when a scroll event is the app's own (scrolling to the end), not the reader's. */
+  const programmaticUntil = useRef(0);
   const metrics = useRef({ offset: 0, content: 0, viewport: 0 });
   /** Set while an older page loads on web, so content added above doesn't move the reader. */
   const olderAnchor = useRef(false);
@@ -93,11 +99,23 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
     setNearBottom((current) => (current === value ? current : value));
   };
 
+  /** Scrolls to the end, and once more a frame later: a windowed list measures rows it had not drawn yet and grows. */
+  const scrollEnd = (animated: boolean) => {
+    programmaticUntil.current = Date.now() + 400;
+    list.current?.scrollToEnd({ animated });
+    if (!animated) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: false }));
+  };
+
   const scrollToBottom = useCallback(
     (animated: boolean) => {
+      followRef.current = true;
       updateNearBottom(true);
       if (inverted) list.current?.scrollToOffset({ offset: 0, animated });
-      else list.current?.scrollToEnd({ animated });
+      else {
+        programmaticUntil.current = Date.now() + 400;
+        list.current?.scrollToEnd({ animated });
+        if (!animated) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: false }));
+      }
     },
     [inverted],
   );
@@ -112,9 +130,23 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
 
   const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const before = metrics.current;
     metrics.current = { offset: contentOffset.y, content: contentSize.height, viewport: layoutMeasurement.height };
     const distance = inverted ? contentOffset.y : contentSize.height - (contentOffset.y + layoutMeasurement.height);
-    updateNearBottom(distance <= (inverted ? NATIVE_NEAR_BOTTOM : WEB_NEAR_BOTTOM));
+    if (inverted) updateNearBottom(distance <= NATIVE_NEAR_BOTTOM);
+    else {
+      followRef.current = nextFollow({
+        follow: followRef.current,
+        distance,
+        offset: contentOffset.y,
+        previousOffset: before.offset,
+        content: contentSize.height,
+        previousContent: before.content,
+        programmatic: Date.now() < programmaticUntil.current,
+        threshold: WEB_NEAR_BOTTOM,
+      });
+      updateNearBottom(followRef.current || distance <= WEB_NEAR_BOTTOM);
+    }
     maybeLoadOlder();
   };
 
@@ -134,12 +166,12 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
       }
       return;
     }
-    if (nearBottomRef.current && height !== previous) list.current?.scrollToEnd({ animated: false });
+    if (followRef.current && height !== previous) scrollEnd(false);
   };
 
   const onLayout = (event: LayoutChangeEvent) => {
     metrics.current.viewport = event.nativeEvent.layout.height;
-    if (!inverted && nearBottomRef.current) list.current?.scrollToEnd({ animated: false });
+    if (!inverted && followRef.current) scrollEnd(false);
   };
 
   useEffect(() => {
@@ -224,7 +256,7 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
       compact,
       cwd: cwd ?? undefined,
       attachmentsFor: (row) => {
-        const found = sentAttachments(row);
+        const found = sentAttachments(row, botId ?? null);
         return found.length > 0 ? found : EMPTY_ATTACHMENTS;
       },
       openChat: onOpenChat,
@@ -340,6 +372,7 @@ const StreamItem = memo(function StreamItem({ item, context, typeVersion }: { it
 
 /** view.tsx scroll-to-bottom: 48 round surface2 button with ChevronDown 24, fading in and out. */
 function ScrollToBottomButton({ colors, visible, onPress }: { colors: Colors; visible: boolean; onPress(): void }) {
+  const { t } = useT();
   const opacity = useRef(new Animated.Value(visible ? 1 : 0)).current;
   const [mounted, setMounted] = useState(visible);
   useEffect(() => {
@@ -360,8 +393,8 @@ function ScrollToBottomButton({ colors, visible, onPress }: { colors: Colors; vi
       <Animated.View style={{ opacity }}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Scroll to bottom"
-          {...tooltip("Scroll to bottom")}
+          accessibilityLabel={t("chat.stream.scrollToBottom")}
+          {...tooltip(t("chat.stream.scrollToBottom"))}
           onPress={onPress}
           style={{
             width: 48,
@@ -386,6 +419,7 @@ function ScrollToBottomButton({ colors, visible, onPress }: { colors: Colors; vi
 
 /** agent-panel.tsx TimelineSyncErrorCallout. */
 function SyncErrorCallout({ colors, retrying, onRetry }: { colors: Colors; retrying: boolean; onRetry(): void }) {
+  const { t } = useT();
   return (
     <View style={{ width: "100%", alignItems: "center", paddingHorizontal: 16, paddingTop: 8 }}>
       <View style={{ width: "100%", maxWidth: CONTENT_MAX_WIDTH }}>
@@ -403,8 +437,8 @@ function SyncErrorCallout({ colors, retrying, onRetry }: { colors: Colors; retry
             paddingHorizontal: 16,
           }}
         >
-          <Text style={{ color: colors.foregroundMuted, fontSize: ui(14) }}>Couldn't refresh agent history.</Text>
-          <SecondaryButton colors={colors} label={retrying ? "Retrying…" : "Retry"} disabled={retrying} onPress={onRetry} />
+          <Text style={{ color: colors.foregroundMuted, fontSize: ui(14) }}>{t("chat.stream.syncError")}</Text>
+          <SecondaryButton colors={colors} label={retrying ? t("chat.stream.retrying") : t("chat.stream.retry")} disabled={retrying} onPress={onRetry} />
         </View>
       </View>
     </View>
@@ -416,6 +450,7 @@ function SyncErrorCallout({ colors, retrying, onRetry }: { colors: Colors; retry
  * plugin API can't unarchive an agent, so the callout only says so.
  */
 function ArchivedCallout({ colors, compact }: { colors: Colors; compact: boolean }) {
+  const { t } = useT();
   return (
     <View style={{ width: "100%", alignItems: "center", paddingHorizontal: 16, paddingTop: 16 }}>
       <View style={{ width: "100%", maxWidth: CONTENT_MAX_WIDTH }}>
@@ -433,7 +468,7 @@ function ArchivedCallout({ colors, compact }: { colors: Colors; compact: boolean
             paddingHorizontal: compact ? 16 : 24,
           }}
         >
-          <Text style={{ color: colors.foregroundMuted, fontSize: ui(14) }}>This agent is archived</Text>
+          <Text style={{ color: colors.foregroundMuted, fontSize: ui(14) }}>{t("chat.stream.archived")}</Text>
         </View>
       </View>
     </View>

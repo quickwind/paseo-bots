@@ -1,4 +1,5 @@
-import { lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { newMemory } from "../shared/memory-maintenance";
 import { dirname, join, relative, sep } from "node:path";
 import { z } from "zod";
 import { BotMcpServerSchema, BotSchema, botMcpServers, botSkills, newBotId, newRoutineId, TeamFileTeamSchema, type Bot, type BotGroup, type BotMcpServer, type Library, type TeamFileTeam } from "../shared/bot";
@@ -6,9 +7,7 @@ import { sanitizeSkillName } from "../shared/skills";
 import { botDataPath } from "./bot-home";
 import { librarySkillPath, type ImportedSkill } from "./library";
 
-const FORMAT = "paseo-bots";
-/** Files exported before the plugin was renamed. */
-const FORMATS = z.enum([FORMAT, "paseo-bot"]);
+const FORMAT = "aydo";
 const MAX_FILES = 400;
 
 const BotFields = BotSchema.pick({
@@ -29,7 +28,7 @@ const SharedSkillSchema = z.object({ id: z.string(), description: z.string().def
 
 /** v2: skills and MCP servers travel next to the bot and join the importer's library. */
 const ExportV2Schema = z.object({
-  format: FORMATS,
+  format: z.literal(FORMAT),
   version: z.literal(2),
   bot: BotFields,
   skills: z.array(SharedSkillSchema).default([]),
@@ -39,7 +38,7 @@ const ExportV2Schema = z.object({
 
 /** v1 kept MCP servers and skills on the bot. */
 const ExportV1Schema = z.object({
-  format: FORMATS,
+  format: z.literal(FORMAT),
   version: z.literal(1),
   bot: BotFields.extend({
     mcpServers: z.array(BotMcpServerSchema).default([]),
@@ -69,7 +68,9 @@ async function collect(root: string, include: (path: string) => boolean): Promis
     for (const name of names) {
       if (Object.keys(files).length >= MAX_FILES) return;
       const path = join(dir, name);
-      const info = await stat(path);
+      // A link is skipped: it could lead to a file outside the folder (a key, say) that would end up in the export.
+      const info = await lstat(path);
+      if (info.isSymbolicLink()) continue;
       if (info.isDirectory()) await walk(path);
       else {
         const key = relative(root, path).split(sep).join("/");
@@ -119,12 +120,12 @@ function parseExport(json: string): z.infer<typeof ExportV2Schema> {
   try {
     raw = JSON.parse(json);
   } catch {
-    throw new Error("That isn't a paseo-bots export.");
+    throw new Error("That isn't a Aydo export.");
   }
   const v2 = ExportV2Schema.safeParse(raw);
   if (v2.success) return v2.data;
   const v1 = ExportV1Schema.safeParse(raw);
-  if (!v1.success) throw new Error("That isn't a paseo-bots export.");
+  if (!v1.success) throw new Error("That isn't a Aydo export.");
   const { mcpServers, skills, ...bot } = v1.data.bot;
   return {
     format: FORMAT,
@@ -174,11 +175,11 @@ export async function importBot({ botId, json }: { botId: string; json: string }
     alwaysAllow: [],
     skillIds: skills.map((skill) => skill.id),
     mcpServerIds: [],
-    apps: [],
-    appRules: {},
     voice: { name: null, readReplies: false },
     // Contact with other bots starts at asking, as on a new bot.
     contactBots: "ask",
+    // Memory upkeep starts as on a new bot of this provider.
+    memory: newMemory(parsed.bot.provider),
     routines: parsed.bot.routines.map((routine) => ({ ...routine, id: newRoutineId(), enabled: false, resultsChatId: null, createdAt: now })),
     pinned: false,
     archived: false,
@@ -190,7 +191,7 @@ export async function importBot({ botId, json }: { botId: string; json: string }
 
 // ---------------------------------------------------------------- team files
 
-const TEAM_FORMAT = "paseo-bots-team";
+const TEAM_FORMAT = "aydo-team";
 const MAX_TEAM = 50;
 
 const TeamSchema = z.object({ format: z.literal(TEAM_FORMAT), version: z.literal(1), bots: z.array(z.unknown()).min(1).max(MAX_TEAM), teams: z.array(TeamFileTeamSchema).max(MAX_TEAM).default([]) });

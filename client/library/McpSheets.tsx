@@ -10,6 +10,7 @@ import { PASEO_MCP_NAME } from "../../shared/paseo-tools";
 import { mcpSourcesRpc } from "../../shared/rpc";
 import { Button, FormTextArea, InputField, SheetFooter, TextAreaField } from "../panel/controls";
 import { ui } from "../typography";
+import { useT } from "../i18n/use-t";
 
 type Colors = PluginTheme["colors"];
 
@@ -18,7 +19,6 @@ export type McpDraft = Pick<LibraryMcpServer, "name" | "description" | "config">
 
 export const BLANK_SERVER: McpDraft = { name: "", description: "", config: { type: "stdio", command: "", args: [], env: {} } };
 
-const URL_PATTERN = /^https?:\/\/\S+$/i;
 
 interface ServerSheetProps {
   colors: Colors;
@@ -32,6 +32,7 @@ interface ServerSheetProps {
 
 /** Adds or edits one MCP server: name, how to start or reach it, and its env vars or headers. */
 export function ServerSheet({ colors, initial, isNew, otherNames, onClose, onSave }: ServerSheetProps) {
+  const { t } = useT();
   const [server, setServer] = useState<McpDraft>(() => JSON.parse(JSON.stringify(initial)) as McpDraft);
   const { config } = server;
   const [pairsText, setPairsText] = useState(() => formatPairs(config.type === "stdio" ? config.env : config.headers));
@@ -48,46 +49,46 @@ export function ServerSheet({ colors, initial, isNew, otherNames, onClose, onSav
   const nameError = !name
     ? null
     : !MCP_NAME.test(name)
-      ? "Use letters, numbers, dashes and underscores"
+      ? t("library.nameRules")
       : RESERVED_MCP_NAMES.includes(name)
-        ? `"${name}" is taken by ${name === PASEO_MCP_NAME ? "Paseo's own tools" : "connected apps"}`
+        ? t("library.nameTakenBy", { name, owner: name === PASEO_MCP_NAME ? t("library.paseoOwnTools") : t("library.pluginOwnTools") })
         : otherNames.includes(name)
-          ? `"${name}" is already in the library`
+          ? t("library.nameInLibrary", { name })
           : null;
-  const urlError = config.type !== "stdio" && config.url.trim() && !URL_PATTERN.test(config.url.trim()) ? "Use an http:// or https:// URL" : null;
+  const urlError = config.type !== "stdio" && config.url.trim() && !/^https?:\/\/\S+$/i.test(config.url.trim()) ? t("library.urlRules") : null;
   const complete = !!name && (config.type === "stdio" ? !!config.command.trim() : !!config.url.trim());
   const canSave = complete && !nameError && !urlError;
 
   return (
-    <Modal title={isNew ? "New MCP server" : "Edit MCP server"} open onOpenChange={(open) => !open && onClose()}>
+    <Modal title={isNew ? t("library.newMcpServer") : t("library.editMcpServer")} open onOpenChange={(open) => !open && onClose()}>
       <Modal.Content contentContainerStyle={{ gap: 0 }}>
         <View style={{ marginBottom: 24 }}>
           <SettingsCard>
-            <InputField colors={colors} label="Name" hint="Agents see its tools as name/tool" error={nameError} initialValue={server.name} placeholder="gmail" onChangeText={(text) => setServer({ ...server, name: text })} />
-            <InputField colors={colors} label="Description" initialValue={server.description} placeholder="What it's for" onChangeText={(description) => setServer({ ...server, description })} />
+            <InputField colors={colors} label={t("teams.name")} hint={t("library.nameHint")} error={nameError} initialValue={server.name} placeholder="gmail" onChangeText={(text) => setServer({ ...server, name: text })} />
+            <InputField colors={colors} label={t("library.description")} initialValue={server.description} placeholder={t("library.descriptionPlaceholder")} onChangeText={(description) => setServer({ ...server, description })} />
             <SettingsSelect
-              label="Transport"
+              label={t("library.transport")}
               value={config.type}
               options={[
-                { label: "Local command (stdio)", value: "stdio" },
-                { label: "Streamable HTTP", value: "http" },
+                { label: t("library.transportStdio"), value: "stdio" },
+                { label: t("library.transportHttp"), value: "http" },
                 { label: "SSE", value: "sse" },
               ]}
               onValueChange={setType}
             />
             {config.type === "stdio" ? (
-              <InputField colors={colors} key="command" label="Command" monospace autoCapitalize="none" autoCorrect={false} initialValue={config.command} placeholder="npx" onChangeText={(command) => setConfig({ ...config, command })} />
+              <InputField colors={colors} key="command" label={t("library.command")} monospace autoCapitalize="none" autoCorrect={false} initialValue={config.command} placeholder="npx" onChangeText={(command) => setConfig({ ...config, command })} />
             ) : (
-              <InputField colors={colors} key={`url-${config.type}`} label="URL" error={urlError} initialValue={config.url} placeholder="https://example.com/mcp" onChangeText={(url) => setConfig({ ...config, url: url.trim() })} />
+              <InputField colors={colors} key={`url-${config.type}`} label={t("library.url")} error={urlError} initialValue={config.url} placeholder="https://mcp.example.com/mcp" onChangeText={(url) => setConfig({ ...config, url: url.trim() })} />
             )}
             {config.type === "stdio" ? (
               <InputField colors={colors}
                 key="args"
-                label="Arguments"
+                label={t("library.arguments")}
                 monospace
                 autoCapitalize="none"
                 autoCorrect={false}
-                hint="Separated by spaces. Quote arguments that contain spaces."
+                hint={t("library.argsHint")}
                 initialValue={joinArgs(config.args)}
                 placeholder="-y @modelcontextprotocol/server-memory"
                 onChangeText={(text) => setConfig({ ...config, args: splitArgs(text) })}
@@ -97,8 +98,8 @@ export function ServerSheet({ colors, initial, isNew, otherNames, onClose, onSav
               key={config.type === "stdio" ? "env" : "headers"}
               colors={colors}
               monospace
-              label={config.type === "stdio" ? "Environment" : "Headers"}
-              hint="KEY=value, one per line"
+              label={config.type === "stdio" ? t("library.environment") : t("library.headers")}
+              hint={t("library.pairsHint")}
               value={pairsText}
               onChangeText={(text) => {
                 setPairsText(text);
@@ -113,12 +114,12 @@ export function ServerSheet({ colors, initial, isNew, otherNames, onClose, onSav
           </SettingsCard>
         </View>
         <SheetFooter>
-          <Button colors={colors} size="md" label="Cancel" onPress={onClose} style={{ flex: 1 }} />
+          <Button colors={colors} size="md" label={t("dialogs.cancel")} onPress={onClose} style={{ flex: 1 }} />
           <Button
             colors={colors}
             size="md"
             variant="default"
-            label={isNew ? "Add server" : "Save changes"}
+            label={isNew ? t("library.addServer") : t("routines.saveChanges")}
             disabled={!canSave}
             onPress={() => onSave({ ...server, name, description: server.description.trim() })}
             style={{ flex: 1 }}
@@ -134,22 +135,23 @@ export function ServerSheet({ colors, initial, isNew, otherNames, onClose, onSav
  * Claude Code, Claude Desktop or Cursor on this computer. They arrive off.
  */
 export function ImportSheet({ colors, onClose, onImport }: { colors: Colors; onClose(): void; onImport(servers: BotMcpServer[]): void }) {
+  const { t } = useT();
   const [json, setJson] = useState("");
   const [error, setError] = useState<string | null>(null);
   const readSources = useRpc(mcpSourcesRpc);
-  const sources = useQuery({ queryKey: ["paseo-bots", "mcp-sources"], queryFn: () => readSources({}) });
+  const sources = useQuery({ queryKey: ["aydo", "mcp-sources"], queryFn: () => readSources({}) });
   return (
-    <Modal title="Import MCP servers" open onOpenChange={(open) => !open && onClose()}>
+    <Modal title={t("library.importMcpServers")} open onOpenChange={(open) => !open && onClose()}>
       <Modal.Content contentContainerStyle={{ gap: 0 }}>
         {sources.data?.sources.length ? (
-          <SettingsSection title="On this computer" info="Servers other apps have set up here. Pick one to review its JSON before adding.">
+          <SettingsSection title={t("library.onThisComputer")} info={t("library.onThisComputerInfo")}>
             <SettingsCard>
               {sources.data.sources.map((source) => (
                 <SettingsAction
                   key={source.label}
                   label={source.label}
-                  hint={`${source.count} ${source.count === 1 ? "server" : "servers"}`}
-                  actionLabel="Use"
+                  hint={t("library.serverCount", { count: source.count })}
+                  actionLabel={t("library.use")}
                   onPress={() => {
                     setJson(source.json);
                     setError(null);
@@ -159,11 +161,11 @@ export function ImportSheet({ colors, onClose, onImport }: { colors: Colors; onC
             </SettingsCard>
           </SettingsSection>
         ) : null}
-        <SettingsSection title="JSON" info='Paste {"mcpServers": {...}} from Claude Code, Cursor or a .mcp.json file. Servers arrive switched off until a test connects to them; a name that is already taken gets a number added.'>
+        <SettingsSection title="JSON" info={t("library.jsonInfo")}>
           <FormTextArea
             colors={colors}
             monospace
-            accessibilityLabel="MCP JSON"
+            accessibilityLabel={t("library.mcpJson")}
             value={json}
             onChangeText={(text) => {
               setJson(text);
@@ -181,16 +183,16 @@ export function ImportSheet({ colors, onClose, onImport }: { colors: Colors; onC
           ) : null}
         </SettingsSection>
         <SheetFooter>
-          <Button colors={colors} size="md" label="Cancel" onPress={onClose} style={{ flex: 1 }} />
+          <Button colors={colors} size="md" label={t("dialogs.cancel")} onPress={onClose} style={{ flex: 1 }} />
           <Button
             colors={colors}
             size="md"
             variant="default"
-            label="Add servers"
+            label={t("library.addServers")}
             disabled={!json.trim()}
             onPress={() => {
               try {
-                onImport(parseMcpJson(json));
+                onImport(parseMcpJson(json, t));
               } catch (caught) {
                 setError((caught instanceof Error ? caught.message : String(caught)).replace(/\.$/, ""));
               }

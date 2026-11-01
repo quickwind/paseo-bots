@@ -1,6 +1,8 @@
 // Question requests (AskUserQuestion and friends), ported from Paseo's
 // components/question-form-card-core.ts. Pure, so it's unit tested.
 
+import { englishTranslate, type Translate } from "../../../shared/translate";
+
 export interface QuestionOption {
   label: string;
   description?: string;
@@ -96,6 +98,6 @@ export function shouldSubmitEmptyOnDismiss(questions: QuestionFormQuestion[]): b
   return questions.length > 0 && questions.every((question) => question.allowEmpty && question.options.length === 0);
 }
 
-export function resolveDismissLabel(questions: QuestionFormQuestion[], fallback = "Dismiss"): string {
-  return questions.find((question) => question.dismissLabel)?.dismissLabel ?? fallback;
+export function resolveDismissLabel(questions: QuestionFormQuestion[], t: Translate = englishTranslate): string {
+  return questions.find((question) => question.dismissLabel)?.dismissLabel ?? t("chat.stream.dismiss");
 }

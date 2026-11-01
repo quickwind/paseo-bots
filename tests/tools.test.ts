@@ -17,6 +17,9 @@ describe("tool names and grants", () => {
     expect(botToolName("bots_list_bots")).toBe("list_bots");
     expect(botToolName("mcp__other__ask_bot")).toBeNull();
     expect(botToolName("bots.unknown")).toBeNull();
+    expect(botToolName("mcp__bots__create_workspace")).toBe("create_workspace");
+    expect(botToolName("bots_list_workspaces")).toBe("list_workspaces");
+    expect(botToolName("mcp__bots__assign_bot")).toBe("assign_bot");
   });
 
   it("only sends grants to providers that take exact grants", () => {
@@ -26,7 +29,7 @@ describe("tool names and grants", () => {
     const tools = { type: "http" as const, url: "http://127.0.0.1:1/bots/b/a", headers: {} };
     const claude = buildAgentConfig(makeBot({ alwaysAllow: ["bots/ask_bot"] }), EMPTY_LIBRARY, "m", "", { tools });
     expect(claude.mcpServers).toEqual({ bots: tools });
-    expect(claude.toolPolicy?.preapproved.map((grant) => grant.tool)).toEqual(["list_bots", "check_chat", "search_chats", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app", "ask_bot"]);
+    expect(claude.toolPolicy?.preapproved.map((grant) => grant.tool)).toEqual(["list_bots", "check_chat", "search_chats", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app", "list_workspaces", "create_workspace", "assign_bot", "request_approval", "list_approvals", "withdraw_approval", "ask_bot"]);
     // Paseo refuses a chat whose provider can't take grants, so none are sent.
     expect(buildAgentConfig(makeBot({ provider: "gemini", alwaysAllow: ["bots/ask_bot"] }), EMPTY_LIBRARY, "m", "", { tools })).not.toHaveProperty("toolPolicy");
   });
@@ -49,6 +52,17 @@ describe("tool names and grants", () => {
     expect(proposalIdOf({ name: "mcp__bots__list_bots", status: "completed", detail: { type: "unknown", input: {}, output } })).toBeNull();
   });
 
+  it("finds the proposal behind a finished create_workspace call", () => {
+    const output = [{ type: "text", text: "Proposal p-0123456789: the user sees a new workspace..." }];
+    expect(proposalIdOf({ name: "mcp__bots__create_workspace", status: "completed", detail: { type: "unknown", input: {}, output } })).toBe("p-0123456789");
+    expect(proposalIdOf({ name: "mcp__bots__list_workspaces", status: "completed", detail: { type: "unknown", input: {}, output } })).toBeNull();
+  });
+
+  it("finds the proposal behind a finished assign_bot call that asked the user", () => {
+    const output = [{ type: "text", text: "Proposal p-0123456789: Assignment r-ab12cd34: the user sees your assignment..." }];
+    expect(proposalIdOf({ name: "mcp__bots__assign_bot", status: "completed", detail: { type: "unknown", input: {}, output } })).toBe("p-0123456789");
+  });
+
   it("keeps skill folder names inside the library", () => {
     expect(sanitizeSkillName("..")).toBe("skill");
     expect(sanitizeSkillName(".hidden.")).toBe("hidden");
@@ -63,7 +77,7 @@ describe("tool names and grants", () => {
 describe("the bots MCP server", () => {
   let home: string;
   beforeAll(async () => {
-    home = await mkdtemp(join(tmpdir(), "paseo-bots-tools-"));
+    home = await mkdtemp(join(tmpdir(), "aydo-tools-"));
     process.env.PASEO_HOME = home;
   });
   afterAll(async () => {
@@ -84,11 +98,12 @@ describe("the bots MCP server", () => {
         fetch(url, { method: "POST", headers: { authorization: token, "content-type": "application/json" }, body: JSON.stringify(body) });
 
       const init = (await (await post({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } })).json()) as { result: { serverInfo: { name: string } } };
-      expect(init.result.serverInfo.name).toBe("paseo-bots");
+      expect(init.result.serverInfo.name).toBe("aydo");
       expect((await post({ jsonrpc: "2.0", method: "notifications/initialized" })).status).toBe(202);
 
       const list = (await (await post({ jsonrpc: "2.0", id: 2, method: "tools/list" })).json()) as { result: { tools: { name: string; inputSchema: { type: string } }[] } };
       expect(list.result.tools.map((tool) => tool.name)).toContain("list_bots");
+      expect(list.result.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["list_workspaces", "create_workspace", "assign_bot"]));
       expect(list.result.tools[0]!.inputSchema.type).toBe("object");
 
       const call = (await (await post({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "list_bots", arguments: {} } })).json()) as { result: { content: { text: string }[] } };
@@ -129,5 +144,47 @@ describe("the bots MCP server", () => {
     expect((await dismissProposal(other)).status).toBe("dismissed");
     await expect(acceptProposal(other)).rejects.toThrow("dismissed");
     await expect(acceptProposal("p-0000000000")).rejects.toThrow("no longer available");
+  });
+
+  it("hands an assignment to the asks service, shows the card's proposal, and says why when it is refused", async () => {
+    const { assignBot } = await import("../server/tools/bots");
+    const host = fakeHost([makeBot({ id: "bot-a" })]);
+    const calls: { from: { agentId: string }; args: unknown }[] = [];
+    let reply: { ok: boolean; proposalId: string | null; text: string } = { ok: true, proposalId: null, text: 'Assignment r-1: Scout is starting work in "Login".' };
+    const relay = { asks: { request: async (from: { agentId: string }, args: unknown) => (calls.push({ from, args }), reply) } };
+    const caller = { bot: makeBot({ id: "bot-a" }), agentId: "chat-1", host, relay: relay as never };
+    expect(await assignBot.run({ bot: "Scout", task: "Write notes.md", workspace: "Login" }, caller)).toBe('Assignment r-1: Scout is starting work in "Login".');
+    expect(calls[0]!.args).toEqual({ to: "Scout", message: "Write notes.md", workspace: "Login", assign: true });
+    await assignBot.run({ bot: "Scout", task: "Write notes.md" }, caller);
+    expect(calls[1]!.args).toEqual({ to: "Scout", message: "Write notes.md", assign: true });
+    reply = { ok: true, proposalId: "p-0123456789", text: "Assignment r-2: the user sees your assignment." };
+    expect(await assignBot.run({ bot: "Scout", task: "x" }, caller)).toBe("Proposal p-0123456789: Assignment r-2: the user sees your assignment.");
+    reply = { ok: false, proposalId: null, text: "You are not working in a project workspace. Name the workspace to assign in, or use ask_bot." };
+    await expect(assignBot.run({ bot: "Scout", task: "x" }, caller)).rejects.toThrow("not working in a project workspace");
+    await expect(assignBot.run({ bot: "Scout", task: "x" }, caller)).rejects.toThrow("Ask the user which workspace they mean; do not pick one yourself.");
+    reply = { ok: false, proposalId: null, text: "This chat has asked too many times in the last hour (5). Wait for the user before asking again." };
+    await expect(assignBot.run({ bot: "Scout", task: "x" }, caller)).rejects.not.toThrow("do not pick one yourself");
+    await expect(assignBot.run({ bot: "Scout", task: "x" }, { ...caller, relay: { asks: null } as never })).rejects.toThrow("isn't available");
+  });
+
+  it("offers assign_bot only to a bot that may contact others", async () => {
+    const { assignBot } = await import("../server/tools/bots");
+    const host = fakeHost([makeBot({ id: "bot-a" })]);
+    const caller = (contactBots: "ask" | "allow" | "off") => ({ bot: makeBot({ id: "bot-a", contactBots }), agentId: "chat-1", host, relay: null as never });
+    expect(await assignBot.available!(caller("ask"))).toBe(true);
+    expect(await assignBot.available!(caller("allow"))).toBe(true);
+    expect(await assignBot.available!(caller("off"))).toBe(false);
+  });
+
+  it("lists workspaces and refuses a bad create_workspace request in words the bot can act on", async () => {
+    const { listWorkspacesTool, createWorkspaceTool } = await import("../server/tools/workspaces");
+    const host = fakeHost([makeBot({ id: "bot-a" })]);
+    const entries = [{ id: "wks_1", projectId: "p1", projectDisplayName: "app", projectRootPath: "/work/app", workspaceDirectory: "/work/app-x", name: "x", title: "Login", archivingAt: null }];
+    host.attach({ projects: { list: async () => ({ projects: [] }) }, workspaces: { list: async () => ({ entries }) } } as never);
+    const caller = { bot: makeBot({ id: "bot-a" }), agentId: newUuid(), host, relay: null as never };
+    expect(await listWorkspacesTool.run({}, caller)).toBe("- Login (id wks_1) in app: /work/app-x");
+    host.attach({ projects: { list: async () => ({ projects: [] }) }, workspaces: { list: async () => ({ entries: [] }) } } as never);
+    expect(await listWorkspacesTool.run({}, caller)).toBe("There are no workspaces.");
+    await expect(createWorkspaceTool.run({ project: "app", title: "Login", worktree: false, branch: "x" }, caller)).rejects.toThrow(/worktree/);
   });
 });

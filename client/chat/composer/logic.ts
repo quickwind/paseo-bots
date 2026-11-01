@@ -1,6 +1,7 @@
 // Pure composer logic, mirroring Paseo's composer (packages/app/src/composer). No React
 // Native imports here so it can be unit tested.
 import type { ComposerAttachment } from "../../../shared/attachments";
+import { englishTranslate, type Translate } from "../../../shared/translate";
 
 // ---------------------------------------------------------------- send behaviour
 
@@ -53,11 +54,14 @@ export function resolvePrimaryAction(input: { hasContent: boolean; running: bool
 }
 
 /** input/labels.ts resolveSubmitAccessibilityLabel with Paseo's English strings. */
-export function submitAccessibilityLabel(input: { canPressLoading: boolean; behavior: SendBehavior; running: boolean }): string {
-  if (input.canPressLoading) return "Interrupt agent";
-  if (input.behavior === "queue" && input.running) return "Queue message";
-  if (input.running) return input.behavior === "steer" ? "Send and steer" : "Send and interrupt";
-  return "Send message";
+export function submitAccessibilityLabel(
+  input: { canPressLoading: boolean; behavior: SendBehavior; running: boolean },
+  t: Translate = englishTranslate,
+): string {
+  if (input.canPressLoading) return t("chat.composer.interruptAgent");
+  if (input.behavior === "queue" && input.running) return t("chat.composer.queueMessage");
+  if (input.running) return input.behavior === "steer" ? t("chat.composer.sendAndSteer") : t("chat.composer.sendAndInterrupt");
+  return t("chat.composer.sendMessage");
 }
 
 // ---------------------------------------------------------------- keys
@@ -122,9 +126,12 @@ export function takeQueued(queue: readonly QueuedMessage[], id: string): { item:
   return { item, rest: item ? queue.filter((entry) => entry.id !== id) : [...queue] };
 }
 
-/** Whether the next queued message should go out now: the agent is idle and nothing is in flight. */
-export function shouldDrainQueue(input: { running: boolean; queued: number; inFlight: boolean; hasAgent: boolean }): boolean {
-  return input.hasAgent && !input.running && input.queued > 0 && !input.inFlight;
+/**
+ * Whether the next queued message should go out now: the agent is idle and nothing is in flight.
+ * `statusKnown`: the chat's status has loaded. A reopened chat reads as idle until then, even if it is still working.
+ */
+export function shouldDrainQueue(input: { running: boolean; queued: number; inFlight: boolean; hasAgent: boolean; statusKnown: boolean }): boolean {
+  return input.hasAgent && input.statusKnown && !input.running && input.queued > 0 && !input.inFlight;
 }
 
 // ---------------------------------------------------------------- drafts

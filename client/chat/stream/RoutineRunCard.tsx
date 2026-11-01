@@ -5,19 +5,37 @@ import type { RoutineRunCard as RunCard } from "../../../shared/rpc";
 import { relativeTime } from "../../../shared/time";
 import { StatusBadge, type BadgeVariant } from "../../panel/controls";
 import { ui } from "../../typography";
+import { useT } from "../../i18n/use-t";
+import type { Translate } from "../../../shared/translate";
 import { CardButton } from "./ui";
 
 type Colors = PluginTheme["colors"];
 
-const STATUS: Record<RunCard["status"], { label: string; variant: BadgeVariant }> = {
-  running: { label: "Running", variant: "muted" },
-  succeeded: { label: "Done", variant: "success" },
-  failed: { label: "Failed", variant: "error" },
-  "skipped-busy": { label: "Skipped", variant: "muted" },
-  "skipped-missed": { label: "Missed", variant: "warning" },
-};
+function statusOf(t: Translate, status: RunCard["status"]): { label: string; variant: BadgeVariant } {
+  switch (status) {
+    case "running":
+      return { label: t("routines.running"), variant: "muted" };
+    case "succeeded":
+      return { label: t("text.bucket.done"), variant: "success" };
+    case "failed":
+      return { label: t("text.bucket.failed"), variant: "error" };
+    case "skipped-busy":
+      return { label: t("chat.stream.skipped"), variant: "muted" };
+    case "skipped-missed":
+      return { label: t("routines.statusMissed"), variant: "warning" };
+  }
+}
 
-const TRIGGER: Record<RunCard["trigger"], string> = { schedule: "on schedule", manual: "run by you", webhook: "from its webhook" };
+function triggerLabel(t: Translate, trigger: RunCard["trigger"]): string {
+  switch (trigger) {
+    case "schedule":
+      return t("routines.onSchedule");
+    case "manual":
+      return t("routines.byYou");
+    case "webhook":
+      return t("routines.fromWebhook");
+  }
+}
 
 /**
  * A routine run's result in the chat the routine reports to (OpenMausBot's
@@ -25,7 +43,8 @@ const TRIGGER: Record<RunCard["trigger"], string> = { schedule: "on schedule", m
  * when the run ends. `onOpenChat` is only there where the app can navigate.
  */
 export function RoutineRunCard({ colors, card, onOpenChat }: { colors: Colors; card: RunCard; onOpenChat?: (agentId: string) => void }) {
-  const status = STATUS[card.status];
+  const { t } = useT();
+  const status = statusOf(t, card.status);
   const agentId = card.agentId;
   return (
     <View style={{ marginVertical: 12, padding: 12, borderRadius: 8, borderWidth: 1, backgroundColor: colors.surface1, borderColor: colors.border, gap: 8 }}>
@@ -36,7 +55,7 @@ export function RoutineRunCard({ colors, card, onOpenChat }: { colors: Colors; c
         </Text>
         <StatusBadge colors={colors} label={status.label} variant={status.variant} />
       </View>
-      <Text style={{ color: colors.foregroundMuted, fontSize: ui(13) }}>{`${new Date(card.scheduledFor).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} · ${TRIGGER[card.trigger]} · ${relativeTime(card.scheduledFor)}`}</Text>
+      <Text style={{ color: colors.foregroundMuted, fontSize: ui(13) }}>{t("cards.routine.runLine", { when: new Date(card.scheduledFor).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), trigger: triggerLabel(t, card.trigger), ago: relativeTime(card.scheduledFor, undefined, t) })}</Text>
       {card.output || card.error ? (
         <Text numberOfLines={6} style={{ color: card.error ? colors.statusDanger : colors.foreground, fontSize: ui(14), lineHeight: 20 }}>
           {card.error ?? card.output}
@@ -44,7 +63,7 @@ export function RoutineRunCard({ colors, card, onOpenChat }: { colors: Colors; c
       ) : null}
       {onOpenChat && agentId ? (
         <View style={{ flexDirection: "row" }}>
-          <CardButton colors={colors} label="Open run" icon="ArrowUpRight" onPress={() => onOpenChat(agentId)} />
+          <CardButton colors={colors} label={t("cards.routine.openRun")} icon="ArrowUpRight" onPress={() => onOpenChat(agentId)} />
         </View>
       ) : null}
     </View>

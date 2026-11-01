@@ -3,6 +3,8 @@
 // memory/log/YYYY-MM-DD.md; the newest line from each chat of the last two days
 // goes into the next chat's prompt.
 
+import { englishTranslate, type Translate } from "./translate";
+
 const REPLY_MAX = 240;
 const TITLE_MAX = 60;
 const MAX_TOOLS = 6;
@@ -20,11 +22,15 @@ export function foldText(text: string, max: number): string {
 /** Hides common credential formats before text is written to disk. */
 export function redactSecrets(text: string): string {
   return text
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted]")
+    .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "[redacted]")
     .replace(/\b(sk|ak|pk|rk)[-_][A-Za-z0-9_-]{16,}/g, "[redacted]")
     .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}/g, "[redacted]")
     .replace(/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "[redacted]")
     .replace(/\bAKIA[0-9A-Z]{16}\b/g, "[redacted]")
-    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{20,}/g, "$1 [redacted]");
+    .replace(/\bAIza[0-9A-Za-z_-]{30,}/g, "[redacted]")
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{20,}/g, "$1 [redacted]")
+    .replace(/\b(password|passwd|secret|api[_-]?key|token)(\s*[=:]\s*)(?!\[redacted\])[^\s,;]{4,}/gi, "$1$2[redacted]");
 }
 
 /** "mcp__bots__ask_bot" and "bots.ask_bot" read as "bots/ask_bot"; built-in tools keep their names. */
@@ -66,15 +72,16 @@ export function localTime(date: Date): string {
 }
 
 /**
- * One daily-log line: "- 09:05 · from chat "Title" · reply [tools: a, b]".
- * Null for a turn that finished without saying anything.
+ * One daily-log line: "- 09:05 · from chat "Title" · [meta] reply [tools: a, b]".
+ * Null for a turn that finished without saying anything (a stopped turn is still logged).
  */
-export function logLine(input: { at: Date; chat: string; reply: string; tools: readonly string[]; failure?: string | null }): string | null {
+export function logLine(input: { at: Date; chat: string; reply: string; tools: readonly string[]; failure?: string | null; meta?: string; stopped?: boolean }): string | null {
   const reply = foldText(redactSecrets(input.reply), REPLY_MAX);
   const failure = input.failure ? `(turn failed: ${foldText(input.failure, 120)})` : "";
-  if (!reply && !failure) return null;
+  if (!reply && !failure && !input.stopped) return null;
   const tools = input.tools.length ? `[tools: ${input.tools.join(", ")}]` : "";
-  const text = [reply, tools, failure].filter(Boolean).join(" ");
+  // Where, who drove the turn and how it ended go in a leading bracket, inside the text part, so older readers still parse the line.
+  const text = [input.meta ? `[${input.meta}]` : "", reply, tools, failure].filter(Boolean).join(" ");
   return `- ${localTime(input.at)} · from chat "${foldText(input.chat.replace(/"/g, "'"), TITLE_MAX)}" · ${text}`;
 }
 
@@ -99,6 +106,12 @@ export function parseLog(day: string, text: string): LogEntry[] {
   return entries;
 }
 
+/** A log line's leading "[where · who · how]" and the rest of its text. */
+function splitMeta(text: string): { meta: string; rest: string } {
+  const match = /^\[([^\]]*)\]\s*(.*)$/s.exec(text);
+  return match ? { meta: match[1]!, rest: match[2]! } : { meta: "", rest: text };
+}
+
 function dayLabel(at: Date, now: Date): string {
   const today = localDay(now);
   const yesterday = localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
@@ -114,15 +127,16 @@ export function recentWork(entries: readonly LogEntry[], now: Date): string[] {
   const since = now.getTime() - BRIEF_HOURS * 3_600_000;
   const newest = new Map<string, LogEntry>();
   for (const entry of entries) {
-    if (entry.at.getTime() < since || entry.text.startsWith("(turn failed")) continue;
+    if (entry.at.getTime() < since || splitMeta(entry.text).rest.startsWith("(turn failed") || !splitMeta(entry.text).rest) continue;
     const seen = newest.get(entry.chat);
     if (!seen || seen.at <= entry.at) newest.set(entry.chat, entry);
   }
   const lines: string[] = [];
   let length = 0;
   for (const entry of [...newest.values()].sort((a, b) => b.at.getTime() - a.at.getTime())) {
-    const said = foldText(entry.text.replace(/\s*\[tools: [^\]]*\]/, ""), BRIEF_QUOTE_MAX);
-    const line = `- ${whenLabel(entry.at, now)} · "${entry.chat}" · you said: "${said}"`;
+    const { meta, rest } = splitMeta(entry.text);
+    const said = foldText(rest.replace(/\s*\[tools: [^\]]*\]/, ""), BRIEF_QUOTE_MAX);
+    const line = `- ${whenLabel(entry.at, now)} · "${entry.chat}"${meta ? ` · [${meta}]` : ""} · you said: "${said}"`;
     if (lines.length >= BRIEF_LINES || length + line.length > BRIEF_CHARS) break;
     lines.push(line);
     length += line.length + 1;
@@ -189,33 +203,32 @@ interface JournalRowLike {
   removed: number;
 }
 
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
-
 /** "Scout added 2 lines to MEMORY.md", "You deleted the clients topic" (OpenMausBot's journalSummary). */
-export function journalSummary(row: JournalRowLike, botName: string): string {
-  const who = row.actor === "bot" ? botName : "You";
-  const target = row.file === "MEMORY.md" ? "MEMORY.md" : `the ${row.file.replace(/\.md$/, "")} topic`;
-  if (row.kind === "created") return `${who} created ${target}${row.added ? ` with ${plural(row.added, "line")}` : ""}`;
-  if (row.kind === "deleted") return `${who} deleted ${target}`;
-  if (row.added && !row.removed) return `${who} added ${plural(row.added, "line")} to ${target}`;
-  if (row.removed && !row.added) return `${who} removed ${plural(row.removed, "line")} from ${target}`;
-  return `${who} rewrote ${plural(Math.max(row.added, row.removed), "line")} in ${target}`;
+export function journalSummary(row: JournalRowLike, botName: string, t: Translate = englishTranslate): string {
+  const who = row.actor === "bot" ? botName : t("text.journal.you");
+  const target = row.file === "MEMORY.md" ? "MEMORY.md" : t("text.journal.topic", { name: row.file.replace(/\.md$/, "") });
+  const lines = (count: number) => t("text.journal.lines", { count });
+  if (row.kind === "created") return row.added ? t("text.journal.createdWith", { who, target, lines: lines(row.added) }) : t("text.journal.created", { who, target });
+  if (row.kind === "deleted") return t("text.journal.deleted", { who, target });
+  if (row.added && !row.removed) return t("text.journal.added", { who, target, lines: lines(row.added) });
+  if (row.removed && !row.added) return t("text.journal.removed", { who, target, lines: lines(row.removed) });
+  return t("text.journal.rewrote", { who, target, lines: lines(Math.max(row.added, row.removed)) });
 }
 
 /** Where a change came from. */
-export function journalSource(row: JournalRowLike): string {
-  if (row.via === "undo") return "undo";
-  if (row.via === "disk") return "changed outside the app";
-  if (row.chat) return `from chat "${row.chat.title}"`;
-  return "in the bot's settings";
+export function journalSource(row: JournalRowLike, t: Translate = englishTranslate): string {
+  if (row.via === "undo") return t("text.journal.sourceUndo");
+  if (row.via === "disk") return t("text.journal.sourceDisk");
+  if (row.chat) return t("text.journal.sourceChat", { title: row.chat.title });
+  return t("text.journal.sourceSettings");
 }
 
-/** "Today", "Yesterday" or "Sat, Sep 26" for a log day (YYYY-MM-DD). */
-export function dayName(day: string, now: Date): string {
+/** "Today", "Yesterday" or "Sat, Sep 26" for a log day (YYYY-MM-DD); the date part follows `locale` (the host's when left out). */
+export function dayName(day: string, now: Date, { t = englishTranslate, locale }: { t?: Translate; locale?: string } = {}): string {
   const [year, month, date] = day.split("-").map(Number);
   const at = new Date(year!, month! - 1, date!);
   const label = dayLabel(at, now);
-  if (label === "today") return "Today";
-  if (label === "yesterday") return "Yesterday";
-  return at.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", ...(at.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
+  if (label === "today") return t("text.journal.today");
+  if (label === "yesterday") return t("text.journal.yesterday");
+  return new Intl.DateTimeFormat(locale, { weekday: "short", month: "short", day: "numeric", ...(at.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) }).format(at);
 }

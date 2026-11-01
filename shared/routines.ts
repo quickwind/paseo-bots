@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Routine, RoutineSchedule } from "./bot";
+import { englishTranslate, type Translate } from "./translate";
 
 /** A run missed by more than this is skipped instead of caught up (OpenMausBot uses 12 hours). */
 const CATCH_UP_MS = 12 * 60 * 60 * 1000;
@@ -119,23 +120,21 @@ export function decide(routine: Routine, lastRunAt: string | null, now: Date): R
   return now.getTime() - due.getTime() <= CATCH_UP_MS ? { action: "run", due } : { action: "skip-missed", due };
 }
 
-const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-export function describeSchedule(schedule: RoutineSchedule): string {
+export function describeSchedule(schedule: RoutineSchedule, t: Translate = englishTranslate): string {
   switch (schedule.kind) {
     case "webhook":
-      return "When its webhook is called";
+      return t("text.schedule.webhook");
     case "cron":
-      return describeCron(schedule.expression) ?? schedule.expression.trim();
+      return describeCron(schedule.expression, t) ?? schedule.expression.trim();
     case "once":
-      return `Once at ${new Date(schedule.at).toLocaleString()}`;
+      return t("text.schedule.once", { when: new Date(schedule.at).toLocaleString() });
     case "interval":
-      return schedule.minutes % 60 === 0 ? `Every ${schedule.minutes / 60}h` : `Every ${schedule.minutes} min`;
+      return schedule.minutes % 60 === 0 ? t("text.schedule.everyHours", { n: schedule.minutes / 60 }) : t("text.schedule.everyMinutes", { n: schedule.minutes });
     case "daily": {
       const days = [...schedule.weekdays].sort();
       const which =
-        days.length === 7 ? "Every day" : days.join(",") === "1,2,3,4,5" ? "Weekdays" : days.map((day) => WEEKDAY_NAMES[day]).join(", ");
-      return `${which} at ${schedule.time}`;
+        days.length === 7 ? t("text.schedule.everyDay") : days.join(",") === "1,2,3,4,5" ? t("text.schedule.weekdays") : days.map((day) => t(`text.schedule.dayShort.${day}`)).join(t("text.schedule.daySep"));
+      return t("text.schedule.at", { days: which, time: schedule.time });
     }
   }
 }
@@ -278,8 +277,6 @@ function previousCronTime(cron: ParsedCron, atOrBefore: Date, notBefore: Date): 
   return null;
 }
 
-const CRON_DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }
@@ -289,30 +286,30 @@ function pad2(value: number): string {
  * minus the time zone: routines always run in the host's local time. Null for
  * valid expressions it can't phrase (callers show the expression).
  */
-export function describeCron(expression: string): string | null {
+export function describeCron(expression: string, t: Translate = englishTranslate): string | null {
   const trimmed = expression.trim();
   if (validateCron(trimmed) !== null) return null;
   const [minute = "", hour = "", dayOfMonth = "", month = "", dayOfWeek = ""] = trimmed.split(/\s+/);
   const dateWildcard = dayOfMonth === "*" && month === "*";
-  if (minute === "*" && hour === "*" && dateWildcard && dayOfWeek === "*") return "Every minute";
+  if (minute === "*" && hour === "*" && dateWildcard && dayOfWeek === "*") return t("text.schedule.cronEveryMinute");
   const everyMinutes = /^\*\/(\d+)$/.exec(minute);
-  if (everyMinutes && hour === "*" && dateWildcard && dayOfWeek === "*") return `Every ${everyMinutes[1]} minutes`;
+  if (everyMinutes && hour === "*" && dateWildcard && dayOfWeek === "*") return t("text.schedule.cronEveryMinutes", { n: everyMinutes[1] });
   if (!/^\d+$/.test(minute) || !dateWildcard) return null;
   const minuteNumber = Number.parseInt(minute, 10);
   if (hour === "*") {
     if (dayOfWeek !== "*") return null;
-    return minuteNumber === 0 ? "Every hour" : `Every hour at :${pad2(minuteNumber)}`;
+    return minuteNumber === 0 ? t("text.schedule.cronEveryHour") : t("text.schedule.cronEveryHourAt", { minute: pad2(minuteNumber) });
   }
   const everyHours = /^\*\/(\d+)$/.exec(hour);
-  if (everyHours && dayOfWeek === "*") return minuteNumber === 0 ? `Every ${everyHours[1]} hours` : `Every ${everyHours[1]} hours at :${pad2(minuteNumber)}`;
+  if (everyHours && dayOfWeek === "*") return minuteNumber === 0 ? t("text.schedule.cronEveryHours", { n: everyHours[1] }) : t("text.schedule.cronEveryHoursAt", { n: everyHours[1], minute: pad2(minuteNumber) });
   if (!/^\d+$/.test(hour)) return null;
   const time = `${pad2(Number.parseInt(hour, 10))}:${pad2(minuteNumber)}`;
   let days: string | null = null;
-  if (dayOfWeek === "*") days = "Daily";
-  else if (dayOfWeek === "1-5") days = "Weekdays";
-  else if (dayOfWeek === "0,6" || dayOfWeek === "6,0") days = "Weekends";
-  else if (/^\d$/.test(dayOfWeek)) days = CRON_DAY_NAMES[Number.parseInt(dayOfWeek, 10)] ? `${CRON_DAY_NAMES[Number.parseInt(dayOfWeek, 10)]}s` : null;
-  return days ? `${days} at ${time}` : null;
+  if (dayOfWeek === "*") days = t("text.schedule.daily");
+  else if (dayOfWeek === "1-5") days = t("text.schedule.weekdays");
+  else if (dayOfWeek === "0,6" || dayOfWeek === "6,0") days = t("text.schedule.weekends");
+  else if (/^[0-6]$/.test(dayOfWeek)) days = t(`text.schedule.dayPlural.${dayOfWeek}`);
+  return days ? t("text.schedule.at", { days, time }) : null;
 }
 
 /**

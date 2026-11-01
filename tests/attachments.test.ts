@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyFile, rejectReason, toWire } from "../shared/attachments";
+import type { Translate } from "../shared/translate";
 
 describe("attachments", () => {
   it("classifies images, text and other files", () => {
@@ -62,5 +63,20 @@ describe("attachment preflight", () => {
     expect(getFileTypeLabel("Pasted text (12 words)")).toBeNull();
     expect(getFileTypeLabel(".env")).toBeNull();
     expect(getFileTypeLabel("Makefile")).toBeNull();
+  });
+});
+
+describe("attachments translation", () => {
+  const zh: Translate = (key) => ({ "chat.composer.imageTooLarge": "图片最大 10 MB。", "chat.composer.fileNotOnHost": "其他文件只能附加给运行在本机上的助理。" })[key] ?? key;
+
+  it("returns the translated reason when given a translator", () => {
+    expect(preflightFile("a.png", "image/png", 11 * 1024 * 1024, true, zh).reason).toBe("图片最大 10 MB。");
+    expect(preflightFile("r.pdf", "application/pdf", 1000, false, zh).reason).toBe("其他文件只能附加给运行在本机上的助理。");
+    expect(rejectReason("file", 1000, false, zh)).toBe("其他文件只能附加给运行在本机上的助理。");
+  });
+
+  it("keeps the English reason without a translator", () => {
+    expect(preflightFile("a.png", "image/png", 11 * 1024 * 1024, true).reason).toBe("Images can be up to 10 MB.");
+    expect(rejectReason("file", 1000, false)).toBe("Other files can only be attached for assistants running on this host.");
   });
 });

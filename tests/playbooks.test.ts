@@ -32,4 +32,8 @@ describe("playbooks", () => {
     expect(promptSections(bot, { ...context, playbooks: selectPlaybooks("pay this invoice", bot.playbooks) }).map((section) => section.title)).toEqual(["Persona", "Playbooks"]);
     expect(promptSections(bot, { ...context, playbooks: [] }).map((section) => section.title)).toEqual(["Persona"]);
   });
+
+  it("splits trigger lists on a full-width Chinese comma too", () => {
+    expect(parseTriggers("月末，结账,  发票\n报销")).toEqual(["月末", "结账", "发票", "报销"]);
+  });
 });

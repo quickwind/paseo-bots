@@ -6,6 +6,7 @@ import { nativeTokens, useHover } from "../../native";
 import { speak, stopSpeaking, useSpeaking } from "../../speech";
 import { ui } from "../../typography";
 import { tooltip } from "../../ui/Tooltip";
+import { useT } from "../../i18n/use-t";
 
 type Colors = PluginTheme["colors"];
 
@@ -112,7 +113,7 @@ function useShimmer(active: boolean, duration: number): { textProps: object; sty
 export const CopyButton = memo(function CopyButton({
   colors,
   getContent,
-  label = "Copy turn",
+  label,
   style,
 }: {
   colors: Colors;
@@ -120,6 +121,7 @@ export const CopyButton = memo(function CopyButton({
   label?: string;
   style?: object;
 }) {
+  const { t } = useT();
   const [copied, setCopied] = useState(false);
   const { hovered, hoverProps } = useHover();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -134,7 +136,7 @@ export const CopyButton = memo(function CopyButton({
     });
   };
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={copied ? "Copied" : label} {...tooltip(copied ? "Copied" : "Copy")} onPress={copy} {...hoverProps} style={[{ padding: 4 }, style]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={copied ? t("chat.stream.copied") : (label ?? t("chat.stream.copyTurn"))} {...tooltip(copied ? t("chat.stream.copied") : t("dialogs.export.copy"))} onPress={copy} {...hoverProps} style={[{ padding: 4 }, style]}>
       <Icon name={copied ? "Check" : "Copy"} size={14} color={hovered ? colors.foreground : colors.foregroundMuted} />
     </Pressable>
   );
@@ -142,13 +144,14 @@ export const CopyButton = memo(function CopyButton({
 
 /** Reads a turn aloud in the bot's voice, or stops the reading; styled like CopyButton. */
 export function SpeakButton({ colors, text, voice }: { colors: Colors; text: string; voice: string | null }) {
+  const { t } = useT();
   const speaking = useSpeaking(text);
   const { hovered, hoverProps } = useHover();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={speaking ? "Stop reading" : "Read aloud"}
-      {...tooltip(speaking ? "Stop reading" : "Read aloud")}
+      accessibilityLabel={speaking ? t("chat.stream.stopReading") : t("chat.stream.readAloud")}
+      {...tooltip(speaking ? t("chat.stream.stopReading") : t("chat.stream.readAloud"))}
       onPress={() => (speaking ? stopSpeaking() : speak(text, text, voice))}
       {...hoverProps}
       style={{ padding: 4, alignSelf: "center" }}

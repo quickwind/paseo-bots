@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { englishTranslate, type Translate } from "../shared/translate";
 
 // Web-only DOM helpers for the composer and avatars: file picking, clipboard images, drag and
 // drop, picture scaling, textarea measuring and focus. Pickers are no-ops off the web.
@@ -103,23 +104,23 @@ export interface FileHandle {
   name: string;
   mimeType: string;
   size: number;
-  readBase64(): Promise<string>;
+  readBase64(t?: Translate): Promise<string>;
 }
 
 /** Native has no file picker available to plugins; web uses a hidden file input like Paseo's own composer. */
 export const canPickFiles = web;
 
-function readBase64(file: DomFile): Promise<string> {
+function readBase64(file: DomFile, t: Translate = englishTranslate): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result ?? "").replace(/^data:[^,]*,/, ""));
-    reader.onerror = () => reject(new Error(`Couldn't read ${file.name}.`));
+    reader.onerror = () => reject(new Error(t("attachment.couldntRead", { name: file.name })));
     reader.readAsDataURL(file);
   });
 }
 
 function toHandle(file: DomFile): FileHandle {
-  return { name: file.name || "file", mimeType: file.type || "application/octet-stream", size: file.size, readBase64: () => readBase64(file) };
+  return { name: file.name || "file", mimeType: file.type || "application/octet-stream", size: file.size, readBase64: (t) => readBase64(file, t) };
 }
 
 /** Opens the browser's file picker. Resolves with lazy handles so sizes can be checked before reading. */
@@ -146,7 +147,7 @@ export function pickFileHandles(options: { accept?: string; multiple?: boolean }
 }
 
 /** A picture as a small square WebP data URL: its centre, scaled down to `size` pixels (avatars). */
-export async function squareImage(source: string, size: number): Promise<string> {
+export async function squareImage(source: string, size: number, t: Translate = englishTranslate): Promise<string> {
   const image = document.createElement("img");
   image.src = source;
   await image.decode();
@@ -155,7 +156,7 @@ export async function squareImage(source: string, size: number): Promise<string>
   canvas.width = size;
   canvas.height = size;
   const context = canvas.getContext("2d");
-  if (!side || !context) throw new Error("That picture couldn't be read.");
+  if (!side || !context) throw new Error(t("panel.pictureUnreadable"));
   context.imageSmoothingQuality = "high";
   context.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, size, size);
   return canvas.toDataURL("image/webp", 0.85);
@@ -412,6 +413,13 @@ export function observeWidth(element: DomElement | null, onChange: () => void): 
 }
 
 // ---------------------------------------------------------------- focus
+
+/** True when nothing in the page holds focus (it fell to <body>), so refocusing the composer steals from nobody. */
+export function focusIsIdle(): boolean {
+  if (!web) return false;
+  const active = document.activeElement;
+  return !active || active === document.body;
+}
 
 /** utils/web-focus.ts focusWithRetries: keeps trying for a moment while the surface mounts. */
 export function focusWithRetries(element: () => DomElement | null, timeoutMs = 1500): () => void {

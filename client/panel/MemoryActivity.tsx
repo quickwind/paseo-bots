@@ -10,6 +10,7 @@ import { memoryJournalRpc, memoryLogDeleteRpc, memoryLogRpc, memoryUndoRpc, type
 import { relativeTime } from "../../shared/time";
 import { ToolCallDetailsContent } from "../chat/stream/details";
 import { confirmDialog, errorText, MONO_FONT, MONO_PROPS } from "../native";
+import { useT } from "../i18n/use-t";
 import { code, codeLine, ui } from "../typography";
 import type { PanelProps } from "./BotPanel";
 import { Button, CardNote, DrillRow, SheetActions } from "./controls";
@@ -18,8 +19,8 @@ type Colors = PanelProps["colors"];
 
 const SHOWN = 20;
 const DAYS = 14;
-const journalKey = (botId: string) => ["paseo-bots", "memory-journal", botId];
-const logKey = (botId: string) => ["paseo-bots", "memory-log", botId];
+const journalKey = (botId: string) => ["aydo", "memory-journal", botId];
+const logKey = (botId: string) => ["aydo", "memory-log", botId];
 
 // OpenMausBot's memory "Changes" card and daily log, each browsed in a modal from the bot's Memory section.
 
@@ -35,6 +36,7 @@ export function useDailyLog(botId: string) {
 
 /** Every change to the memory files, by the bot or by you; one opens with its diff and Undo. */
 export function ChangesSheet({ colors, bot, onUndone, onClose }: { colors: Colors; bot: Bot; onUndone(): void; onClose(): void }) {
+  const { t } = useT();
   const query = useMemoryJournal(bot.id);
   const undo = useRpc(memoryUndoRpc);
   const queryClient = useQueryClient();
@@ -51,7 +53,7 @@ export function ChangesSheet({ colors, bot, onUndone, onClose }: { colors: Color
       onUndone();
       setOpen(null);
     } catch (error) {
-      toast.error(`Couldn't undo: ${errorText(error)}`);
+      toast.error(t("panel.couldntUndo", { error: errorText(error) }));
     } finally {
       setBusy(false);
     }
@@ -60,18 +62,18 @@ export function ChangesSheet({ colors, bot, onUndone, onClose }: { colors: Color
   if (open) {
     const file = open.file === "MEMORY.md" ? open.file : `memory/${open.file}`;
     return (
-      <Modal title={journalSummary(open, bot.name)} open onOpenChange={(value) => !value && !busy && onClose()}>
+      <Modal title={journalSummary(open, bot.name, t)} open onOpenChange={(value) => !value && !busy && onClose()}>
         <Modal.Content>
-          <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>{`${file} · ${relativeTime(open.at)} · ${journalSource(open)}`}</Text>
+          <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>{`${file} · ${relativeTime(open.at, undefined, t)} · ${journalSource(open, t)}`}</Text>
           {open.diff ? (
             <ToolCallDetailsContent colors={colors} detail={{ type: "edit", filePath: file, unifiedDiff: open.diff }} maxHeight={420} />
           ) : (
-            <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>{open.kind === "deleted" ? "The file was deleted." : "Too large to show."}</Text>
+            <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>{open.kind === "deleted" ? t("panel.fileDeleted") : t("panel.tooLargeToShow")}</Text>
           )}
-          {!open.canUndo ? <Text style={{ fontSize: ui(13), color: colors.foregroundMuted }}>The earlier version was too large to keep, so this can't be undone.</Text> : null}
+          {!open.canUndo ? <Text style={{ fontSize: ui(13), color: colors.foregroundMuted }}>{t("panel.tooLargeToUndo")}</Text> : null}
           <SheetActions>
-            <Button colors={colors} variant="ghost" label="Back" disabled={busy} onPress={() => setOpen(null)} />
-            <Button colors={colors} variant="default" label={busy ? "Undoing..." : "Undo"} disabled={!open.canUndo || busy} onPress={() => void revert(open)} />
+            <Button colors={colors} variant="ghost" label={t("panel.back")} disabled={busy} onPress={() => setOpen(null)} />
+            <Button colors={colors} variant="default" label={busy ? t("panel.undoing") : t("panel.undo")} disabled={!open.canUndo || busy} onPress={() => void revert(open)} />
           </SheetActions>
         </Modal.Content>
       </Modal>
@@ -79,13 +81,13 @@ export function ChangesSheet({ colors, bot, onUndone, onClose }: { colors: Color
   }
 
   return (
-    <Modal title="Memory changes" open onOpenChange={(value) => !value && onClose()}>
+    <Modal title={t("panel.memoryChanges")} open onOpenChange={(value) => !value && onClose()}>
       <Modal.Content>
-        <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>Every change to the memory files, by the bot or by you. Undo puts a file back the way it was before that change.</Text>
+        <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>{t("panel.changesIntro")}</Text>
         <SettingsCard>
-          {rows.length === 0 ? <CardNote colors={colors} text={query.isLoading ? "Loading..." : "No changes yet"} loading={query.isLoading} /> : null}
+          {rows.length === 0 ? <CardNote colors={colors} text={query.isLoading ? t("settings.loading") : t("panel.noChanges")} loading={query.isLoading} /> : null}
           {rows.map((row) => (
-            <DrillRow key={row.id} colors={colors} label={journalSummary(row, bot.name)} hint={`${relativeTime(row.at)} · ${journalSource(row)}`} onPress={() => setOpen(row)} />
+            <DrillRow key={row.id} colors={colors} label={journalSummary(row, bot.name, t)} hint={`${relativeTime(row.at, undefined, t)} · ${journalSource(row, t)}`} onPress={() => setOpen(row)} />
           ))}
         </SettingsCard>
       </Modal.Content>
@@ -95,6 +97,7 @@ export function ChangesSheet({ colors, bot, onUndone, onClose }: { colors: Color
 
 /** The bot's daily log, a day at a time; a day can be deleted. */
 export function LogSheet({ colors, bot, onClose }: { colors: Colors; bot: Bot; onClose(): void }) {
+  const { t, locale } = useT();
   const query = useDailyLog(bot.id);
   const [open, setOpen] = useState<string | null>(null);
   const days = (query.data?.days ?? []).slice(0, DAYS);
@@ -102,15 +105,13 @@ export function LogSheet({ colors, bot, onClose }: { colors: Colors; bot: Bot; o
 
   if (open) return <LogDay colors={colors} bot={bot} day={open} onBack={() => setOpen(null)} onClose={onClose} />;
   return (
-    <Modal title="Daily log" open onOpenChange={(value) => !value && onClose()}>
+    <Modal title={t("panel.dailyLog")} open onOpenChange={(value) => !value && onClose()}>
       <Modal.Content>
-        <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>
-          After each finished turn the app adds a line: what the bot said and which tools it used. It isn't loaded into chats; the bot looks things up in it with search_chats.
-        </Text>
+        <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>{t("panel.logIntro")}</Text>
         <SettingsCard>
-          {days.length === 0 ? <CardNote colors={colors} text={query.isLoading ? "Loading..." : "No entries yet"} loading={query.isLoading} /> : null}
+          {days.length === 0 ? <CardNote colors={colors} text={query.isLoading ? t("settings.loading") : t("panel.noEntries")} loading={query.isLoading} /> : null}
           {days.map((entry) => (
-            <DrillRow key={entry.day} colors={colors} label={dayName(entry.day, now)} hint={`${entry.lines} ${entry.lines === 1 ? "entry" : "entries"}`} onPress={() => setOpen(entry.day)} />
+            <DrillRow key={entry.day} colors={colors} label={dayName(entry.day, now, { t, locale })} hint={t("panel.entries", { count: entry.lines })} onPress={() => setOpen(entry.day)} />
           ))}
         </SettingsCard>
       </Modal.Content>
@@ -119,6 +120,7 @@ export function LogSheet({ colors, bot, onClose }: { colors: Colors; bot: Bot; o
 }
 
 function LogDay({ colors, bot, day, onBack, onClose }: { colors: Colors; bot: Bot; day: string; onBack(): void; onClose(): void }) {
+  const { t, locale } = useT();
   const log = useRpc(memoryLogRpc);
   const remove = useRpc(memoryLogDeleteRpc);
   const queryClient = useQueryClient();
@@ -126,14 +128,14 @@ function LogDay({ colors, bot, day, onBack, onClose }: { colors: Colors; bot: Bo
   const text = useQuery({ queryKey: [...logKey(bot.id), day], queryFn: () => log({ botId: bot.id, day }) });
 
   const destroy = async () => {
-    const label = dayName(day, new Date());
-    if (!(await confirmDialog({ title: "Delete log", message: `Delete the log for ${label}? This cannot be undone.`, confirmLabel: "Delete", destructive: true }))) return;
+    const label = dayName(day, new Date(), { t, locale });
+    if (!(await confirmDialog({ title: t("panel.deleteLog"), message: t("panel.deleteLogMessage", { day: label }), confirmLabel: t("settings.delete"), cancelLabel: t("dialogs.cancel"), destructive: true }))) return;
     try {
       await remove({ botId: bot.id, day });
       await queryClient.invalidateQueries({ queryKey: logKey(bot.id) });
       onBack();
     } catch (error) {
-      toast.error(`Couldn't delete: ${errorText(error)}`);
+      toast.error(t("panel.couldntDelete", { error: errorText(error) }));
     }
   };
 
@@ -143,14 +145,14 @@ function LogDay({ colors, bot, day, onBack, onClose }: { colors: Colors; bot: Bo
         <View style={{ padding: 16, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface1, minHeight: 120 }}>
           {text.data ? (
             <Text selectable {...MONO_PROPS} style={{ fontFamily: MONO_FONT, fontSize: code(), lineHeight: codeLine(), color: colors.foreground }}>
-              {text.data.text?.trim() || "This day's log is empty."}
+              {text.data.text?.trim() || t("panel.logEmpty")}
             </Text>
           ) : (
             <ActivityIndicator size="small" color={colors.foregroundMuted} />
           )}
         </View>
-        <SheetActions leading={<Button colors={colors} variant="ghost" label="Delete" icon="Trash2" onPress={() => void destroy()} />}>
-          <Button colors={colors} variant="default" label="Back" onPress={onBack} />
+        <SheetActions leading={<Button colors={colors} variant="ghost" label={t("settings.delete")} icon="Trash2" onPress={() => void destroy()} />}>
+          <Button colors={colors} variant="default" label={t("panel.back")} onPress={onBack} />
         </SheetActions>
       </Modal.Content>
     </Modal>

@@ -6,6 +6,7 @@ import { getFileTypeLabel, type ComposerAttachment } from "../shared/attachments
 import { MONO_FONT, MONO_PROPS, nativeTokens } from "./native";
 import { code, codeLine, ui } from "./typography";
 import { tooltip } from "./ui/Tooltip";
+import { useT } from "./i18n/use-t";
 
 type Colors = PluginTheme["colors"];
 
@@ -25,13 +26,14 @@ interface AttachmentPillProps {
 }
 
 export function AttachmentPill({ colors, attachment, onRemove, disabled, alwaysShowRemove }: AttachmentPillProps) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [bodyHovered, setBodyHovered] = useState(false);
   const [closeHovered, setCloseHovered] = useState(false);
   const showRemove = (alwaysShowRemove ?? Platform.OS !== "web") || bodyHovered || closeHovered;
   const canOpen = attachment.kind !== "file";
-  const openLabel = attachment.kind === "image" ? "Open image attachment" : `Open ${attachment.name}`;
-  const removeLabel = attachment.kind === "image" ? "Remove image attachment" : "Remove file attachment";
+  const openLabel = attachment.kind === "image" ? t("attachment.openImage") : t("attachment.openFile", { name: attachment.name });
+  const removeLabel = attachment.kind === "image" ? t("attachment.removeImage") : t("attachment.removeFile");
 
   return (
     <View style={{ position: "relative" }}>
@@ -54,7 +56,7 @@ export function AttachmentPill({ colors, attachment, onRemove, disabled, alwaysS
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={removeLabel}
-          {...tooltip("Remove")}
+          {...tooltip(t("attachment.remove"))}
           onPress={onRemove}
           disabled={disabled || !showRemove}
           onHoverIn={() => setCloseHovered(true)}
@@ -86,8 +88,9 @@ export function AttachmentPill({ colors, attachment, onRemove, disabled, alwaysS
 
 /** A file still being read or uploaded: Paseo's pending pill with a spinner in the icon slot and no remove button. */
 export function PendingAttachmentPill({ colors, name }: { colors: Colors; name: string }) {
+  const { t } = useT();
   return (
-    <View accessibilityLabel={`Attaching ${name}`} style={frameStyle(colors)}>
+    <View accessibilityLabel={t("attachment.attaching", { name })} style={frameStyle(colors)}>
       <AttachmentLabel colors={colors} icon={<ActivityIndicator size="small" color={colors.foregroundMuted} />} title={name} subtitle={getFileTypeLabel(name) ?? ""} />
     </View>
   );

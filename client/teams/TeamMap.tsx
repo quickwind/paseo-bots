@@ -4,11 +4,13 @@ import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { Bot, BotGroup } from "../../shared/bot";
 import { groupBots } from "../../shared/groups";
-import { aggregateBuckets, chatBucket } from "../../shared/sidebar";
+import { aggregateBuckets, bucketLabel, chatBucket } from "../../shared/sidebar";
+import type { Translate } from "../../shared/translate";
 import { Avatar, TeamLogo } from "../Avatar";
 import { useBotChats, useBotHost, type LocalHost } from "../data";
 import { CONTENT_MAX_WIDTH, nativeTokens, useHover } from "../native";
 import { Button } from "../panel/controls";
+import { useT } from "../i18n/use-t";
 import { ui } from "../typography";
 import { tooltip } from "../ui/Tooltip";
 
@@ -44,6 +46,7 @@ export function TeamMap({
   onOpenBot(bot: Bot): void;
 }) {
   const tokens = nativeTokens(colors);
+  const { t } = useT();
   const live = bots.filter((bot) => !bot.archived);
   const teamed = new Set(groups.flatMap((group) => [...group.memberIds, ...(group.leadId ? [group.leadId] : [])]));
   const loose = live.filter((bot) => !teamed.has(bot.id));
@@ -53,44 +56,44 @@ export function TeamMap({
     <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
       <View style={{ height: compact ? 56 : 36, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: compact ? 4 : 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
         {onBack ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="Back to bots" {...tooltip("Back to bots", "bottom")} onPress={onBack} style={({ pressed }) => ({ padding: 12, borderRadius: 8, backgroundColor: pressed ? tokens.interactionHighlight : "transparent" })}>
+          <Pressable accessibilityRole="button" accessibilityLabel={t("sidebar.backToBots")} {...tooltip(t("sidebar.backToBots"), "bottom")} onPress={onBack} style={({ pressed }) => ({ padding: 12, borderRadius: 8, backgroundColor: pressed ? tokens.interactionHighlight : "transparent" })}>
             <Icon name="ArrowLeft" size={20} color={colors.foregroundMuted} />
           </Pressable>
         ) : null}
-        <Text style={{ fontSize: ui(14), fontWeight: "300", color: colors.foreground }}>Team map</Text>
-        {compact ? null : <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>Your bots, their teams and who leads them</Text>}
+        <Text style={{ fontSize: ui(14), fontWeight: "300", color: colors.foreground }}>{t("teams.teamMap")}</Text>
+        {compact ? null : <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>{t("teams.mapSubtitle")}</Text>}
         <View style={{ flex: 1 }} />
-        <Button colors={colors} variant="ghost" label="New team" icon="Plus" onPress={onNewTeam} />
+        <Button colors={colors} variant="ghost" label={t("teams.newTeam")} icon="Plus" onPress={onNewTeam} />
       </View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: compact ? 16 : 24, paddingBottom: (compact ? 16 : 24) + bottomInset, alignItems: "center" }}>
         <View style={{ width: "100%", maxWidth: CONTENT_MAX_WIDTH, gap: 16 }}>
           {groups.length === 0 ? (
             <View style={{ padding: 24, borderRadius: 12, backgroundColor: colors.surface1, alignItems: "center", gap: 12 }}>
-              <Text style={{ fontSize: ui(14), color: colors.foreground }}>No teams yet</Text>
+              <Text style={{ fontSize: ui(14), color: colors.foreground }}>{t("teams.noTeams")}</Text>
               <Text style={{ fontSize: ui(14), color: colors.foregroundMuted, textAlign: "center", maxWidth: 420 }}>
-                A team is a few bots with a Chief of Staff, who takes your requests and hands parts to the others.
+                {t("teams.noTeamsHint")}
               </Text>
-              <Button colors={colors} variant="default" label="New team" icon="Plus" onPress={onNewTeam} />
+              <Button colors={colors} variant="default" label={t("teams.newTeam")} icon="Plus" onPress={onNewTeam} />
             </View>
           ) : null}
           {groups.map((group) => {
             const { lead, members } = groupBots(group, live);
             return (
-              <Tile key={group.id} colors={colors} logo={<TeamLogo group={group} size={24} />} title={group.name || "Untitled team"} meta={`${members.length + (lead ? 1 : 0)} ${members.length + (lead ? 1 : 0) === 1 ? "bot" : "bots"}`} onEdit={() => onEditTeam(group)}>
+              <Tile key={group.id} colors={colors} logo={<TeamLogo group={group} size={24} />} title={group.name || t("teams.untitled")} meta={t("teams.botCount", { count: members.length + (lead ? 1 : 0) })} onEdit={() => onEditTeam(group)}>
                 <View style={compact ? { gap: 8 } : { flexDirection: "row", alignItems: "center", gap: 12 }}>
                   <View style={compact ? undefined : { width: 240 }}>
-                    {lead ? card(lead, true) : <Placeholder colors={colors} text="No Chief of Staff yet" />}
+                    {lead ? card(lead, true) : <Placeholder colors={colors} text={t("teams.noChiefYet")} />}
                   </View>
                   <View style={{ alignItems: "center" }}>
                     <Icon name={compact ? "ArrowDown" : "ArrowRight"} size={16} color={colors.foregroundMuted} />
                   </View>
-                  <View style={{ flex: compact ? undefined : 1, gap: 8 }}>{members.length ? members.map((bot) => card(bot)) : <Placeholder colors={colors} text="No other members" />}</View>
+                  <View style={{ flex: compact ? undefined : 1, gap: 8 }}>{members.length ? members.map((bot) => card(bot)) : <Placeholder colors={colors} text={t("teams.noOtherMembers")} />}</View>
                 </View>
               </Tile>
             );
           })}
           {groups.length > 0 && loose.length > 0 ? (
-            <Tile colors={colors} title="Bots without a team" meta={`${loose.length} ${loose.length === 1 ? "bot" : "bots"}`}>
+            <Tile colors={colors} title={t("teams.looseBots")} meta={t("teams.botCount", { count: loose.length })}>
               <View style={{ gap: 8 }}>{loose.map((bot) => card(bot))}</View>
             </Tile>
           ) : null}
@@ -101,6 +104,7 @@ export function TeamMap({
 }
 
 function Tile({ colors, logo, title, meta, onEdit, children }: { colors: Colors; logo?: ReactNode; title: string; meta: string; onEdit?: () => void; children: ReactNode }) {
+  const { t } = useT();
   return (
     <View style={{ padding: 16, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface1, gap: 12 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -110,7 +114,7 @@ function Tile({ colors, logo, title, meta, onEdit, children }: { colors: Colors;
         </Text>
         <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>{meta}</Text>
         <View style={{ flex: 1 }} />
-        {onEdit ? <Button colors={colors} variant="ghost" label="Edit" icon="Pencil" onPress={onEdit} /> : null}
+        {onEdit ? <Button colors={colors} variant="ghost" label={t("teams.edit")} icon="Pencil" onPress={onEdit} /> : null}
       </View>
       {children}
     </View>
@@ -125,22 +129,25 @@ function Placeholder({ colors, text }: { colors: Colors; text: string }) {
   );
 }
 
-const STATUS: Partial<Record<ReturnType<typeof chatBucket>, { label: string; color: (colors: Colors) => string }>> = {
-  running: { label: "Working", color: (colors) => colors.statusSuccess },
-  needs_input: { label: "Waiting for you", color: (colors) => colors.statusWarning },
-  failed: { label: "Failed", color: (colors) => colors.statusDanger },
-};
+function statusLabels(t: Translate): Partial<Record<ReturnType<typeof chatBucket>, { label: string; color: (colors: Colors) => string }>> {
+  return {
+    running: { label: bucketLabel("running", t), color: (colors) => colors.statusSuccess },
+    needs_input: { label: t("teams.waitingForYou"), color: (colors) => colors.statusWarning },
+    failed: { label: bucketLabel("failed", t), color: (colors) => colors.statusDanger },
+  };
+}
 
 function BotCard({ colors, bot, lead, localHost, onPress }: { colors: Colors; bot: Bot; lead: boolean; localHost: LocalHost; onPress(): void }) {
+  const { t } = useT();
   const host = useBotHost(bot.hostId, localHost);
   const chats = useBotChats(host, bot.id);
-  const status = STATUS[aggregateBuckets((chats.data ?? []).map(chatBucket))];
+  const status = statusLabels(t)[aggregateBuckets((chats.data ?? []).map(chatBucket))];
   const { hovered, hoverProps } = useHover();
   const agent = [bot.provider, bot.model].filter(Boolean).join(" · ");
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Open ${bot.name}`}
+      accessibilityLabel={t("teams.openBot", { name: bot.name })}
       onPress={onPress}
       {...hoverProps}
       style={({ pressed }) => ({

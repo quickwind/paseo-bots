@@ -9,34 +9,42 @@ import { exportTeamRpc, importTeamRpc } from "../../shared/rpc";
 import { useBotHost, useProviders } from "../data";
 import { confirmDialog, errorText } from "../native";
 import { Button, CardNote, FormTextArea, SheetActions } from "../panel/controls";
+import { SearchableSelect } from "../ui/SearchableSelect";
 import { useBotSettings } from "../useBotSettings";
+import { useT } from "../i18n/use-t";
+import { defaultSetupPrompt, type SetupSettings } from "../../shared/setup";
+import type { ToolMode } from "../../shared/tools-mode";
 
 type Colors = PluginSurfaceProps["theme"]["colors"];
 
-/** Settings → Plugins → paseo-bots: what new bots start with, saved presets, and team files. */
+/** Settings → Plugins → aydo: what new bots start with, saved presets, and team files. */
 export function BotsSettings({ theme, host }: PluginSurfaceProps) {
+  const { t } = useT();
   const colors = theme.colors;
   const { settings, commit } = useBotSettings();
-  if (settings.status !== "ready") return <CardNote colors={colors} text={settings.status === "loading" ? "Loading..." : "Bot settings can't be read."} loading={settings.status === "loading"} />;
+  if (settings.status !== "ready") return <CardNote colors={colors} text={settings.status === "loading" ? t("settings.loading") : t("common.settingsUnreadable")} loading={settings.status === "loading"} />;
   const values = settings.values;
   return (
     <>
       <DefaultsSection
+        colors={colors}
         localHost={{ id: host.id, label: host.label }}
         defaults={values.defaults ?? DEFAULT_BOT_DEFAULTS}
         onChange={(patch) => void commit((current) => ({ ...current, defaults: { ...(current.defaults ?? DEFAULT_BOT_DEFAULTS), ...patch } }))}
       />
-      <SettingsSection title="Presets" info="Bots you saved with Save as preset in their menu: their identity, instructions, playbooks and skills. They're listed under New bot.">
+      <ToolsSection mode={values.toolMode} onChange={(toolMode) => void commit((current) => ({ ...current, toolMode }))} />
+      <SetupSection colors={colors} setup={values.setup} onChange={(setup) => void commit((current) => ({ ...current, setup }))} />
+      <SettingsSection title={t("settings.presets.title")} info={t("settings.presets.info")}>
         <SettingsCard>
-          {(values.presets ?? []).length === 0 ? <CardNote colors={colors} text="No presets yet" /> : null}
+          {(values.presets ?? []).length === 0 ? <CardNote colors={colors} text={t("settings.presets.none")} /> : null}
           {(values.presets ?? []).map((preset) => (
             <SettingsAction
               key={preset.id}
               label={preset.name}
               hint={preset.title || preset.description || undefined}
-              actionLabel="Delete"
+              actionLabel={t("settings.delete")}
               onPress={() =>
-                void confirmDialog({ title: "Delete preset", message: `Delete the "${preset.name}" preset? Bots made from it stay.`, confirmLabel: "Delete", destructive: true }).then(
+                void confirmDialog({ title: t("settings.presets.deleteTitle"), message: t("settings.presets.deleteMessage", { name: preset.name }), confirmLabel: t("settings.delete"), cancelLabel: t("dialogs.cancel"), destructive: true }).then(
                   (confirmed) => confirmed && commit((current) => ({ ...current, presets: (current.presets ?? []).filter((entry) => entry.id !== preset.id) })),
                 )
               }
@@ -49,33 +57,94 @@ export function BotsSettings({ theme, host }: PluginSurfaceProps) {
   );
 }
 
-function DefaultsSection({ localHost, defaults, onChange }: { localHost: { id: string; label: string }; defaults: BotDefaults; onChange(patch: Partial<BotDefaults>): void }) {
+/** The default for how bots get the plugin's tools: as an MCP server, or as files in their folder (for Devin, where MCP is not allowed). A bot can override it on its Agent page. */
+function ToolsSection({ mode, onChange }: { mode: ToolMode | undefined; onChange(mode: "mcp" | "files"): void }) {
+  const { t } = useT();
+  return (
+    <SettingsSection title={t("settings.tools.title")} info={t("settings.tools.info")}>
+      <SettingsCard>
+        <SettingsSelect
+          label={t("settings.tools.label")}
+          value={mode === "files" ? "files" : "mcp"}
+          options={[
+            { label: t("settings.tools.mcp"), value: "mcp" },
+            { label: t("settings.tools.files"), value: "files" },
+          ]}
+          onValueChange={(value) => onChange(value as "mcp" | "files")}
+        />
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
+/** The interview an assistant opens with ("Set up with the assistant"), and whether a new blank assistant starts it by itself. */
+function SetupSection({ colors, setup, onChange }: { colors: Colors; setup: SetupSettings | undefined; onChange(setup: SetupSettings): void }) {
+  const { t, locale } = useT();
+  const current: SetupSettings = setup ?? { prompt: "", autoStart: true };
+  const [text, setText] = useState(current.prompt);
+  const custom = current.prompt.trim() !== "";
+  return (
+    <SettingsSection title={t("settings.setup.title")} info={t("settings.setup.info")}>
+      <SettingsCard>
+        <SettingsSwitch
+          label={t("settings.setup.autoStart")}
+          hint={t("settings.setup.autoStartHint")}
+          value={current.autoStart}
+          onValueChange={(autoStart) => onChange({ ...current, autoStart })}
+        />
+        <SettingsAction
+          label={t("settings.setup.prompt")}
+          hint={custom ? t("settings.setup.customPrompt") : t("settings.setup.builtInPrompt")}
+          actionLabel={t("settings.setup.reset")}
+          disabled={!custom && text.trim() === ""}
+          onPress={() => {
+            setText("");
+            onChange({ ...current, prompt: "" });
+          }}
+        />
+      </SettingsCard>
+      <FormTextArea
+        colors={colors}
+        accessibilityLabel={t("settings.setup.promptLabel")}
+        value={text}
+        onChangeText={setText}
+        onBlur={() => text !== current.prompt && onChange({ ...current, prompt: text })}
+        autoCapitalize="none"
+        placeholder={defaultSetupPrompt(false, locale)}
+        minHeight={160}
+      />
+    </SettingsSection>
+  );
+}
+
+function DefaultsSection({ colors, localHost, defaults, onChange }: { colors: Colors; localHost: { id: string; label: string }; defaults: BotDefaults; onChange(patch: Partial<BotDefaults>): void }) {
+  const { t } = useT();
   const providers = useProviders(useBotHost(null, localHost));
   const provider = providers.data?.find((entry) => entry.provider === defaults.provider);
   const models = (provider?.models ?? []).filter((model) => model.isSelectable !== false);
   return (
-    <SettingsSection title="Defaults for new bots" info="The agent a new bot starts with, whether it starts blank, from a role or from a preset. Change it per bot under Model and Permissions.">
+    <SettingsSection title={t("settings.defaults.title")} info={t("settings.defaults.info")}>
       <SettingsCard>
         <SettingsSelect
-          label="Provider"
-          hint={defaults.provider ? undefined : "Claude when it's ready, otherwise the first ready provider"}
+          label={t("settings.defaults.provider")}
+          hint={defaults.provider ? undefined : t("settings.defaults.providerHint")}
           value={defaults.provider}
-          options={[{ label: "Automatic", value: "" }, ...(providers.data ?? []).map((entry) => ({ label: (entry.label ?? entry.provider) + (entry.status === "ready" ? "" : ` (${entry.status})`), value: entry.provider }))]}
+          options={[{ label: t("settings.defaults.automatic"), value: "" }, ...(providers.data ?? []).map((entry) => ({ label: (entry.label ?? entry.provider) + (entry.status === "ready" ? "" : ` (${entry.status})`), value: entry.provider }))]}
           onValueChange={(value) => onChange({ provider: value, model: null, modeId: null, thinkingOptionId: null })}
         />
         {provider ? (
           <>
-            <SettingsSelect label="Model" value={defaults.model ?? ""} options={[{ label: "Default", value: "" }, ...models.map((entry) => ({ label: entry.label, value: entry.id }))]} onValueChange={(value) => onChange({ model: value || null, thinkingOptionId: null })} />
-            <SettingsSelect label="Mode" value={defaults.modeId ?? ""} options={[{ label: "Default", value: "" }, ...(provider.modes ?? []).map((mode) => ({ label: mode.label, value: mode.id }))]} onValueChange={(value) => onChange({ modeId: value || null })} />
+            <SearchableSelect colors={colors} label={t("settings.defaults.model")} value={defaults.model ?? ""} options={[{ label: t("settings.defaults.default"), value: "" }, ...models.map((entry) => ({ label: entry.label, value: entry.id }))]} onValueChange={(value) => onChange({ model: value || null, thinkingOptionId: null })} />
+            <SettingsSelect label={t("settings.defaults.mode")} value={defaults.modeId ?? ""} options={[{ label: t("settings.defaults.default"), value: "" }, ...(provider.modes ?? []).map((mode) => ({ label: mode.label, value: mode.id }))]} onValueChange={(value) => onChange({ modeId: value || null })} />
           </>
         ) : null}
         <SettingsSelect
-          label="Contact other bots"
+          label={t("settings.defaults.contact")}
           value={defaults.contactBots}
           options={[
-            { label: "Ask first", value: "ask" },
-            { label: "Allowed", value: "allow" },
-            { label: "Off", value: "off" },
+            { label: t("settings.defaults.contactAsk"), value: "ask" },
+            { label: t("settings.defaults.contactAllow"), value: "allow" },
+            { label: t("settings.defaults.contactOff"), value: "off" },
           ]}
           onValueChange={(contactBots) => onChange({ contactBots })}
         />
@@ -86,6 +155,7 @@ function DefaultsSection({ localHost, defaults, onChange }: { localHost: { id: s
 
 /** A team file: every bot that isn't archived and the teams they're on, in one file; and adding those of one. */
 function TeamSection({ colors, bots, groups, commit }: { colors: Colors; bots: Bot[]; groups: BotGroup[]; commit: ReturnType<typeof useBotSettings>["commit"] }) {
+  const { t } = useT();
   const exportTeam = useRpc(exportTeamRpc);
   const importTeam = useRpc(importTeamRpc);
   const toast = useToast();
@@ -98,7 +168,7 @@ function TeamSection({ colors, bots, groups, commit }: { colors: Colors; bots: B
     try {
       const file = await exportTeam({ bots, groups, includeMemory });
       await copyText(file.json);
-      toast.show(`Team file with ${bots.length} ${bots.length === 1 ? "bot" : "bots"} copied`, { variant: "success" });
+      toast.show(t("settings.team.copied", { count: bots.length }), { variant: "success" });
     } catch (error) {
       toast.error(errorText(error));
     } finally {
@@ -112,8 +182,8 @@ function TeamSection({ colors, bots, groups, commit }: { colors: Colors; bots: B
       const imported = await importTeam({ json });
       if (await commit((current) => addImportedBots(current, imported.bots, imported.teams))) {
         setJson("");
-        const teams = imported.teams.length ? ` and ${imported.teams.length} ${imported.teams.length === 1 ? "team" : "teams"}` : "";
-        toast.show(`Added ${imported.bots.length} ${imported.bots.length === 1 ? "bot" : "bots"}${teams}. Routines arrive paused and skills need a review.`, { variant: "success" });
+        const teams = imported.teams.length ? t("settings.team.andTeams", { count: imported.teams.length }) : "";
+        toast.show(t("settings.team.added", { count: imported.bots.length, teams }), { variant: "success" });
       }
     } catch (error) {
       toast.error(errorText(error));
@@ -123,20 +193,26 @@ function TeamSection({ colors, bots, groups, commit }: { colors: Colors; bots: B
   };
 
   return (
-    <SettingsSection title="Team file" info="Share your bots and their teams at once. Chats, keys and each bot's host, folder, tool grants and connected apps stay behind. Imports only add bots and teams; a bot name already in use gets a number.">
+    <SettingsSection title={t("settings.team.title")} info={t("settings.team.info")}>
       <SettingsCard>
-        <SettingsSwitch label="Include memory" hint="MEMORY.md and topic files. Leave off when sharing with someone else." value={includeMemory} onValueChange={setIncludeMemory} />
+        <SettingsSwitch label={t("dialogs.export.includeMemory")} hint={t("dialogs.export.includeMemoryHint")} value={includeMemory} onValueChange={setIncludeMemory} />
         <SettingsAction
-          label="Copy a team file"
-          hint={bots.length ? `${bots.length} ${bots.length === 1 ? "bot" : "bots"}${groups.length ? ` on ${groups.length} ${groups.length === 1 ? "team" : "teams"}` : ""}, all but archived ones` : "No bots to share yet"}
-          actionLabel={busy === "export" ? "Copying..." : "Copy"}
+          label={t("settings.team.copy")}
+          hint={
+            bots.length
+              ? groups.length
+                ? t("settings.team.copyHintTeams", { count: bots.length, teams: t("settings.team.teamCount", { count: groups.length }) })
+                : t("settings.team.copyHint", { count: bots.length })
+              : t("settings.team.none")
+          }
+          actionLabel={busy === "export" ? t("dialogs.menu.copying") : t("dialogs.export.copy")}
           disabled={!bots.length || busy !== null}
           onPress={() => void copyTeam()}
         />
       </SettingsCard>
-      <FormTextArea colors={colors} monospace accessibilityLabel="Team file to import" value={json} onChangeText={setJson} autoCapitalize="none" autoCorrect={false} minHeight={120} placeholder='{"format": "paseo-bots-team", …}' />
+      <FormTextArea colors={colors} monospace accessibilityLabel={t("settings.team.importLabel")} value={json} onChangeText={setJson} autoCapitalize="none" autoCorrect={false} minHeight={120} placeholder='{"format": "aydo-team", …}' />
       <SheetActions>
-        <Button colors={colors} variant="default" label={busy === "import" ? "Adding..." : "Add bots"} loading={busy === "import"} disabled={!json.trim() || busy !== null} onPress={() => void addTeam()} />
+        <Button colors={colors} variant="default" label={busy === "import" ? t("settings.team.adding") : t("settings.team.add")} loading={busy === "import"} disabled={!json.trim() || busy !== null} onPress={() => void addTeam()} />
       </SheetActions>
     </SettingsSection>
   );

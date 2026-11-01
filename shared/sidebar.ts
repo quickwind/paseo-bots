@@ -1,3 +1,5 @@
+import { englishTranslate, type Translate } from "./translate";
+
 // Pure sidebar logic, ported from Paseo so the bot list reads its chats the same
 // way Paseo's sidebar reads workspaces (protocol/agent-state-bucket.ts,
 // utils/sidebar-agent-state.ts, hooks/sidebar-workspaces-view-model.ts).
@@ -43,6 +45,11 @@ export const BUCKET_LABELS: Record<ChatBucket, string> = {
   running: "Working",
   done: "Done",
 };
+
+/** The status label of a bucket in the reader's language. */
+export function bucketLabel(bucket: ChatBucket, t: Translate = englishTranslate): string {
+  return t(`text.bucket.${bucket}`);
+}
 
 /** Paseo's useLimitedSidebarGroup: groups longer than this get "Show more". */
 export const SIDEBAR_GROUP_LIMIT = 20;
@@ -108,4 +115,11 @@ export function moveKey(keys: readonly string[], key: string, delta: -1 | 1): st
   next[index] = keys[target]!;
   next[target] = key;
   return next;
+}
+
+/** What the single "Bots" row of a host sidebar shows for all bots together: the most urgent status, or nothing when all are done. */
+export function botsBadge(statuses: Iterable<string>): Exclude<ChatBucket, "done"> | null {
+  const known = [...statuses].filter((status): status is ChatBucket => status in BUCKET_LABELS);
+  const bucket = aggregateBuckets(known);
+  return bucket === "done" ? null : bucket;
 }

@@ -15,8 +15,9 @@ import { homeIndicatorInset } from "../keyboard";
 import { CONTENT_MAX_WIDTH, errorText, nativeTokens, placeholderColor, useHover } from "../native";
 import { newMessageId, rememberSent } from "../sent-attachments";
 import { measureAnchor, useMenu, type MenuEntry } from "../ui/Menu";
-import { decodeUtf8, domNode, focusWithRetries, listenForFileDrop, listenForImagePaste, pickFileHandles, type FileHandle } from "../web";
+import { decodeUtf8, domNode, focusIsIdle, focusWithRetries, listenForFileDrop, listenForImagePaste, pickFileHandles, type FileHandle } from "../web";
 import { content, ui } from "../typography";
+import { useT } from "../i18n/use-t";
 import type { ChatPaneProps, OutgoingMessage } from "../ChatPane";
 import { CommandMenu } from "./composer/CommandMenu";
 import { ContextMeter } from "./composer/ContextMeter";
@@ -57,7 +58,6 @@ const web = Platform.OS === "web";
 /** Paseo's palette: red-600 for the stop button, red-500 for inline send errors. */
 const RED_600 = "#dc2626";
 const RED_500 = "#ef4444";
-const FAILED_TO_SEND = "Failed to send message";
 
 interface ComposerProps {
   colors: Colors;
@@ -78,8 +78,6 @@ export function Composer(props: ComposerProps) {
   return <ChatComposer key={draftKey} draftKey={draftKey} {...props} />;
 }
 
-const PLUGIN_COMMANDS: SlashCommand[] = [{ ...LEARN_COMMAND, kind: "command" }];
-
 // Commands are listed per live session; cache them per agent for the session.
 const commandCache = new Map<string, Promise<{ commands: SlashCommand[]; error: string | null }>>();
 
@@ -88,6 +86,7 @@ const commandCache = new Map<string, Promise<{ commands: SlashCommand[]; error: 
 // auto-growing input, then a toolbar with "Add attachment" on the left and the context
 // meter and send/stop button on the right.
 function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpen, agent, onStart, draftKey }: ComposerProps & { draftKey: string }) {
+  const { t } = useT();
   const toast = useToast();
   const menu = useMenu();
   const upload = useRpc(uploadRpc);
@@ -113,6 +112,9 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
   const touched = useRef(false);
   const latest = useRef({ text, attachments });
   latest.current = { text, attachments };
+
+  // The plugin's own /learn entry, translated (LEARN_COMMAND stays English: it is the skill's name).
+  const pluginCommands: SlashCommand[] = [{ ...LEARN_COMMAND, description: t("host.learn"), argumentHint: t("host.learnHint"), kind: "command" }];
 
   const sendBehavior = useSendBehavior();
   const permissions: Permission[] = agent?.pendingPermissions ?? [];
@@ -177,6 +179,14 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
     else inputRef.current?.focus();
   };
 
+  // When a turn ends the focus can fall to <body>; take it back unless the user moved it somewhere on purpose.
+  const wasRunning = useRef(running);
+  useEffect(() => {
+    const ended = wasRunning.current && !running;
+    wasRunning.current = running;
+    if (ended && desktopWeb && focusIsIdle()) focusInput();
+  }, [running]);
+
   // Desktop web focuses the composer when a chat opens (Paseo's MessageInputAutoFocus).
   useEffect(() => (desktopWeb ? focusWithRetries(() => domNode(inputRef.current)) : undefined), []);
 
@@ -187,9 +197,9 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
     for (const file of files) {
       const mimeType = normalizeMimeType(file.mimeType) || "application/octet-stream";
       // Size limits are checked before any bytes are read.
-      const { kind, reason } = preflightFile(file.name, mimeType, file.size, host.isLocal);
+      const { kind, reason } = preflightFile(file.name, mimeType, file.size, host.isLocal, t);
       if (reason) {
-        toast.error(`${file.name}: ${reason}`);
+        toast.error(t("attachment.rejected", { name: file.name, reason }));
         continue;
       }
       accepted.push({ file, kind, mimeType, pendingId: newAttachmentId() });
@@ -198,7 +208,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
     setPending((current) => [...current, ...accepted.map((entry) => ({ id: entry.pendingId, name: entry.file.name }))]);
     for (const { file, kind, mimeType, pendingId } of accepted) {
       try {
-        const base64 = await file.readBase64();
+        const base64 = await file.readBase64(t);
         let attachment: ComposerAttachment;
         if (kind === "image") attachment = { kind, id: newAttachmentId(), name: file.name, mimeType, size: file.size, data: base64 };
         else if (kind === "text") attachment = { kind, id: newAttachmentId(), name: file.name, size: file.size, text: decodeUtf8(base64) };
@@ -209,7 +219,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
         if (mounted.current) updateAttachments((current) => [...current, attachment]);
         else setDraft(draftKey, { text: latest.current.text, attachments: [...latest.current.attachments, attachment] });
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Failed to upload file");
+        toast.error(error instanceof Error ? error.message : t("chat.composer.failedToUpload"));
       } finally {
         if (mounted.current) setPending((current) => current.filter((entry) => entry.id !== pendingId));
       }
@@ -223,7 +233,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
     try {
       await addFiles(await pickFileHandles({ accept }));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to upload file");
+      toast.error(error instanceof Error ? error.message : t("chat.composer.failedToUpload"));
     }
   };
 
@@ -234,11 +244,11 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
     // Plugins can't read the clipboard or open pickers on phones, so pasting text stands in there.
     const entries: MenuEntry[] = web
       ? [
-          { label: "Add image", icon: "Image", onSelect: () => void pick("image/*") },
-          { label: "Upload file", icon: "Paperclip", onSelect: () => void pick() },
+          { label: t("chat.composer.addImage"), icon: "Image", onSelect: () => void pick("image/*") },
+          { label: t("chat.composer.uploadFile"), icon: "Paperclip", onSelect: () => void pick() },
         ]
-      : [{ label: "Paste text", icon: "ClipboardPaste", onSelect: () => setPasting(true) }];
-    menu.open({ anchor, align: "start", width: 220, title: "Add attachment", entries });
+      : [{ label: t("chat.composer.pasteText"), icon: "ClipboardPaste", onSelect: () => setPasting(true) }];
+    menu.open({ anchor, align: "start", width: 220, title: t("chat.composer.addAttachment"), entries });
   };
 
   // Web: pasting images into the input attaches them.
@@ -248,13 +258,13 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
   useEffect(() => {
     const own = domNode(outerRef.current);
     return listenForFileDrop(own?.parentElement ?? own, {
-      label: "Drop files here",
+      label: t("chat.composer.dropFiles"),
       background: colors.surface0,
       foreground: colors.foreground,
       isEnabled: () => !loadingRef.current && !!host.api,
       onFiles: (files) => void addFilesRef.current(files),
     });
-  }, [colors.surface0, colors.foreground, host.api]);
+  }, [colors.surface0, colors.foreground, host.api, t]);
 
   // ------------------------------------------------------------ sending
 
@@ -264,7 +274,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
     const outgoing = (agentId && host.isLocal ? expandLearn(typed) : null) ?? (typed || "See the attached files.");
     const messageId = newMessageId();
     const wire = toWire(message.attachments);
-    rememberSent(messageId, outgoing, message.attachments);
+    rememberSent(messageId, outgoing, message.attachments, bot.id);
     if (agentId && host.api) {
       // `activeTurnBehavior` is forwarded to the daemon as-is (send_agent_message_request).
       const options = {
@@ -279,7 +289,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
     }
   };
 
-  const errorMessage = (error: unknown) => (error instanceof Error && error.message ? error.message : FAILED_TO_SEND);
+  const errorMessage = (error: unknown) => (error instanceof Error && error.message ? error.message : t("chat.composer.failedToSend"));
 
   // composer/submit.ts: clear at once so typing can continue, put everything back on failure.
   const send = async () => {
@@ -306,6 +316,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
       }
     } finally {
       if (mounted.current) setProcessing(false);
+      if (desktopWeb && mounted.current && focusIsIdle()) focusInput();
     }
   };
 
@@ -336,7 +347,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
   const draining = useRef(false);
   useEffect(() => {
     const inFlight = draining.current || drain !== "idle" || processing;
-    if (!shouldDrainQueue({ running, queued: queue.length, inFlight, hasAgent: agentId !== null && !!host.api })) return;
+    if (!shouldDrainQueue({ running, queued: queue.length, inFlight, hasAgent: agentId !== null && !!host.api, statusKnown: agent != null })) return;
     const next = takeQueuedMessage(draftKey, queue[0]!.id);
     if (!next) return;
     draining.current = true;
@@ -352,7 +363,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
       .finally(() => {
         draining.current = false;
       });
-  }, [running, queue, drain, processing, agentId, host.api]);
+  }, [running, queue, drain, processing, agentId, host.api, agent, t]);
 
   const sendQueuedNow = async (item: QueuedMessage) => {
     if (!host.api || !takeQueuedMessage(draftKey, item.id)) return;
@@ -419,7 +430,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
     };
   }, [commandsVisible, agentId, host.api]);
   const providerCommands = commandState?.agentId === agentId ? commandState.commands : [];
-  const commandList = commandsVisible ? filterCommands(withPluginCommands(host.isLocal ? PLUGIN_COMMANDS : [], providerCommands), query ?? "") : [];
+  const commandList = commandsVisible ? filterCommands(withPluginCommands(host.isLocal ? pluginCommands : [], providerCommands), query ?? "") : [];
   const selectCommand = (command: SlashCommand) => {
     updateText(applyCommand(command));
     setCommandsDismissed(true);
@@ -455,7 +466,11 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
 
   const bottomInset = keyboardOpen ? 0 : homeIndicatorInset();
   const usage = contextUsage(agent?.lastUsage);
-  const placeholder = agentId ? (layout.compact ? "Message, /commands" : `Message ${bot.name}, or use /commands and /skills`) : `Message ${bot.name}`;
+  const placeholder = agentId
+    ? layout.compact
+      ? t("chat.composer.messageCompact")
+      : t("chat.composer.messagePlaceholder", { name: bot.name })
+    : t("chat.composer.message", { name: bot.name });
   const webInputStyle = web ? ({ lineHeight: content() * 1.4, outlineStyle: "none", outlineWidth: 0 } as object) : null;
 
   return (
@@ -516,7 +531,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
             ) : null}
             <TextInput
               ref={inputRef}
-              accessibilityLabel={`Message ${bot.name}`}
+              accessibilityLabel={t("chat.composer.message", { name: bot.name })}
               value={text}
               onChangeText={updateText}
               placeholder={placeholder}
@@ -548,7 +563,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
                 ) : null}
                 {primary === "send" ? (
                   <RoundButton
-                    label={submitAccessibilityLabel({ canPressLoading, behavior, running })}
+                    label={submitAccessibilityLabel({ canPressLoading, behavior, running }, t)}
                     background={colors.accent}
                     disabled={sendDisabled}
                     onPress={canPressLoading ? () => void stop() : defaultAction}
@@ -556,7 +571,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
                     {loading ? <ActivityIndicator size="small" color={colors.accentForeground} /> : <Icon name="ArrowUp" size={buttonIconSize} color={colors.accentForeground} />}
                   </RoundButton>
                 ) : primary === "active" && canInterrupt ? (
-                  <RoundButton label={stopping ? "Canceling agent" : "Stop agent"} background={RED_600} disabled={stopping} onPress={() => void stop()}>
+                  <RoundButton label={stopping ? t("chat.composer.cancelingAgent") : t("chat.composer.stopAgent")} background={RED_600} disabled={stopping} onPress={() => void stop()}>
                     {stopping ? <ActivityIndicator size="small" color="#ffffff" /> : <FilledSquare size={buttonIconSize} />}
                   </RoundButton>
                 ) : null}
@@ -581,12 +596,13 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
 
 /** Paseo's "Add attachment" trigger: 28 round, Plus muted, foreground and surface2 on hover. */
 function AttachButton({ colors, anchorRef, iconSize, disabled, onPress }: { colors: Colors; anchorRef: RefObject<View | null>; iconSize: number; disabled: boolean; onPress(): void }) {
+  const { t } = useT();
   const { hovered, hoverProps } = useHover();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Add attachment"
-      {...tooltip("Add attachment")}
+      accessibilityLabel={t("chat.composer.addAttachment")}
+      {...tooltip(t("chat.composer.addAttachment"))}
       disabled={disabled}
       onPress={onPress}
       {...hoverProps}
@@ -623,6 +639,7 @@ function FilledSquare({ size }: { size: number }) {
 
 /** Paseo's queued message row: text over two lines, a pencil to edit and an accent arrow to send now. */
 function QueuedRow({ colors, item, onEdit, onSendNow }: { colors: Colors; item: QueuedMessage; onEdit(): void; onSendNow(): void }) {
+  const { t } = useT();
   const label = item.text || item.attachments.map((attachment) => attachment.name).join(", ");
   return (
     <View
@@ -645,8 +662,8 @@ function QueuedRow({ colors, item, onEdit, onSendNow }: { colors: Colors; item: 
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Edit queued message"
-          {...tooltip("Edit")}
+          accessibilityLabel={t("chat.composer.editQueued")}
+          {...tooltip(t("teams.edit"))}
           onPress={onEdit}
           style={{ width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface2 }}
         >
@@ -654,8 +671,8 @@ function QueuedRow({ colors, item, onEdit, onSendNow }: { colors: Colors; item: 
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Send queued message now"
-          {...tooltip("Send now")}
+          accessibilityLabel={t("chat.composer.sendQueuedNow")}
+          {...tooltip(t("chat.composer.sendNow"))}
           onPress={onSendNow}
           style={{ width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: colors.accent }}
         >
@@ -668,19 +685,20 @@ function QueuedRow({ colors, item, onEdit, onSendNow }: { colors: Colors; item: 
 
 /** Phones have no file picker or clipboard access for plugins, so "Paste text" attaches pasted text there. */
 function PasteTextSheet({ colors, onClose, onAttach }: { colors: Colors; onClose(): void; onAttach(text: string, title: string): void }) {
+  const { t } = useT();
   const [text, setText] = useState("");
   const tokens = nativeTokens(colors);
   return (
-    <Modal title="Paste text" open onOpenChange={(open) => !open && onClose()}>
+    <Modal title={t("chat.composer.pasteText")} open onOpenChange={(open) => !open && onClose()}>
       <Modal.Content>
         <SettingsCard>
-          <SettingsRow label="Text" hint="Pasted notes, an email, a log… sent alongside your message. Images and files can be attached from Paseo on desktop or the web.">
+          <SettingsRow label={t("chat.composer.text")} hint={t("chat.composer.pasteHint")}>
             <TextInput
-              accessibilityLabel="Text to attach"
+              accessibilityLabel={t("chat.composer.textToAttach")}
               value={text}
               onChangeText={setText}
               multiline
-              placeholder="Paste here"
+              placeholder={t("chat.composer.pasteHere")}
               placeholderTextColor={placeholderColor(colors)}
               style={{
                 width: "100%",
@@ -696,7 +714,7 @@ function PasteTextSheet({ colors, onClose, onAttach }: { colors: Colors; onClose
               }}
             />
           </SettingsRow>
-          <SettingsAction label="Attach it to the message" actionLabel="Attach" disabled={!text.trim()} onPress={() => onAttach(text, `Pasted text (${text.trim().split(/\s+/).length} words)`)} />
+          <SettingsAction label={t("chat.composer.attachToMessage")} actionLabel={t("chat.composer.attach")} disabled={!text.trim()} onPress={() => onAttach(text, `Pasted text (${text.trim().split(/\s+/).length} words)`)} />
         </SettingsCard>
       </Modal.Content>
     </Modal>

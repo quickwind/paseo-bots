@@ -5,14 +5,16 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { botLimits, botMcpServers, botSkills, estimateTokens, utf8Bytes, type Bot } from "../../shared/bot";
+import { projectFoldersNote } from "../../shared/folder-access";
 import { teamOf } from "../../shared/groups";
 import { describeSchedule } from "../../shared/routines";
-import { systemPromptRpc } from "../../shared/rpc";
+import { hostCapsRpc, identityStatusRpc, systemPromptRpc } from "../../shared/rpc";
 import { relativeTime } from "../../shared/time";
+import { englishTranslate, type Translate } from "../../shared/translate";
 import { useBotChats, useBotHost } from "../data";
 import { MONO_FONT, MONO_PROPS } from "../native";
+import { useT } from "../i18n/use-t";
 import { code, codeLine, ui } from "../typography";
-import { useAppsCatalog, useAppsStatus } from "../library/apps";
 import type { PanelProps } from "./BotPanel";
 import { CardNote, DrillRow, SectionMeta } from "./controls";
 
@@ -27,76 +29,100 @@ function useDebounced<T>(value: T, ms: number): T {
 
 // ---------------------------------------------------------------- overview
 
-function size(text: string): string {
-  return `${(utf8Bytes(text) / 1000).toFixed(1)} KB · ≈${estimateTokens(text).toLocaleString()} tokens`;
+function size(text: string, t: Translate = englishTranslate): string {
+  return t("panel.sizeTokens", { kb: (utf8Bytes(text) / 1000).toFixed(1), tokens: estimateTokens(text).toLocaleString() });
 }
 
-/** "Chief of Staff of Ops", "On Ops, led by Scout" or "No team". */
-function teamLine(bot: Bot, groups: PanelProps["groups"]): string {
+/** "Chief of Staff of Ops", "On Ops" or "No team". */
+function teamLine(bot: Bot, groups: PanelProps["groups"], t: Translate = englishTranslate): string {
   const group = teamOf(bot.id, groups);
-  if (!group) return "No team. Put it on one from the Team map.";
-  if (group.leadId === bot.id) return `Chief of Staff of ${group.name}`;
-  return `On ${group.name}`;
+  if (!group) return t("panel.noTeam");
+  if (group.leadId === bot.id) return t("panel.chiefOfStaffOf", { name: group.name });
+  return t("panel.onTeam", { name: group.name });
 }
 
 export function OverviewSection({ colors, bot, library, groups, localHost, onSetup }: PanelProps) {
+  const { t } = useT();
   const host = useBotHost(bot.hostId, localHost);
   const compose = useRpc(systemPromptRpc);
   const promptBot = useDebounced(bot, 600);
   const prompt = useQuery({
     // The server reads skills and teams from the saved settings, so changes there recompose too.
-    queryKey: ["paseo-bots", "prompt", JSON.stringify(promptBot), host.isLocal, JSON.stringify(library.skills), JSON.stringify(groups)],
+    queryKey: ["aydo", "prompt", JSON.stringify(promptBot), host.isLocal, JSON.stringify(library.skills), JSON.stringify(groups)],
     queryFn: () => compose({ bot: promptBot, local: host.isLocal }),
     // Keep the previous composition while edits recompose it, so the card doesn't jump.
     placeholderData: (previous) => previous,
   });
   const [sheet, setSheet] = useState<"summary" | "prompt" | null>(null);
+  // Devin reads the identity from rule files that it cuts at 32 KB; say so when this one is long.
+  const identityRpc = useRpc(identityStatusRpc);
+  const identity = useQuery({
+    queryKey: ["aydo", "identity", bot.id, prompt.dataUpdatedAt],
+    queryFn: () => identityRpc({ botId: bot.id }),
+    enabled: host.isLocal && /^devin(\b|$)/.test(bot.provider) && prompt.isSuccess,
+  });
 
-  const appsStatus = useAppsStatus();
-  const appNames = new Map((useAppsCatalog(appsStatus.data?.configured ?? false).data?.apps ?? []).map((app) => [app.slug, app.name]));
+  // What the host does for Devin changes the note about project folders; only the local plugin can say.
+  const askHostCaps = useRpc(hostCapsRpc);
+  const caps = useQuery({ queryKey: ["aydo", "hostCaps"], queryFn: () => askHostCaps({}), enabled: host.isLocal, staleTime: Infinity });
+  const foldersNote = projectFoldersNote(bot.provider, caps.data, t);
+
   const tools = [
     ...botMcpServers(bot, library).map((server) => server.name),
-    ...botSkills(bot, library).map((skill) => `${skill.id} (skill)`),
-    ...(appsStatus.data?.configured && host.isLocal ? bot.apps.map((slug) => `${appNames.get(slug) ?? slug} (app)`) : []),
+    ...botSkills(bot, library).map((skill) => t("panel.skillName", { name: skill.id })),
   ];
   const sections = prompt.data?.sections ?? [];
 
   return (
     <>
-      <SettingsSection title="Setup">
+      <SettingsSection title={t("panel.setup")}>
         <SettingsCard>
-          <SettingsAction label="Set up with the bot" hint="Starts a chat where the bot interviews you and proposes its own instructions and memory" actionLabel="Start" onPress={onSetup} />
+          <SettingsAction label={t("panel.setUp")} hint={t("panel.setUpHint")} actionLabel={t("panel.start")} onPress={onSetup} />
         </SettingsCard>
       </SettingsSection>
-      <SettingsSection title="About this bot">
+      {identity.data?.note ? (
+        <SettingsSection title={t("panel.devinRules")}>
+          <SettingsCard>
+            <CardNote colors={colors} text={identity.data.note} />
+          </SettingsCard>
+        </SettingsSection>
+      ) : null}
+      {foldersNote ? (
+        <SettingsSection title={t("panel.inProjectFolder")}>
+          <SettingsCard>
+            <CardNote colors={colors} text={foldersNote} />
+          </SettingsCard>
+        </SettingsSection>
+      ) : null}
+      <SettingsSection title={t("panel.aboutBot")}>
         <SettingsCard>
-          <DrillRow colors={colors} label="Summary" hint="What it does, reaches and won't do" onPress={() => setSheet("summary")} />
-          <DrillRow colors={colors} label="System prompt" hint={prompt.data ? size(prompt.data.systemPrompt) : prompt.isError ? "Unable to compose the prompt" : "Loading..."} onPress={() => setSheet("prompt")} />
+          <DrillRow colors={colors} label={t("panel.summary")} hint={t("panel.summaryHint")} onPress={() => setSheet("summary")} />
+          <DrillRow colors={colors} label={t("panel.systemPrompt")} hint={prompt.data ? size(prompt.data.systemPrompt, t) : prompt.isError ? t("panel.composeFailed") : t("settings.loading")} onPress={() => setSheet("prompt")} />
         </SettingsCard>
       </SettingsSection>
       {sheet === "summary" ? (
-        <Modal title="Summary" open onOpenChange={(next) => !next && setSheet(null)}>
+        <Modal title={t("panel.summary")} open onOpenChange={(next) => !next && setSheet(null)}>
           <Modal.Content>
             <SettingsCard>
-              <SettingsRow label="Does" hint={bot.title || bot.description || "No title yet. Add one under Identity."} />
-              <SettingsRow label="Team" hint={teamLine(bot, groups)} />
-              <SettingsRow label="Can reach" hint={tools.length ? tools.join(", ") : "Only its provider's built-in tools and Paseo's tools"} />
-              <SettingsRow label="Runs" hint={bot.routines.length ? bot.routines.map((routine) => `${routine.name}: ${describeSchedule(routine.schedule)}${routine.enabled ? "" : " (paused)"}`).join("\n") : "Only when you message it"} />
-              <SettingsRow label="Won't" hint={botLimits(bot, { local: host.isLocal, appsConfigured: !!appsStatus.data?.configured }).join("\n")} />
+              <SettingsRow label={t("panel.does")} hint={bot.title || bot.description || t("panel.noTitle")} />
+              <SettingsRow label={t("panel.team")} hint={teamLine(bot, groups, t)} />
+              <SettingsRow label={t("panel.canReach")} hint={tools.length ? tools.join(t("text.change.listSep")) : t("panel.onlyBuiltIn")} />
+              <SettingsRow label={t("panel.runs")} hint={bot.routines.length ? bot.routines.map((routine) => `${t("panel.routineLine", { name: routine.name, schedule: describeSchedule(routine.schedule, t) })}${routine.enabled ? "" : t("panel.pausedTag")}`).join("\n") : t("panel.onlyWhenMessaged")} />
+              <SettingsRow label={t("panel.wont")} hint={botLimits(bot, { local: host.isLocal }, t).join("\n")} />
             </SettingsCard>
           </Modal.Content>
         </Modal>
       ) : null}
       {sheet === "prompt" ? (
-        <Modal title="System prompt" open onOpenChange={(next) => !next && setSheet(null)}>
+        <Modal title={t("panel.systemPrompt")} open onOpenChange={(next) => !next && setSheet(null)}>
           <Modal.Content>
-            <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>Sent with every new chat{prompt.data ? `: ${size(prompt.data.systemPrompt)}` : "."}</Text>
-            {sections.length === 0 ? <CardNote colors={colors} text={prompt.isError ? "Unable to compose the prompt" : "Loading..."} loading={!prompt.isError} /> : null}
+            <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>{prompt.data ? t("panel.sentWithSize", { size: size(prompt.data.systemPrompt, t) }) : t("panel.sentWith")}</Text>
+            {sections.length === 0 ? <CardNote colors={colors} text={prompt.isError ? t("panel.composeFailed") : t("settings.loading")} loading={!prompt.isError} /> : null}
             {sections.map((section) => (
               <View key={section.title} style={{ gap: 8 }}>
                 <View style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
                   <Text style={{ fontSize: ui(14), color: colors.foreground }}>{section.title}</Text>
-                  <SectionMeta colors={colors} text={size(section.text)} />
+                  <SectionMeta colors={colors} text={size(section.text, t)} />
                 </View>
                 <View style={{ padding: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface1 }}>
                   <Text selectable {...MONO_PROPS} style={{ fontFamily: MONO_FONT, fontSize: code(), lineHeight: codeLine(), color: colors.foreground }}>
@@ -114,39 +140,39 @@ export function OverviewSection({ colors, bot, library, groups, localHost, onSet
 
 // ---------------------------------------------------------------- history
 
-function summarize(before: Bot, after: Bot): string {
+function summarize(before: Bot, after: Bot, t: Translate = englishTranslate): string {
   const labels: [keyof Bot, string][] = [
-    ["name", "name"],
-    ["title", "title"],
-    ["description", "blurb"],
-    ["avatar", "avatar"],
-    ["soul", "standing instructions"],
-    ["skillIds", "skills"],
-    ["routines", "routines"],
-    ["playbooks", "playbooks"],
-    ["mcpServerIds", "MCP servers"],
-    ["apps", "connected apps"],
-    ["alwaysAllow", "always-allowed tools"],
-    ["contactBots", "contact with other bots"],
-    ["cwd", "folder"],
-    ["hostId", "host"],
-    ["provider", "provider"],
-    ["model", "model"],
-    ["modeId", "mode"],
-    ["thinkingOptionId", "thinking"],
+    ["name", t("panel.field.name")],
+    ["title", t("panel.field.title")],
+    ["description", t("panel.field.blurb")],
+    ["avatar", t("panel.field.avatar")],
+    ["soul", t("panel.field.standingInstructions")],
+    ["skillIds", t("panel.field.skills")],
+    ["routines", t("panel.field.routines")],
+    ["playbooks", t("panel.field.playbooks")],
+    ["mcpServerIds", t("panel.mcpServers")],
+    ["alwaysAllow", t("panel.field.alwaysAllowed")],
+    ["contactBots", t("panel.field.contactBots")],
+    ["cwd", t("panel.field.folder")],
+    ["hostId", t("panel.field.host")],
+    ["provider", t("panel.field.provider")],
+    ["model", t("panel.field.model")],
+    ["modeId", t("panel.field.mode")],
+    ["thinkingOptionId", t("panel.field.thinking")],
   ];
   const changed = labels.filter(([key]) => JSON.stringify(before[key]) !== JSON.stringify(after[key])).map(([, label]) => label);
-  return changed.length ? `Changed since: ${changed.join(", ")}` : "Same as now";
+  return changed.length ? t("panel.changedSince", { list: changed.join(t("text.change.listSep")) }) : t("panel.sameAsNow");
 }
 
 export function HistorySection({ colors, bot, history, onRestore }: PanelProps) {
+  const { t } = useT();
   const mine = history.filter((entry) => entry.botId === bot.id).reverse();
   return (
-    <SettingsSection title="Earlier versions" info="Each burst of edits is kept so you can undo it. Restoring keeps the current version here too.">
+    <SettingsSection title={t("panel.earlierVersions")} info={t("panel.historyInfo")}>
       <SettingsCard>
-        {mine.length === 0 ? <CardNote colors={colors} text="No earlier versions yet" /> : null}
+        {mine.length === 0 ? <CardNote colors={colors} text={t("panel.noEarlier")} /> : null}
         {mine.map((entry) => (
-          <SettingsAction key={entry.at} label={`Version from ${relativeTime(entry.at)}`} hint={summarize(entry.snapshot, bot)} actionLabel="Restore" onPress={() => onRestore(entry.snapshot)} />
+          <SettingsAction key={entry.at} label={t("panel.versionFrom", { when: relativeTime(entry.at, undefined, t) })} hint={summarize(entry.snapshot, bot, t)} actionLabel={t("panel.restore")} onPress={() => onRestore(entry.snapshot)} />
         ))}
       </SettingsCard>
     </SettingsSection>
@@ -156,6 +182,7 @@ export function HistorySection({ colors, bot, history, onRestore }: PanelProps) 
 // ---------------------------------------------------------------- usage
 
 export function UsageSection({ bot, localHost }: PanelProps) {
+  const { t } = useT();
   const host = useBotHost(bot.hostId, localHost);
   const chats = useBotChats(host, bot.id);
   const list = chats.data ?? [];
@@ -167,11 +194,11 @@ export function UsageSection({ bot, localHost }: PanelProps) {
   const working = list.filter((chat) => chat.status === "running").length;
   const loading = chats.isLoading;
   return (
-    <SettingsSection title="All chats" info="From each chat's latest turn as reported by the provider. Archived chats aren't counted.">
+    <SettingsSection title={t("panel.allChats")} info={t("panel.usageInfo")}>
       <SettingsCard>
-        <SettingsRow label="Chats" hint={loading ? "Loading..." : `${list.length} open${working ? `, ${working} working now` : ""}`} />
-        <SettingsRow label="Tokens" hint={loading ? "Loading..." : `${input.toLocaleString()} in · ${output.toLocaleString()} out`} />
-        <SettingsRow label="Cost" hint={loading ? "Loading..." : cost > 0 ? `$${cost.toFixed(2)}` : "Not reported by this provider"} />
+        <SettingsRow label={t("panel.chats")} hint={loading ? t("settings.loading") : `${t("panel.openCount", { n: list.length })}${working ? t("panel.workingNow", { n: working }) : ""}`} />
+        <SettingsRow label={t("panel.tokens")} hint={loading ? t("settings.loading") : t("panel.tokensInOut", { input: input.toLocaleString(), output: output.toLocaleString() })} />
+        <SettingsRow label={t("panel.cost")} hint={loading ? t("settings.loading") : cost > 0 ? `$${cost.toFixed(2)}` : t("panel.notReported")} />
       </SettingsCard>
     </SettingsSection>
   );

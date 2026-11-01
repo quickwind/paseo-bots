@@ -139,8 +139,9 @@ export function placeholderColor(colors: Colors): string {
 export interface ConfirmInput {
   title: string;
   message: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
+  /** Both button labels come from the caller (translated); the dialog has no English fallback. */
+  confirmLabel: string;
+  cancelLabel: string;
   destructive?: boolean;
 }
 
@@ -153,8 +154,7 @@ const host = globalThis as unknown as {
 
 /** Paseo's confirmDialog (utils/confirm-dialog.ts): Alert on phones, the Electron dialog on desktop, confirm() on web. */
 export async function confirmDialog(input: ConfirmInput): Promise<boolean> {
-  const confirmLabel = input.confirmLabel ?? "Confirm";
-  const cancelLabel = input.cancelLabel ?? "Cancel";
+  const { confirmLabel, cancelLabel } = input;
   if (Platform.OS !== "web") {
     return new Promise<boolean>((resolve) => {
       Alert.alert(

@@ -9,6 +9,8 @@ import { parseTriggers } from "../../shared/playbooks";
 import { memoryDeleteRpc, memoryListRpc, memoryReadRpc, memoryWriteRpc } from "../../shared/rpc";
 import { useBotHost } from "../data";
 import { confirmDialog, errorText } from "../native";
+import { useT } from "../i18n/use-t";
+import { MaintenanceSection } from "./MaintenanceSection";
 import type { PanelProps } from "./BotPanel";
 import { LibraryPicker } from "./LibraryPicker";
 import { Alert, Button, CardNote, DrillRow, FormTextArea, InputField, SectionLink, SectionMeta, SheetActions, TextAreaField } from "./controls";
@@ -20,9 +22,10 @@ const kb = (bytes: number) => (bytes / 1000).toFixed(1);
 
 
 function LocalOnly({ colors, what }: { colors: Colors; what: string }) {
+  const { t } = useT();
   return (
     <View style={{ marginBottom: 24 }}>
-      <Alert colors={colors} description={`${what} live on the host that stores this bot, so they only apply while the bot runs there.`} />
+      <Alert colors={colors} description={t("knowledge.localOnly", { what })} />
     </View>
   );
 }
@@ -31,17 +34,18 @@ function LocalOnly({ colors, what }: { colors: Colors; what: string }) {
 
 /** Paseo's "Append system prompt": a row with Edit that opens a sheet with the text, Reset and Save. */
 export function SoulSection({ colors, bot, onPatch }: PanelProps) {
+  const { t } = useT();
   const [editing, setEditing] = useState(false);
   const bytes = utf8Bytes(bot.soul);
   return (
     <>
-      <SettingsSection title="Instructions" info="Comes right after the bot's identity in the system prompt and outranks memory and skills.">
+      <SettingsSection title={t("knowledge.instructions")} info={t("knowledge.instructionsInfo")}>
         <SettingsCard>
-          <SettingsAction label="Standing instructions" hint="How the bot behaves in every chat" actionLabel="Edit" onPress={() => setEditing(true)} />
+          <SettingsAction label={t("panel.standingInstructions")} hint={t("knowledge.standingHint")} actionLabel={t("teams.edit")} onPress={() => setEditing(true)} />
           <SettingsRow
-            label="Size"
-            hint={bytes ? `${kb(bytes)} of ${SOUL_MAX_BYTES / 1000} KB` : "Empty"}
-            error={bytes > SOUL_MAX_BYTES ? `Over the ${SOUL_MAX_BYTES / 1000} KB limit` : null}
+            label={t("knowledge.size")}
+            hint={bytes ? t("knowledge.sizeOf", { used: kb(bytes), limit: SOUL_MAX_BYTES / 1000 }) : t("knowledge.empty")}
+            error={bytes > SOUL_MAX_BYTES ? t("knowledge.overLimit", { limit: SOUL_MAX_BYTES / 1000 }) : null}
           />
         </SettingsCard>
       </SettingsSection>
@@ -61,27 +65,28 @@ export function SoulSection({ colors, bot, onPatch }: PanelProps) {
 }
 
 function SoulSheet({ colors, saved, onClose, onSave }: { colors: Colors; saved: string; onClose(): void; onSave(soul: string): void }) {
+  const { t } = useT();
   const [draft, setDraft] = useState(saved);
   const bytes = utf8Bytes(draft);
   const changed = draft !== saved;
   return (
-    <Modal title="Standing instructions" open onOpenChange={(open) => !open && onClose()}>
+    <Modal title={t("panel.standingInstructions")} open onOpenChange={(open) => !open && onClose()}>
       <Modal.Content>
         <FormTextArea
           colors={colors}
-          accessibilityLabel="Standing instructions"
+          accessibilityLabel={t("panel.standingInstructions")}
           value={draft}
           onChangeText={setDraft}
           minHeight={320}
-          placeholder="You manage my email. Draft replies in my voice; never send without asking."
+          placeholder={t("knowledge.soulPlaceholder")}
         />
         <SheetActions
           leading={
             <SectionMeta colors={colors} text={`${kb(bytes)} / ${SOUL_MAX_BYTES / 1000} KB`} tone={bytes > SOUL_MAX_BYTES ? "danger" : bytes > SOUL_MAX_BYTES * 0.8 ? "warning" : undefined} />
           }
         >
-          <Button colors={colors} variant="ghost" label="Reset" disabled={!changed} onPress={() => setDraft(saved)} />
-          <Button colors={colors} variant="default" label="Save" disabled={!changed} onPress={() => onSave(draft)} />
+          <Button colors={colors} variant="ghost" label={t("surface.reset")} disabled={!changed} onPress={() => setDraft(saved)} />
+          <Button colors={colors} variant="default" label={t("teams.save")} disabled={!changed} onPress={() => onSave(draft)} />
         </SheetActions>
       </Modal.Content>
     </Modal>
@@ -91,11 +96,12 @@ function SoulSheet({ colors, saved, onClose, onSave }: { colors: Colors; saved: 
 // ---------------------------------------------------------------- skills
 
 export function SkillsSection(props: PanelProps) {
+  const { t } = useT();
   const host = useBotHost(props.bot.hostId, props.localHost);
   return (
     <>
-      {!host.isLocal ? <LocalOnly colors={props.colors} what="Skills" /> : null}
-      <LibraryPicker {...props} kind="skill" title="Skills" info="Switched-on skills are listed in the bot's prompt and read when a task needs them. Add and edit skills in Skills & Tools." />
+      {!host.isLocal ? <LocalOnly colors={props.colors} what={t("panel.skills")} /> : null}
+      <LibraryPicker {...props} kind="skill" title={t("panel.skills")} info={t("knowledge.skillsInfo")} />
     </>
   );
 }
@@ -106,18 +112,20 @@ const TOPIC_NAME = /^[A-Za-z0-9 ._-]+$/;
 const MEMORY_LINES = 200;
 const MEMORY_BYTES = 24_000;
 
-export function MemorySection({ colors, bot, localHost }: PanelProps) {
+export function MemorySection(props: PanelProps) {
+  const { t } = useT();
+  const { colors, bot, localHost } = props;
   const host = useBotHost(bot.hostId, localHost);
   const list = useRpc(memoryListRpc);
   const queryClient = useQueryClient();
   const toast = useToast();
   const [open, setOpen] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"topic" | "changes" | "log" | null>(null);
-  const files = useQuery({ queryKey: ["paseo-bots", "memory", bot.id], queryFn: () => list({ botId: bot.id }), refetchInterval: 20_000 });
+  const files = useQuery({ queryKey: ["aydo", "memory", bot.id], queryFn: () => list({ botId: bot.id }), refetchInterval: 20_000 });
   const journal = useMemoryJournal(bot.id);
   const log = useDailyLog(bot.id);
   const refresh = () =>
-    Promise.all([queryClient.invalidateQueries({ queryKey: ["paseo-bots", "memory", bot.id] }), queryClient.invalidateQueries({ queryKey: ["paseo-bots", "memory-journal", bot.id] })]);
+    Promise.all([queryClient.invalidateQueries({ queryKey: ["aydo", "memory", bot.id] }), queryClient.invalidateQueries({ queryKey: ["aydo", "memory-journal", bot.id] })]);
 
   const data = files.data;
   const over = data ? data.injectedLines > MEMORY_LINES || data.injectedBytes > MEMORY_BYTES : false;
@@ -126,11 +134,11 @@ export function MemorySection({ colors, bot, localHost }: PanelProps) {
 
   return (
     <>
-      {!host.isLocal ? <LocalOnly colors={colors} what="Memory files" /> : null}
+      {!host.isLocal ? <LocalOnly colors={colors} what={t("knowledge.memoryFiles")} /> : null}
       <SettingsSection
-        title="Files"
-        info="The bot updates these itself as it learns; edit them to correct or add facts. MEMORY.md is loaded into every chat, topic files are read on demand."
-        trailing={<SectionLink colors={colors} label="New topic file" onPress={() => setSheet("topic")} />}
+        title={t("settings.tools.files")}
+        info={t("knowledge.filesInfo")}
+        trailing={<SectionLink colors={colors} label={t("panel.newTopicFile")} onPress={() => setSheet("topic")} />}
       >
         <SettingsCard>
           {(data?.files ?? [{ name: "MEMORY.md", bytes: 0, lines: 0, topic: false }]).map((file) => (
@@ -138,26 +146,38 @@ export function MemorySection({ colors, bot, localHost }: PanelProps) {
               key={file.name}
               colors={colors}
               label={file.topic ? `memory/${file.name}` : file.name}
-              hint={!data ? "Loading..." : file.topic ? `${file.lines} lines · ${kb(file.bytes)} KB` : `${data.injectedLines} of ${MEMORY_LINES} lines · ${kb(data.injectedBytes)} of ${MEMORY_BYTES / 1000} KB loaded into every chat`}
-              error={!file.topic && over ? "Over the budget, so the end is left out" : null}
+              hint={
+                !data
+                  ? t("settings.loading")
+                  : file.topic
+                    ? t("knowledge.fileStats", { lines: file.lines, size: kb(file.bytes) })
+                    : t("knowledge.loadedInto", { lines: data.injectedLines, maxLines: MEMORY_LINES, size: kb(data.injectedBytes), maxSize: MEMORY_BYTES / 1000 })
+              }
+              error={!file.topic && over ? t("knowledge.overBudget") : null}
               hintLines={2}
               onPress={() => setOpen(file.name)}
             />
           ))}
           {data ? (
             <SettingsAction
-              label="Folder"
+              label={t("panel.folder")}
               hint={data.folder.replace(/^\/(?:Users|home)\/[^/]+/, "~")}
-              actionLabel="Copy"
-              onPress={() => void copyText(data.folder).then(() => toast.show("Path copied", { variant: "success" }))}
+              actionLabel={t("dialogs.export.copy")}
+              onPress={() => void copyText(data.folder).then(() => toast.show(t("surface.pathCopied"), { variant: "success" }))}
             />
           ) : null}
         </SettingsCard>
       </SettingsSection>
-      <SettingsSection title="Activity">
+      <MaintenanceSection {...props} />
+      <SettingsSection title={t("panel.group.activity")}>
         <SettingsCard>
-          <DrillRow colors={colors} label="Changes" hint={journal.isLoading ? "Loading..." : changes ? `${changes} ${changes === 1 ? "change" : "changes"}, with undo` : "No changes yet"} onPress={() => setSheet("changes")} />
-          <DrillRow colors={colors} label="Daily log" hint={log.isLoading ? "Loading..." : days ? `${days} ${days === 1 ? "day" : "days"}` : "No entries yet"} onPress={() => setSheet("log")} />
+          <DrillRow
+            colors={colors}
+            label={t("panel.changes")}
+            hint={journal.isLoading ? t("settings.loading") : changes ? t("knowledge.changesCount", { count: changes }) : t("panel.noChanges")}
+            onPress={() => setSheet("changes")}
+          />
+          <DrillRow colors={colors} label={t("panel.dailyLog")} hint={log.isLoading ? t("settings.loading") : days ? t("knowledge.daysCount", { count: days }) : t("panel.noEntries")} onPress={() => setSheet("log")} />
         </SettingsCard>
       </SettingsSection>
       {sheet === "topic" ? (
@@ -181,24 +201,25 @@ export function MemorySection({ colors, bot, localHost }: PanelProps) {
 
 /** A new topic file: its name, then it opens to write in. */
 function TopicSheet({ colors, botId, onClose, onCreated }: { colors: Colors; botId: string; onClose(): void; onCreated(name: string): void }) {
+  const { t } = useT();
   const write = useRpc(memoryWriteRpc);
   const toast = useToast();
   const [topic, setTopic] = useState("");
   const name = topic.trim().replace(/\.md$/, "");
-  const error = name && !TOPIC_NAME.test(name) ? "Use letters, numbers, spaces, dots and dashes" : null;
+  const error = name && !TOPIC_NAME.test(name) ? t("knowledge.topicError") : null;
   const create = () =>
     void write({ botId, name: `${name}.md`, text: `# ${name}\n` })
       .then(() => onCreated(`${name}.md`))
       .catch((caught: unknown) => toast.error(errorText(caught)));
   return (
-    <Modal title="New topic file" open onOpenChange={(value) => !value && onClose()}>
+    <Modal title={t("panel.newTopicFile")} open onOpenChange={(value) => !value && onClose()}>
       <Modal.Content>
         <SettingsCard>
-          <InputField colors={colors} label="Name" hint="Letters, numbers, spaces, dots and dashes" error={error} initialValue="" placeholder="projects" onChangeText={setTopic} />
+          <InputField colors={colors} label={t("teams.name")} hint={t("knowledge.topicHint")} error={error} initialValue="" placeholder="projects" onChangeText={setTopic} />
         </SettingsCard>
         <SheetActions>
-          <Button colors={colors} variant="ghost" label="Cancel" onPress={onClose} />
-          <Button colors={colors} variant="default" label="Create" disabled={!name || !!error} onPress={create} />
+          <Button colors={colors} variant="ghost" label={t("dialogs.cancel")} onPress={onClose} />
+          <Button colors={colors} variant="default" label={t("knowledge.create")} disabled={!name || !!error} onPress={create} />
         </SheetActions>
       </Modal.Content>
     </Modal>
@@ -207,6 +228,7 @@ function TopicSheet({ colors, botId, onClose, onCreated }: { colors: Colors; bot
 
 /** One memory file in a sheet. Closing with unsaved edits asks before discarding them. */
 function MemorySheet({ colors, botId, name, onChanged, onClose }: { colors: Colors; botId: string; name: string; onChanged(): void; onClose(): void }) {
+  const { t } = useT();
   const read = useRpc(memoryReadRpc);
   const write = useRpc(memoryWriteRpc);
   const remove = useRpc(memoryDeleteRpc);
@@ -235,7 +257,7 @@ function MemorySheet({ colors, botId, name, onChanged, onClose }: { colors: Colo
   }, [botId, name, read]);
 
   const close = async () => {
-    if (dirty && !(await confirmDialog({ title: "Discard changes", message: `Discard your changes to ${label}?`, confirmLabel: "Discard", destructive: true }))) return;
+    if (dirty && !(await confirmDialog({ title: t("knowledge.discardTitle"), message: t("knowledge.discardMessage", { name: label }), confirmLabel: t("knowledge.discard"), cancelLabel: t("dialogs.cancel"), destructive: true }))) return;
     onClose();
   };
 
@@ -246,7 +268,7 @@ function MemorySheet({ colors, botId, name, onChanged, onClose }: { colors: Colo
       // Bots edit their memory themselves; don't overwrite a change made since it was opened.
       const current = (await read({ botId, name })).text;
       if (current !== saved && current !== text) {
-        toast.error("The bot changed this file since you opened it. Close it and open it again.");
+        toast.error(t("knowledge.changedSince"));
         return;
       }
       await write({ botId, name, text });
@@ -261,9 +283,14 @@ function MemorySheet({ colors, botId, name, onChanged, onClose }: { colors: Colo
   };
 
   const destroy = async () => {
-    const confirmed = await confirmDialog({ title: "Delete topic file", message: `Delete ${label}? This cannot be undone.`, confirmLabel: "Delete", destructive: true });
+    const confirmed = await confirmDialog({ title: t("knowledge.deleteTopicTitle"), message: t("knowledge.deleteTopicMessage", { name: label }), confirmLabel: t("settings.delete"), cancelLabel: t("dialogs.cancel"), destructive: true });
     if (!confirmed) return;
-    await remove({ botId, name });
+    try {
+      await remove({ botId, name });
+    } catch (error) {
+      toast.error(t("knowledge.deleteFailed", { error: errorText(error) }));
+      return;
+    }
     onChanged();
     onClose();
   };
@@ -278,11 +305,11 @@ function MemorySheet({ colors, botId, name, onChanged, onClose }: { colors: Colo
             </View>
           </SettingsCard>
         ) : (
-          <FormTextArea colors={colors} monospace accessibilityLabel={`${label} contents`} value={text} onChangeText={setText} minHeight={320} placeholder={"- Prefers short replies\n- Works Mon-Fri, CET"} />
+          <FormTextArea colors={colors} monospace accessibilityLabel={t("knowledge.contents", { name: label })} value={text} onChangeText={setText} minHeight={320} placeholder={t("knowledge.memoryPlaceholder")} />
         )}
-        <SheetActions leading={topic ? <Button colors={colors} variant="ghost" label="Delete" icon="Trash2" onPress={() => void destroy()} /> : null}>
-          <Button colors={colors} variant="ghost" label="Reset" disabled={!dirty || saving} onPress={() => setText(saved)} />
-          <Button colors={colors} variant="default" label={saving ? "Saving..." : "Save"} disabled={!dirty || saving} onPress={() => void save()} />
+        <SheetActions leading={topic ? <Button colors={colors} variant="ghost" label={t("settings.delete")} icon="Trash2" onPress={() => void destroy()} /> : null}>
+          <Button colors={colors} variant="ghost" label={t("surface.reset")} disabled={!dirty || saving} onPress={() => setText(saved)} />
+          <Button colors={colors} variant="default" label={saving ? t("dialogs.saving") : t("teams.save")} disabled={!dirty || saving} onPress={() => void save()} />
         </SheetActions>
       </Modal.Content>
     </Modal>
@@ -293,31 +320,32 @@ function MemorySheet({ colors, botId, name, onChanged, onClose }: { colors: Colo
 
 /** OpenMausBot's playbooks: step-by-step guidance a chat gets when its first message mentions a trigger. */
 export function PlaybooksSection({ colors, bot, onPatch }: PanelProps) {
+  const { t } = useT();
   const [editing, setEditing] = useState<Playbook | "new" | null>(null);
   const save = (playbook: Playbook) => {
     onPatch({ playbooks: bot.playbooks.some((entry) => entry.id === playbook.id) ? bot.playbooks.map((entry) => (entry.id === playbook.id ? playbook : entry)) : [...bot.playbooks, playbook] });
     setEditing(null);
   };
   const remove = async (playbook: Playbook) => {
-    if (!(await confirmDialog({ title: "Delete playbook", message: `Delete "${playbook.name}"? This cannot be undone.`, confirmLabel: "Delete", destructive: true }))) return;
+    if (!(await confirmDialog({ title: t("knowledge.deletePlaybookTitle"), message: t("knowledge.deleteNamed", { name: playbook.name }), confirmLabel: t("settings.delete"), cancelLabel: t("dialogs.cancel"), destructive: true }))) return;
     onPatch({ playbooks: bot.playbooks.filter((entry) => entry.id !== playbook.id) });
     setEditing(null);
   };
   return (
     <>
       <SettingsSection
-        title="Playbooks"
-        info="Steps for a kind of job. A chat gets a playbook when its first message mentions one of the playbook's trigger words, up to three at a time."
-        trailing={<SectionLink colors={colors} label="New playbook" onPress={() => setEditing("new")} />}
+        title={t("panel.playbooks")}
+        info={t("knowledge.playbooksInfo")}
+        trailing={<SectionLink colors={colors} label={t("panel.newPlaybook")} onPress={() => setEditing("new")} />}
       >
         <SettingsCard>
-          {bot.playbooks.length === 0 ? <CardNote colors={colors} text="No playbooks yet" /> : null}
+          {bot.playbooks.length === 0 ? <CardNote colors={colors} text={t("knowledge.noPlaybooks")} /> : null}
           {bot.playbooks.map((playbook) => (
             <DrillRow
               key={playbook.id}
               colors={colors}
-              label={playbook.name || "Untitled playbook"}
-              hint={playbook.triggers.length ? `When a chat mentions ${playbook.triggers.join(", ")}` : "No trigger words, so no chat gets it"}
+              label={playbook.name || t("knowledge.untitledPlaybook")}
+              hint={playbook.triggers.length ? t("knowledge.playbookTriggers", { triggers: playbook.triggers.join(t("text.change.listSep")) }) : t("knowledge.noTriggers")}
               onPress={() => setEditing(playbook)}
             />
           ))}
@@ -329,27 +357,28 @@ export function PlaybooksSection({ colors, bot, onPatch }: PanelProps) {
 }
 
 function PlaybookSheet({ colors, playbook, onClose, onSave, onDelete }: { colors: Colors; playbook: Playbook | null; onClose(): void; onSave(playbook: Playbook): void; onDelete?: () => void }) {
+  const { t } = useT();
   const [name, setName] = useState(playbook?.name ?? "");
   const [triggers, setTriggers] = useState(playbook?.triggers.join(", ") ?? "");
   const [instructions, setInstructions] = useState(playbook?.instructions ?? "");
   const parsed = parseTriggers(triggers);
   const canSave = !!name.trim() && parsed.length > 0 && !!instructions.trim();
   return (
-    <Modal title={playbook ? "Edit playbook" : "New playbook"} open onOpenChange={(open) => !open && onClose()}>
+    <Modal title={playbook ? t("knowledge.editPlaybook") : t("panel.newPlaybook")} open onOpenChange={(open) => !open && onClose()}>
       <Modal.Content contentContainerStyle={{ gap: 0 }}>
         <View style={{ marginBottom: 24 }}>
           <SettingsCard>
-            <InputField colors={colors} label="Name" initialValue={name} placeholder="Month-end close" onChangeText={setName} />
-            <InputField colors={colors} label="Trigger words" hint="Comma-separated words or phrases" initialValue={triggers} placeholder="month end, close the books" onChangeText={setTriggers} />
-            <TextAreaField colors={colors} label="Steps" hint="Markdown. The bot follows these when a chat matches." value={instructions} onChangeText={setInstructions} minHeight={240} placeholder={"1. Export last month's transactions.\n2. Reconcile them against the bank statement.\n3. ..."} />
+            <InputField colors={colors} label={t("teams.name")} initialValue={name} placeholder={t("knowledge.playbookNamePlaceholder")} onChangeText={setName} />
+            <InputField colors={colors} label={t("panel.triggerWords")} hint={t("knowledge.triggersHint")} initialValue={triggers} placeholder={t("knowledge.triggersPlaceholder")} onChangeText={setTriggers} />
+            <TextAreaField colors={colors} label={t("panel.steps")} hint={t("knowledge.stepsHint")} value={instructions} onChangeText={setInstructions} minHeight={240} placeholder={t("knowledge.stepsPlaceholder")} />
           </SettingsCard>
         </View>
-        <SheetActions leading={onDelete ? <Button colors={colors} variant="ghost" label="Delete" icon="Trash2" onPress={onDelete} /> : null}>
-          <Button colors={colors} variant="ghost" label="Cancel" onPress={onClose} />
+        <SheetActions leading={onDelete ? <Button colors={colors} variant="ghost" label={t("settings.delete")} icon="Trash2" onPress={onDelete} /> : null}>
+          <Button colors={colors} variant="ghost" label={t("dialogs.cancel")} onPress={onClose} />
           <Button
             colors={colors}
             variant="default"
-            label="Save"
+            label={t("teams.save")}
             disabled={!canSave}
             onPress={() => onSave({ id: playbook?.id ?? newPlaybookId(), name: name.trim().slice(0, 80), triggers: parsed, instructions })}
           />

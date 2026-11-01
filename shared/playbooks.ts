@@ -1,8 +1,11 @@
 import type { Playbook } from "./bot";
 
-// OpenMausBot's playbooks: process guidance with trigger words. A chat gets a
-// playbook only when one of its triggers appears in the job (the chat's first
-// message), so unrelated guidance stays out of the prompt.
+// Playbooks: process guidance with trigger words. A chat gets a playbook only when one of its triggers appears in the job (the
+// chat's first message), so unrelated guidance stays out of the prompt.
+//
+// Adapted from OpenMausBot's server/installed-playbooks.ts (Apache License 2.0, Copyright 2026 Milind Soni and OpenMausBot
+// contributors; see NOTICE and licenses/Apache-2.0.txt). Changed here: renamed and reorganised, a different matching
+// framing text and language handling.
 
 const MAX_SELECTED = 3;
 const MAX_CHARS = 24_000;
@@ -30,7 +33,7 @@ export function renderPlaybooks(playbooks: readonly Playbook[]): string {
   return ["Playbooks that match this job. Follow them as process guidance; they don't grant tools or permissions, or override the user.", ...parts].join("\n");
 }
 
-/** "invoice, receipt, expense report" as trigger phrases. */
+/** "invoice, receipt, expense report" as trigger phrases; a full-width Chinese comma (，) separates too. */
 export function parseTriggers(text: string): string[] {
-  return [...new Set(text.split(/[,\n]/).map((trigger) => trigger.trim()).filter(Boolean))].slice(0, 20);
+  return [...new Set(text.split(/[,，\n]/).map((trigger) => trigger.trim()).filter(Boolean))].slice(0, 20);
 }

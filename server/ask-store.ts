@@ -1,0 +1,102 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { pluginDataPath } from "./bot-home";
+import type { BotsHost } from "./host";
+import { writeAtomic } from "./managed-files";
+
+// The questions one bot has asked another, kept in one file so a follow-up from the same chat can go
+// into the chat that already has the answer, whether the question came as a file or as the ask_bot tool.
+
+/** Label on the chat that answers, carrying the id of the first question put to it. */
+export const ASK_REQUEST_LABEL = "aydo.ask-request";
+/** A follow-up goes into the same chat for this long after its last question; after that a new chat starts. */
+export const REUSE_WITHIN_MS = 60 * 60_000;
+const KEEP = 200;
+
+export interface AskRequest {
+  id: string;
+  fromBot: string;
+  fromChat: string;
+  toBot: string;
+  toName: string;
+  toChat: string | null;
+  message: string;
+  createdAt: string;
+  /** "waiting": for the user's approval. "queued": approved, waiting for the other chat to be free. "running": the other bot is working. */
+  status: "waiting" | "queued" | "running" | "answered" | "closed";
+  /** When the question was sent, or approved and put in line behind a busy chat; the half hour is counted from here. */
+  startedAt?: string;
+  answeredAt?: string;
+  /** An assignment: the other bot works in this workspace of the user's projects, and the request stays open for hours, not minutes. */
+  workspace?: { id: string; title: string; directory: string; projectId?: string; projectName?: string };
+  /** An assignment: how many assignments deep the chat it starts is (1 for one a lead gave). */
+  depth?: number;
+  /** "tool": asked with ask_bot, which waits for the answer itself, so nothing is pushed into the asking chat unless `detached`. */
+  via?: "tool";
+  /** ask_bot stopped waiting (it was told not to, or the answer took too long): the answer is pushed into the asking chat as a message, and the half hour applies. */
+  detached?: boolean;
+  /** Messages for the asking chat that have not been sent yet (it was busy). */
+  unsent: string[];
+}
+
+const storePath = () => join(pluginDataPath(), "requests.json");
+
+export async function loadRequests(): Promise<AskRequest[]> {
+  try {
+    return (JSON.parse(await readFile(storePath(), "utf8")) as { requests?: AskRequest[] }).requests ?? [];
+  } catch {
+    return [];
+  }
+}
+
+let queue: Promise<unknown> = Promise.resolve();
+
+/** One read-modify-write at a time. */
+export function updateRequests<T>(change: (requests: AskRequest[]) => T): Promise<T> {
+  const run = async () => {
+    const requests = await loadRequests();
+    const result = change(requests);
+    // Through a temporary file: readers outside the queue never see a half-written store, and a crash cannot leave one.
+    await writeAtomic(storePath(), JSON.stringify({ requests: requests.slice(-KEEP) }, null, 2));
+    return result;
+  };
+  const next = queue.then(run);
+  queue = next.catch(() => {});
+  return next;
+}
+
+/** ask_bot stops waiting for a request: "detached" means the answer will come as a message; "answered" means it came first and the tool can hand it over itself. */
+export function detachRequest(id: string): Promise<"detached" | "answered" | "gone"> {
+  return updateRequests((requests) => {
+    const found = requests.find((entry) => entry.id === id);
+    if (!found) return "gone";
+    if (found.status === "answered" || found.status === "closed") return "answered";
+    found.detached = true;
+    return "detached";
+  });
+}
+
+/** How many questions this chat has put to other bots in the last hour, by file or by ask_bot. */
+export async function askedInLastHour(fromChat: string, now: number): Promise<number> {
+  return (await loadRequests()).filter((entry) => entry.fromChat === fromChat && now - Date.parse(entry.createdAt) < 3_600_000).length;
+}
+
+const lastUsed = (request: AskRequest) => Date.parse(request.answeredAt ?? request.startedAt ?? request.createdAt);
+
+/**
+ * The chat an earlier question from this chat to this bot started, if a follow-up can go into it:
+ * it is still there, and its last question was less than an hour ago. `busy` says the other bot is
+ * still working (or other questions already wait for it), so a follow-up has to wait its turn.
+ */
+export async function reusableChat(host: BotsHost, input: { fromChat: string; toBot: string; exceptId?: string; now: number }): Promise<{ chat: string; busy: boolean } | null> {
+  const requests = await loadRequests();
+  const earlier = requests
+    .filter((entry) => entry.id !== input.exceptId && !entry.workspace && entry.fromChat === input.fromChat && entry.toBot === input.toBot && entry.toChat && entry.status !== "waiting")
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+  if (!earlier?.toChat) return null;
+  if (input.now - Math.max(lastUsed(earlier), ...requests.filter((entry) => entry.toChat === earlier.toChat).map(lastUsed)) > REUSE_WITHIN_MS) return null;
+  const agent = (await host.paseo?.agents.ref(earlier.toChat).refresh().catch(() => null))?.agent;
+  if (!agent || (agent as { archivedAt?: string | null }).archivedAt) return null;
+  const working = agent.status === "running" || agent.status === "initializing";
+  return { chat: earlier.toChat, busy: working || requests.some((entry) => entry.toChat === earlier.toChat && entry.status === "queued" && entry.id !== input.exceptId) };
+}

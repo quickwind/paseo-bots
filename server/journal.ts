@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, readFile, rm } from "node:fs/promises";
+import { dirname, join, relative, sep } from "node:path";
 import { redactSecrets } from "../shared/activity";
 import { lineDiff } from "../shared/diff";
-import { pluginDataPath } from "./bot-home";
+import { botDataPath, pluginDataPath } from "./bot-home";
+import { realDirUnder, writeAtomic } from "./managed-files";
 import { MAIN_MEMORY, memoryFilePath, memoryFolder } from "./memory";
 
 // OpenMausBot's memory journal: every change to a bot's MEMORY.md and topic
@@ -54,6 +55,8 @@ export class MemoryJournal {
   /** What each bot's memory looked like when the journal last checked. */
   private readonly seen = new Map<string, Snapshot>();
   private readonly queues = new Map<string, Promise<unknown>>();
+  /** How many turns of each bot are running, so a turn that starts mid-way through another's is not blamed for its edits on the person. */
+  private readonly running = new Map<string, number>();
 
   /** Runs one change per bot at a time. */
   private serial<T>(botId: string, work: () => Promise<T>): Promise<T> {
@@ -67,7 +70,11 @@ export class MemoryJournal {
 
   /** A turn is starting: anything that changed since the last look was done outside the app. */
   begin(botId: string): Promise<void> {
+    const others = this.running.get(botId) ?? 0;
+    this.running.set(botId, others + 1);
     return this.serial(botId, async () => {
+      // Another chat of this bot is working: what changed since the last look is probably its doing, and its turn will say so.
+      if (others > 0) return;
       const current = await snapshot(botId);
       const previous = this.seen.get(botId);
       if (previous) await this.record(botId, previous, current, { actor: "you", via: "disk", chat: null });
@@ -77,6 +84,7 @@ export class MemoryJournal {
 
   /** A turn ended: what changed during it was the bot's doing in that chat. */
   end(botId: string, chat: { id: string; title: string }): Promise<void> {
+    this.running.set(botId, Math.max(0, (this.running.get(botId) ?? 0) - 1));
     return this.serial(botId, async () => {
       const current = await snapshot(botId);
       const previous = this.seen.get(botId);
@@ -96,8 +104,9 @@ export class MemoryJournal {
     const before = await readFile(path, "utf8").catch(() => null);
     if (text === null) await rm(path, { force: true });
     else {
-      await mkdir(join(path, ".."), { recursive: true });
-      await writeFile(path, text, "utf8");
+      // Through a temporary file, and past any link the bot put in the way.
+      await realDirUnder(botDataPath(botId), ...relative(botDataPath(botId), dirname(path)).split(sep));
+      await writeAtomic(path, text);
     }
     await this.append(botId, file, before, text, { actor: "you", via, chat: null });
     const seen = this.seen.get(botId);
@@ -146,8 +155,7 @@ export class MemoryJournal {
       removed,
     };
     const entries = [...(await this.load(botId)), entry].slice(-KEEP);
-    await mkdir(join(pluginDataPath(), "journal"), { recursive: true });
-    await writeFile(journalPath(botId), entries.map((item) => JSON.stringify(item)).join("\n") + "\n", { encoding: "utf8", mode: 0o600 });
+    await writeAtomic(journalPath(botId), entries.map((item) => JSON.stringify(item)).join("\n") + "\n", 0o600);
   }
 
   private async load(botId: string): Promise<JournalEntry[]> {

@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { Image, Pressable, Text, View } from "react-native";
 import type { ComposerAttachment } from "../../../shared/attachments";
 import { capMessageForRender, formatDuration, formatMessageTimestamp, utf8ByteLength } from "../../../shared/markdown";
-import { appSignIns } from "../../../shared/apps";
+import { approvalIdOf } from "../../../shared/approvals";
 import { proposalIdOf } from "../../../shared/proposals";
 import { buildToolCallPresentation, type TaskActivity, type TaskEntry, type ToolCallDetail, type ToolCallStatus } from "../../../shared/tools";
 import { AttachmentPill } from "../../AttachmentPill";
@@ -12,11 +12,13 @@ import { Markdown } from "../../Markdown";
 import { CONTENT_MAX_WIDTH, nativeTokens } from "../../native";
 import { canSpeak } from "../../speech";
 import { scrollIntoView } from "../../web";
+import { useT } from "../../i18n/use-t";
+import type { Translate } from "../../../shared/translate";
 import { content, contentLine, ui } from "../../typography";
 import { ToolCallDetailsContent } from "./details";
 import type { StreamRow, TurnFooterInfo } from "./model";
 import { PlanCard } from "./PlanCard";
-import { ConnectCard } from "./ConnectCard";
+import { ApprovalCard } from "./ApprovalCard";
 import { ProposalCard } from "./ProposalCard";
 import { RoutineRunCard } from "./RoutineRunCard";
 import { CopyButton, ExpandableBadge, isWeb, SpeakButton, Spinner } from "./ui";
@@ -68,10 +70,10 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
     case "thought":
       return <ThoughtRow colors={colors} compact={context.compact} text={row.text} loading={row.loading} />;
     case "tool": {
+      const approvalId = approvalIdOf(row);
+      if (approvalId) return <ApprovalCard colors={colors} compact={context.compact} approvalId={approvalId} />;
       const proposalId = proposalIdOf(row);
       if (proposalId) return <ProposalCard colors={colors} compact={context.compact} proposalId={proposalId} />;
-      const signIns = appSignIns(row);
-      if (signIns.length) return <>{signIns.map((signIn) => <ConnectCard key={signIn.url} colors={colors} signIn={signIn} since={row.timestamp} agentId={context.agentId} botId={context.botId} />)}</>;
       return <ToolCallRow colors={colors} compact={context.compact} cwd={context.cwd} name={row.name} status={row.status} error={row.error} detail={row.detail} metadata={row.metadata} />;
     }
     case "speak":
@@ -84,6 +86,10 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
       return <CompactionMarker colors={colors} status={row.status} trigger={row.trigger} preTokens={row.preTokens} />;
     case "routine-run":
       return <RoutineRunCard colors={colors} card={row.card} onOpenChat={context.openChat} />;
+    case "proposal":
+      return <ProposalCard colors={colors} compact={context.compact} proposalId={row.proposalId} />;
+    case "approval":
+      return <ApprovalCard colors={colors} compact={context.compact} approvalId={row.approvalId} />;
   }
 }
 
@@ -91,6 +97,7 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
 
 
 const UserMessage = memo(function UserMessage({ colors, compact, text, timestamp, attachments }: { colors: Colors; compact: boolean; text: string; timestamp: number; attachments: ComposerAttachment[] }) {
+  const { t } = useT();
   const [hovered, setHovered] = useState(false);
   const [lightbox, setLightbox] = useState<ImageAttachment | null>(null);
   const hasText = text.trim().length > 0;
@@ -116,7 +123,7 @@ const UserMessage = memo(function UserMessage({ colors, compact, text, timestamp
           {images.length > 0 ? (
             <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", marginBottom: hasText || files.length > 0 ? 8 : 0 }}>
               {images.map((image) => (
-                <Pressable key={image.id} accessibilityRole="button" accessibilityLabel="Open image" onPress={() => setLightbox(image)}>
+                <Pressable key={image.id} accessibilityRole="button" accessibilityLabel={t("chat.stream.openImage")} onPress={() => setLightbox(image)}>
                   <AttachmentPill colors={colors} attachment={image} />
                 </Pressable>
               ))}
@@ -138,7 +145,7 @@ const UserMessage = memo(function UserMessage({ colors, compact, text, timestamp
         {hasText ? (
           <View pointerEvents={showTrailing ? "auto" : "none"} style={{ alignSelf: "flex-end", flexDirection: "row", alignItems: "center", height: 24, gap: 8, marginTop: 8, opacity: showTrailing ? 1 : 0 }}>
             <Text style={{ color: colors.foregroundMuted, fontSize: METADATA_SIZE }}>{formatMessageTimestamp(new Date(timestamp))}</Text>
-            <CopyButton colors={colors} getContent={getText} label="Copy message" style={{ alignSelf: "center", marginRight: -4 }} />
+            <CopyButton colors={colors} getContent={getText} label={t("chat.stream.copyMessage")} style={{ alignSelf: "center", marginRight: -4 }} />
           </View>
         ) : null}
       </HoverArea>
@@ -181,23 +188,25 @@ function Lightbox({ colors, image, onClose }: { colors: Colors; image: ImageAtta
 // ---------------------------------------------------------------- assistant
 
 const AssistantMessage = memo(function AssistantMessage({ colors, text, phase, compactBottom }: { colors: Colors; text: string; phase: "streaming" | "complete"; compactBottom: boolean }) {
+  const { t } = useT();
   const capped = useMemo(() => capMessageForRender(text), [text]);
   const revealed = useRevealedText(capped.text, phase);
   const bytes = useMemo(() => (capped.capped && phase === "complete" ? utf8ByteLength(text) : null), [capped.capped, phase, text]);
   return (
     <View style={{ paddingTop: 12, paddingBottom: compactBottom ? 0 : 12, ...(isWeb ? ({ userSelect: "text" } as object) : {}) }}>
       <Markdown colors={colors} text={revealed} streaming={phase === "streaming"} />
-      {bytes !== null ? <Text style={{ marginTop: 12, fontSize: ui(14), fontStyle: "italic", color: colors.foregroundMuted }}>This message was capped ({bytes} bytes).</Text> : null}
+      {bytes !== null ? <Text style={{ marginTop: 12, fontSize: ui(14), fontStyle: "italic", color: colors.foregroundMuted }}>{t("chat.stream.capped", { bytes })}</Text> : null}
     </View>
   );
 });
 
 const SpeakMessage = memo(function SpeakMessage({ colors, text }: { colors: Colors; text: string }) {
+  const { t } = useT();
   return (
     <View style={{ paddingVertical: 12 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <Icon name="MicVocal" size={12} color={colors.foregroundMuted} />
-        <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>Spoke</Text>
+        <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>{t("chat.stream.spoke")}</Text>
       </View>
       <Text selectable style={{ fontSize: content(), lineHeight: Math.round(content() * 1.4), color: colors.foreground }}>
         {text}
@@ -222,9 +231,10 @@ interface ToolCallRowProps {
 
 /** Paseo's ToolCall: an expandable badge inline on desktop, a sheet on phones, a plan card for plans. */
 const ToolCallRow = memo(function ToolCallRow({ colors, compact, cwd, name, status, error, detail, metadata, maxDetailHeight = 400 }: ToolCallRowProps) {
+  const { t } = useT();
   const [expanded, setExpanded] = useState(false);
   const [sheet, setSheet] = useState(false);
-  const presentation = useMemo(() => buildToolCallPresentation({ name, status, error: error ?? null, detail, metadata, cwd }), [name, status, error, detail, metadata, cwd]);
+  const presentation = useMemo(() => buildToolCallPresentation({ name, status, error: error ?? null, detail, metadata, cwd }, t), [name, status, error, detail, metadata, cwd, t]);
   const toggle = useCallback(() => (compact ? setSheet(true) : setExpanded((value) => !value)), [compact]);
   const renderDetails = useCallback(
     () => <ToolCallDetailsContent colors={colors} toolName={name} detail={detail} errorText={presentation.errorText} maxHeight={maxDetailHeight} showLoadingSkeleton={presentation.isLoadingDetails} />,
@@ -267,26 +277,26 @@ const ThoughtRow = memo(function ThoughtRow({ colors, compact, text, loading }: 
 // ---------------------------------------------------------------- tasks
 
 const ACTIVITY_ICONS: Record<TaskActivity["type"], string> = { created: "SquareCheck", added: "Plus", started: "CircleDot", completed: "Check" };
-const ACTIVITY_LABELS: Record<Exclude<TaskActivity["type"], "created">, string> = { added: "Added", started: "Started", completed: "Completed" };
-
 /** Paseo's TodoListCard: one badge per change to the task list, expanding to the list. */
 const TodoListCard = memo(function TodoListCard({ colors, items, activity }: { colors: Colors; items: TaskEntry[]; activity: TaskActivity }) {
+  const { t } = useT();
   const [expanded, setExpanded] = useState(false);
-  const label = activity.type === "created" ? `Created ${activity.count} tasks` : ACTIVITY_LABELS[activity.type];
+  const activityLabels: Record<Exclude<TaskActivity["type"], "created">, string> = { added: t("chat.stream.task.added"), started: t("chat.stream.task.started"), completed: t("chat.stream.task.completed") };
+  const label = activity.type === "created" ? t("chat.stream.task.created", { total: activity.count }) : activityLabels[activity.type];
   const secondary = activity.type === "created" ? undefined : activity.task;
   const renderDetails = useCallback(
     () => (
       <View style={{ padding: 8 }}>
         <View style={{ gap: 4 }}>
           {items.length === 0 ? (
-            <Text style={{ color: colors.foregroundMuted, fontSize: ui(14) }}>No tasks yet.</Text>
+            <Text style={{ color: colors.foregroundMuted, fontSize: ui(14) }}>{t("chat.stream.noTasks")}</Text>
           ) : (
             items.map((task, index) => <TaskListRow key={task.id ?? `${index}:${task.text}`} colors={colors} task={task} />)
           )}
         </View>
       </View>
     ),
-    [colors, items],
+    [colors, items, t],
   );
   return <ExpandableBadge colors={colors} label={label} secondaryLabel={secondary} icon={ACTIVITY_ICONS[activity.type]} isExpanded={expanded} onToggle={() => setExpanded((value) => !value)} renderDetails={renderDetails} />;
 });
@@ -345,21 +355,22 @@ const Notification = memo(function Notification({ colors, level, message }: { co
   );
 });
 
-function compactionLabel(status: "loading" | "completed", trigger?: "auto" | "manual", preTokens?: number): string {
-  if (status === "loading") return "Compacting...";
-  if (trigger === "auto") return "Context automatically compacted";
-  if (trigger === "manual") return "Context manually compacted";
-  if (preTokens) return `Context compacted (${Math.round(preTokens / 1000)}K tokens)`;
-  return "Context compacted";
+function compactionLabel(t: Translate, status: "loading" | "completed", trigger?: "auto" | "manual", preTokens?: number): string {
+  if (status === "loading") return t("chat.stream.compacting");
+  if (trigger === "auto") return t("chat.stream.compactedAuto");
+  if (trigger === "manual") return t("chat.stream.compactedManual");
+  if (preTokens) return t("chat.stream.compactedTokens", { tokens: Math.round(preTokens / 1000) });
+  return t("chat.stream.compacted");
 }
 
 const CompactionMarker = memo(function CompactionMarker({ colors, status, trigger, preTokens }: { colors: Colors; status: "loading" | "completed"; trigger?: "auto" | "manual"; preTokens?: number }) {
+  const { t } = useT();
   return (
     <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 16, gap: 8 }}>
       <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         {status === "loading" ? <Spinner color="#a1a1aa" /> : <Icon name="Scissors" size={12} color="#a1a1aa" />}
-        <Text style={{ fontSize: METADATA_SIZE, color: colors.foregroundMuted }}>{compactionLabel(status, trigger, preTokens)}</Text>
+        <Text style={{ fontSize: METADATA_SIZE, color: colors.foregroundMuted }}>{compactionLabel(t, status, trigger, preTokens)}</Text>
       </View>
       <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
     </View>
@@ -379,11 +390,12 @@ function TurnFooterRow({ children }: { children: ReactNode }) {
 
 /** Paseo's AssistantTurnFooter: copy, then "Worked for 2m 12s", swapping to the end time on hover or tap. */
 export const CompletedTurnFooter = memo(function CompletedTurnFooter({ colors, footer, voice }: { colors: Colors; footer: TurnFooterInfo; voice?: string | null }) {
+  const { t } = useT();
   const [hovered, setHovered] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
-  const durationLabel = footer.durationMs !== null ? `Worked for ${formatDuration(footer.durationMs)}` : "";
+  const durationLabel = footer.durationMs !== null ? t("chat.stream.workedFor", { duration: formatDuration(footer.durationMs, t) }) : "";
   const timestampLabel = footer.completedAt !== null ? formatMessageTimestamp(new Date(footer.completedAt)) : "";
   const primary = durationLabel || timestampLabel;
   const canSwap = Boolean(durationLabel && timestampLabel);
@@ -410,7 +422,7 @@ export const CompletedTurnFooter = memo(function CompletedTurnFooter({ colors, f
             onHoverIn={() => setHovered(true)}
             onHoverOut={() => setHovered(false)}
             accessibilityRole={canSwap ? "button" : undefined}
-            accessibilityLabel={canSwap ? `${durationLabel}, ended ${timestampLabel}` : primary}
+            accessibilityLabel={canSwap ? t("chat.stream.endedAt", { label: durationLabel, time: timestampLabel }) : primary}
           >
             <View style={{ position: "relative" }}>
               {/* Sizer keeps the width stable while the labels swap. */}
@@ -442,11 +454,12 @@ export function WorkingIndicator({ colors, startedAt }: { colors: Colors; starte
 }
 
 function LiveElapsed({ colors, startedAt }: { colors: Colors; startedAt: number }) {
+  const { t } = useT();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     setNow(Date.now());
     const handle = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(handle);
   }, [startedAt]);
-  return <Text style={{ color: colors.foregroundMuted, fontSize: METADATA_SIZE, fontVariant: ["tabular-nums"] }}>{formatDuration(Math.max(0, now - startedAt))}</Text>;
+  return <Text style={{ color: colors.foregroundMuted, fontSize: METADATA_SIZE, fontVariant: ["tabular-nums"] }}>{formatDuration(Math.max(0, now - startedAt), t)}</Text>;
 }

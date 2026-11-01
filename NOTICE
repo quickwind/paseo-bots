@@ -1,0 +1,30 @@
+Aydo
+
+Copyright (c) 2026 Qiang Wei. Based on oliexe/paseo-bots, Copyright (c) 2026 Ondrej Rehacek, MIT License (see LICENSE).
+
+Parts adapted from OpenMausBot
+------------------------------
+https://github.com/milind-soni/OpenMausBot
+Copyright 2026 Milind Soni and OpenMausBot contributors
+Licensed under the Apache License, Version 2.0. The licence text is in licenses/Apache-2.0.txt
+(https://www.apache.org/licenses/LICENSE-2.0). The Apache License 2.0 applies to the parts below, which were
+changed from the original:
+
+  - shared/playbooks.ts: choosing playbooks by trigger words (adapted from server/installed-playbooks.ts).
+  - shared/skills.ts, scanSkillText: the checks run on a skill before a bot gets it (adapted from shared/skill-md.ts).
+
+The design of the bots (teams with a Chief of Staff, memory and its journal, playbooks, routines and webhooks,
+saved commands, presets, skill review, the way one bot asks another) also follows OpenMausBot; those parts were
+written independently, and comments in the code say which design a piece follows. A few short constants and
+sentences (memory size limits, webhook limits, one sentence of the prompt about past notes) match it as well.
+
+The names OpenMausBot and MausBot and its mascot are trademarks of Supamaus Software Private Limited. This project
+is not affiliated with or endorsed by them and does not use their names for itself; they appear in comments only to
+say which design a piece of code follows.
+
+Changes in this edition
+-----------------------
+This edition changes the original: it removes everything that connects to the network, and adds memory upkeep,
+Devin support and bot tools as files, follow-up questions between bots, approvals, project workspaces, and
+Chinese (zh-CN) support. These changes suit deployments with restricted environments, such as no outbound network access
+or limits on which tools a provider may use.

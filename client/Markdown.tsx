@@ -7,6 +7,7 @@ import { parseMarkdown, type Block, type Inline, type ListItem } from "../shared
 import { MONO_FONT, MONO_PROPS, nativeTokens } from "./native";
 import { code, codeLine, content, contentLine } from "./typography";
 import { tooltip } from "./ui/Tooltip";
+import { useT } from "./i18n/use-t";
 
 type Colors = PluginTheme["colors"];
 
@@ -251,15 +252,16 @@ function renderInline(colors: Colors, inline: Inline, key: number): ReactNode {
 /** Opens web links; anything else (workspace files, anchors) is copied, since plugins can't open files. */
 function Link({ colors, url, inlines }: { colors: Colors; url: string; inlines: Inline[] }) {
   const toast = useToast();
+  const { t } = useT();
   const onPress = () => {
     if (isWebUrl(url)) {
-      void openExternalUrl(url.trim()).catch(() => toast.error("Couldn't open the link."));
+      void openExternalUrl(url.trim()).catch(() => toast.error(t("chat.couldntOpenLink")));
       return;
     }
     const target = url.replace(/^file:\/\//i, "");
     void copyText(target)
-      .then(() => toast.show("Path copied", { variant: "success" }))
-      .catch(() => toast.error("Couldn't copy the path."));
+      .then(() => toast.show(t("surface.pathCopied"), { variant: "success" }))
+      .catch(() => toast.error(t("chat.couldntCopyPath")));
   };
   return (
     <Text accessibilityRole="link" style={{ color: nativeTokens(colors).accentBright, textDecorationLine: "none" }} onPress={onPress}>
@@ -269,6 +271,7 @@ function Link({ colors, url, inlines }: { colors: Colors; url: string; inlines: 
 }
 
 function CodeBlock({ colors, text }: { colors: Colors; text: string }) {
+  const { t } = useT();
   const [copied, setCopied] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [buttonHovered, setButtonHovered] = useState(false);
@@ -296,8 +299,8 @@ function CodeBlock({ colors, text }: { colors: Colors; text: string }) {
       </Text>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={copied ? "Copied" : "Copy code"}
-        {...tooltip(copied ? "Copied" : "Copy code")}
+        accessibilityLabel={copied ? t("chat.stream.copied") : t("chat.stream.copyCode")}
+        {...tooltip(copied ? t("chat.stream.copied") : t("chat.stream.copyCode"))}
         onPress={copy}
         onHoverIn={() => setButtonHovered(true)}
         onHoverOut={() => setButtonHovered(false)}

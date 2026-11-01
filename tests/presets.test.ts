@@ -15,7 +15,7 @@ describe("defaults and presets", () => {
   });
 
   it("keeps who a bot is and how it works, not its access", () => {
-    const bot = makeBot({ name: "Inbox", soul: "Be brief.", skillIds: ["triage"], mcpServerIds: ["mcp-1"], apps: ["gmail"], playbooks: [{ id: "p", name: "Close", triggers: ["close"], instructions: "steps" }] });
+    const bot = makeBot({ name: "Inbox", soul: "Be brief.", skillIds: ["triage"], mcpServerIds: ["mcp-1"], playbooks: [{ id: "p", name: "Close", triggers: ["close"], instructions: "steps" }] });
     const preset = presetFromBot(bot, "2026-09-27T00:00:00.000Z");
     expect(preset).toMatchObject({ name: "Inbox", soul: "Be brief.", skillIds: ["triage"], playbooks: [{ name: "Close" }] });
     expect(preset).not.toHaveProperty("mcpServerIds");
@@ -38,7 +38,7 @@ describe("defaults and presets", () => {
 describe("team files", () => {
   let home: string;
   beforeAll(async () => {
-    home = await mkdtemp(join(tmpdir(), "paseo-bots-team-"));
+    home = await mkdtemp(join(tmpdir(), "aydo-team-"));
     process.env.PASEO_HOME = home;
   });
   afterAll(async () => {
@@ -49,14 +49,17 @@ describe("team files", () => {
   it("round-trips several bots, paused and without access", async () => {
     const { exportTeam, importTeam, isTeamFile } = await import("../server/share");
     const routine = { id: "rt", name: "Daily", prompt: "p", enabled: true, schedule: { kind: "cron" as const, expression: "0 9 * * *" }, resultsChatId: "chat-1", createdAt: "" };
-    const bots = [makeBot({ id: "bot-a", name: "Inbox", apps: ["gmail"], contactBots: "allow", routines: [routine] }), makeBot({ id: "bot-b", name: "Scout" })];
+    const bots = [makeBot({ id: "bot-a", name: "Inbox", contactBots: "allow", routines: [routine] }), makeBot({ id: "bot-b", name: "Scout" })];
     const { json } = await exportTeam({ bots, groups: [], includeMemory: false }, EMPTY_LIBRARY);
     expect(isTeamFile(json)).toBe(true);
+    expect(isTeamFile(JSON.stringify({ format: "other" }))).toBe(false);
+    // The switch that skips the user's approval never travels in a file.
+    expect(json).not.toContain("askFreely");
     const imported = await importTeam({ json });
     expect(imported.bots.map((entry) => entry.bot.name)).toEqual(["Inbox", "Scout"]);
-    expect(imported.bots[0]!.bot).toMatchObject({ apps: [], contactBots: "ask", routines: [{ name: "Daily", enabled: false, resultsChatId: null }] });
+    expect(imported.bots[0]!.bot).toMatchObject({ contactBots: "ask", routines: [{ name: "Daily", enabled: false, resultsChatId: null }] });
     expect(new Set(imported.bots.map((entry) => entry.bot.id)).size).toBe(2);
-    await expect(importTeam({ json: '{"format":"paseo-bots-team","version":1,"bots":[]}' })).rejects.toThrow("damaged");
+    await expect(importTeam({ json: '{"format":"aydo-team","version":1,"bots":[]}' })).rejects.toThrow("damaged");
   });
 
   it("brings the teams along and recreates them on import", async () => {
@@ -65,8 +68,8 @@ describe("team files", () => {
     const bots = [makeBot({ id: "bot-a", name: "Juno" }), makeBot({ id: "bot-b", name: "Mika" })];
     const logo = { seed: "s", palette: 2, imageUrl: null };
     const groups = [
-      { id: "t1", name: "Studio", logo, leadId: "bot-a", memberIds: ["bot-a", "bot-b", "bot-gone"], instructions: "Ship Fridays.", createdAt: "", updatedAt: "" },
-      { id: "t2", name: "Empty", logo: null, leadId: null, memberIds: ["bot-gone"], instructions: "", createdAt: "", updatedAt: "" },
+      { id: "t1", name: "Studio", logo, leadId: "bot-a", memberIds: ["bot-a", "bot-b", "bot-gone"], instructions: "Ship Fridays.", askFreely: true, createdAt: "", updatedAt: "" },
+      { id: "t2", name: "Empty", logo: null, leadId: null, memberIds: ["bot-gone"], instructions: "", askFreely: false, createdAt: "", updatedAt: "" },
     ];
     const { json } = await exportTeam({ bots, groups, includeMemory: false }, EMPTY_LIBRARY);
     expect(JSON.parse(json).teams).toEqual([{ name: "Studio", logo, lead: 0, members: [0, 1], instructions: "Ship Fridays." }]);

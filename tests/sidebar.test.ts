@@ -138,3 +138,14 @@ describe("plugin version", () => {
     expect(PLUGIN_VERSION).toBe(pkg.version);
   });
 });
+
+describe("botsBadge", () => {
+  it("shows the most urgent status of any bot, and nothing when all are done", async () => {
+    const { botsBadge } = await import("../shared/sidebar");
+    expect(botsBadge(["done", "running", "needs_input"])).toBe("needs_input");
+    expect(botsBadge(["done", "attention", "running"])).toBe("running");
+    expect(botsBadge(["done", "done"])).toBeNull();
+    expect(botsBadge([])).toBeNull();
+    expect(botsBadge(["something else"])).toBeNull();
+  });
+});

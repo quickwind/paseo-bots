@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import type { PaseoApi } from "./paseo";
@@ -9,9 +9,11 @@ import type { Bot, Routine } from "../shared/bot";
 import { ROUTINE_LABEL } from "../shared/chat";
 import { ROUTINE_RUN_CARD, type RoutineRecord, type RoutineRun, type RoutineRunCard } from "../shared/rpc";
 import { decide } from "../shared/routines";
+import { newUuid } from "../shared/uuid";
 import { pluginDataPath } from "./bot-home";
 import { startChat } from "./chats";
 import type { BotsHost } from "./host";
+import { writeAtomic } from "./managed-files";
 import { readBody, type Relay } from "./relay";
 
 const TICK_MS = 30_000;
@@ -57,8 +59,7 @@ async function readJson<T>(path: string, fallback: T): Promise<T> {
 }
 
 async function writeJson(path: string, value: unknown, mode?: number): Promise<void> {
-  await mkdir(pluginDataPath(), { recursive: true });
-  await writeFile(path, JSON.stringify(value, null, 2), { encoding: "utf8", ...(mode ? { mode } : {}) });
+  await writeAtomic(path, JSON.stringify(value, null, 2), mode);
 }
 
 export interface WebhookEvent {
@@ -202,32 +203,58 @@ export class RoutineScheduler {
     }
   }
 
-  private newChat(bot: Bot, routine: Routine, prompt: string): Promise<string> {
-    return startChat(this.host, this.relay, bot, { prompt, title: routine.name, labels: { [ROUTINE_LABEL]: routine.id } });
+  private newChat(bot: Bot, routine: Routine, prompt: string, agentId: string): Promise<string> {
+    return startChat(this.host, this.relay, bot, { prompt, title: routine.name, labels: { [ROUTINE_LABEL]: routine.id }, agentId });
   }
 
   /** Starts a run in a new chat, or records why it didn't; the results chat gets a card either way. */
   private async run(bot: Bot, routine: Routine, trigger: Trigger, due: Date, event?: WebhookEvent): Promise<RoutineRun> {
-    const run = await this.update(async (records) => {
+    // The run is recorded, with its chat's id, before the chat exists: a chat that fails at once can report
+    // the end of its turn before startChat returns, and that end must find the run.
+    const agentId = newUuid();
+    let start = false;
+    const first = await this.update(async (records) => {
       const record = records[routine.id] ?? { ...EMPTY_RECORD, runs: [] };
       records[routine.id] = record;
       const now = new Date().toISOString();
       const run: RoutineRun = { id: `run-${randomBytes(4).toString("hex")}`, trigger, scheduledFor: due.toISOString(), startedAt: now, endedAt: null, status: "running", agentId: null, output: null, error: null };
       if (trigger === "schedule") record.lastRunAt = now;
       try {
-        if (bot.hostId) throw new Error("Routines run on the host that stores the bot; this bot runs on another host.");
+        if (bot.hostId) throw new Error("Routines run on the host that stores the assistant; this assistant runs on another host.");
         // OpenMausBot's overlap rule: skip while the previous run is still working (webhooks allow a few at once).
         const limit = trigger === "webhook" ? WEBHOOK_UNFINISHED : 1;
         const recent = record.runs.filter((entry) => entry.agentId && entry.status === "running").slice(-limit);
         let busy = 0;
         for (const entry of recent) if (await this.working(entry.agentId)) busy++;
         if (busy >= limit) Object.assign(run, { status: "skipped-busy", endedAt: now });
-        else run.agentId = await this.newChat(bot, routine, runPrompt(routine, event));
+        else {
+          run.agentId = agentId;
+          start = true;
+        }
       } catch (error) {
         Object.assign(run, { status: "failed", endedAt: now, error: error instanceof Error ? error.message : String(error) });
       }
       record.runs = [...record.runs, run].slice(-KEEP_RUNS);
-      return run;
+      return { ...run };
+    });
+    if (!start) {
+      await this.postCard(routine, first);
+      return first;
+    }
+    let started: string | null = null;
+    let failure: string | null = null;
+    try {
+      started = await this.newChat(bot, routine, runPrompt(routine, event), agentId);
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error);
+    }
+    // Normally the chat has the id given to it. If the turn already ended, the run is settled and stays so.
+    const run = await this.update((records) => {
+      const found = records[routine.id]?.runs.find((entry) => entry.id === first.id);
+      if (!found) return first;
+      if (failure !== null && found.status === "running") Object.assign(found, { status: "failed", endedAt: new Date().toISOString(), error: failure, agentId: null });
+      else if (started && started !== found.agentId) found.agentId = started;
+      return { ...found };
     });
     await this.postCard(routine, run);
     return run;
@@ -240,7 +267,7 @@ export class RoutineScheduler {
     await this.paseo.agents
       .ref(routine.resultsChatId)
       .timeline.append({ type: "plugin", id: run.id, ...ROUTINE_RUN_CARD, data: { ...data } })
-      .catch((error: unknown) => console.error("paseo-bots: couldn't post a routine result", error));
+      .catch((error: unknown) => console.error("aydo: couldn't post a routine result", error));
   }
 
   private async tick(): Promise<void> {
@@ -270,7 +297,7 @@ export class RoutineScheduler {
         }
       }
     } catch (error) {
-      console.error("paseo-bots: routine tick failed", error);
+      console.error("aydo: routine tick failed", error);
     } finally {
       this.ticking = false;
     }

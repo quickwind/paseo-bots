@@ -144,13 +144,43 @@ describe("turn footers", () => {
     expect(layout.items[1]!.compactBottom).toBe(true);
   });
 
+  it("shows a proposal the plugin posted as a file-tool card, only from this plugin and only with an id", () => {
+    const rows = buildRows(
+      [
+        user("q", 0),
+        assistant("done", 8000),
+        entry({ type: "plugin", pluginId: "aydo", id: "p-abcdef1234", kind: "proposal", version: 1, data: { proposalId: "p-abcdef1234" } }, { at: 9000 }),
+        entry({ type: "plugin", pluginId: "other", id: "x", kind: "proposal", version: 1, data: { proposalId: "p-other" } }, { at: 9100 }),
+        entry({ type: "plugin", pluginId: "aydo", id: "bad", kind: "proposal", version: 1, data: {} }, { at: 9200 }),
+      ],
+      false,
+    );
+    expect(rows.map((row) => row.kind)).toEqual(["user", "assistant", "proposal"]);
+    expect(rows[2]).toMatchObject({ kind: "proposal", proposalId: "p-abcdef1234", key: "plugin:p-abcdef1234" });
+  });
+
+  it("shows an approval the plugin posted as a card, only from this plugin and only with an id", () => {
+    const rows = buildRows(
+      [
+        user("q", 0),
+        assistant("asked", 8000),
+        entry({ type: "plugin", pluginId: "aydo", id: "a-0123456789", kind: "approval", version: 1, data: { approvalId: "a-0123456789" } }, { at: 9000 }),
+        entry({ type: "plugin", pluginId: "other", id: "x", kind: "approval", version: 1, data: { approvalId: "a-other" } }, { at: 9100 }),
+        entry({ type: "plugin", pluginId: "aydo", id: "bad", kind: "approval", version: 1, data: {} }, { at: 9200 }),
+      ],
+      false,
+    );
+    expect(rows.map((row) => row.kind)).toEqual(["user", "assistant", "approval"]);
+    expect(rows[2]).toMatchObject({ kind: "approval", approvalId: "a-0123456789", key: "plugin:a-0123456789" });
+  });
+
   it("shows this plugin's routine run cards apart from the turn before them", () => {
     const card = { routineName: "Inbox", trigger: "manual", scheduledFor: new Date(60_000).toISOString(), status: "running", agentId: "a", output: null, error: null };
     const rows = buildRows(
       [
         user("q", 0),
         assistant("done", 8000),
-        entry({ type: "plugin", pluginId: "paseo-bots", id: "run-1", kind: "routine-run", version: 1, data: card }, { at: 60_000 }),
+        entry({ type: "plugin", pluginId: "aydo", id: "run-1", kind: "routine-run", version: 1, data: card }, { at: 60_000 }),
         entry({ type: "plugin", pluginId: "other", id: "x", kind: "routine-run", version: 1, data: card }, { at: 61_000 }),
       ],
       false,
@@ -254,6 +284,17 @@ describe("diffs", () => {
       { text: "old", changed: true },
       { text: " line", changed: false },
     ]);
+  });
+
+  it("marks a very long changed line as changed as a whole instead of comparing its words one by one", () => {
+    // Over 250,000 word pairs, the table of a word-by-word comparison would take seconds and hundreds of megabytes.
+    const words = Array.from({ length: 800 }, (_, n) => `word${n}`);
+    const old = words.join(" ");
+    const updated = words.map((word, n) => (n === 400 ? "changed" : word)).join(" ");
+    const diff = buildLineDiff(old, updated);
+    expect(diff.map((line) => line.type)).toEqual(["remove", "add"]);
+    expect(diff[0]!.segments).toEqual([{ text: old, changed: true }]);
+    expect(diff[1]!.segments).toEqual([{ text: updated, changed: true }]);
   });
 
   it("parses unified diffs", () => {

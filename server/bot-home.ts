@@ -1,7 +1,7 @@
-import { lstatSync, renameSync, symlinkSync } from "node:fs";
-import { lstat, mkdir, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, rename, rm, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { writeAtomic } from "./managed-files";
 
 // The plugin SDK has no data-directory API; other plugins use
 // `$PASEO_HOME/plugin-data/<plugin-id>`, so this follows that convention.
@@ -10,40 +10,21 @@ function pluginDataRoot(): string {
 }
 
 export function pluginDataPath(): string {
-  return join(pluginDataRoot(), "paseo-bots");
-}
-
-/**
- * The plugin was called paseo-bot before. Move its data (bots' folders, the
- * skill library, the Composio key) to the new name and leave a link behind,
- * so chats started in the old folders keep their working directory. Runs
- * once, synchronously, before anything reads the data folder.
- */
-export function migrateRenamedPluginData(): void {
-  const legacy = join(pluginDataRoot(), "paseo-bot");
-  const target = pluginDataPath();
-  try {
-    if (!lstatSync(legacy).isDirectory()) return;
-  } catch {
-    return;
-  }
-  try {
-    lstatSync(target);
-    return;
-  } catch {
-    // No data under the new name yet: move the old folder over.
-  }
-  renameSync(legacy, target);
-  symlinkSync(target, legacy, "junction");
+  return join(pluginDataRoot(), "aydo");
 }
 
 /**
  * One folder for every bot that uses the managed folder. Paseo files each agent
  * under the workspace of its folder, so sharing it keeps all bot chats in a
- * single workspace; Paseo names the project after the folder, hence "Bots".
+ * single workspace; Paseo names the project after the folder, hence "Aydo" (it was "Bots" until build 65).
  */
 export function botsHomePath(): string {
   // Nested because macOS folders are case-insensitive and "bots" held per-bot folders in v0.1.
+  return join(pluginDataPath(), "shared", "Aydo");
+}
+
+/** The folder of versions before build 65. Kept as a link to botsHomePath so chats and workspaces made there still work. */
+function previousHomePath(): string {
   return join(pluginDataPath(), "shared", "Bots");
 }
 
@@ -68,12 +49,29 @@ function migrateLegacyHome(): Promise<void> {
     const legacy = join(pluginDataPath(), "home");
     const target = botsHomePath();
     const info = await lstat(legacy).catch(() => null);
-    if (!info || info.isSymbolicLink() || !info.isDirectory() || (await exists(target))) return;
-    await mkdir(join(target, ".."), { recursive: true });
-    await rename(legacy, target);
-    await symlink(target, legacy, "dir");
-  })().catch((error: unknown) => console.error("paseo-bots: couldn't move the bots folder", error));
+    if (info && !info.isSymbolicLink() && info.isDirectory() && !(await exists(target))) {
+      await mkdir(join(target, ".."), { recursive: true });
+      await rename(legacy, target);
+      await symlink(target, legacy, "dir");
+    }
+    // "Bots" to "Aydo": the project is named after the folder. The old name stays as a link.
+    const previous = previousHomePath();
+    const old = await lstat(previous).catch(() => null);
+    if (old && !old.isSymbolicLink() && old.isDirectory() && !(await exists(target))) {
+      await rename(previous, target);
+      await symlink(target, previous, "dir");
+    }
+  })().catch((error: unknown) => console.error("aydo: couldn't move the assistants folder", error));
   return migration;
+}
+
+/**
+ * A team's report folder (Reports/<team id>): latest.md, and one folder per project with a .jsonl (the whole records) and an
+ * .md (the index) for each day. The team's, not the lead's: a lead can change. A team never sees another team's folder.
+ */
+export function teamReportsPath(teamId: string): string {
+  if (!/^[A-Za-z0-9_-]+$/.test(teamId)) throw new Error("A team id is letters, digits, _ and - only.");
+  return join(pluginDataPath(), "shared", "Reports", teamId);
 }
 
 /**
@@ -96,8 +94,9 @@ export async function ensureBotsHome() {
   await migrateLegacyHome();
   const path = botsHomePath();
   await mkdir(path, { recursive: true });
-  await writeFile(join(path, "README.md"), "paseo-bots: one folder per bot, each the working folder of that bot's workspace.\n", { flag: "w" });
-  await writeFile(join(path, "icon.svg"), PROJECT_ICON, { flag: "w" });
+  // Replaced, not written through: a bot's shell could have made either a link.
+  await writeAtomic(join(path, "README.md"), "aydo: one folder per assistant, each the working folder of that assistant's workspace.\n");
+  await writeAtomic(join(path, "icon.svg"), PROJECT_ICON);
   return { path };
 }
 

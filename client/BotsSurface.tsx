@@ -9,21 +9,29 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, type LayoutRectangle, Platform, Text, View } from "react-native";
 import { randomSeed } from "../shared/avatar";
 import { applyDefaults, DEFAULT_BOT_DEFAULTS, DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, newGroupId, presetFromBot, pushHistory, type Bot, type BotGroup, type BotListUi, type Library } from "../shared/bot";
-import { saveTeam, tabOf, teamTabs, withoutBot } from "../shared/groups";
-import { addImportedBots } from "../shared/library";
-import { displayTitle, startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
+import { saveTeam, tabOf, teamOf, teamTabs, withBot, withoutBot } from "../shared/groups";
+import { addImportedBots, withDefaultProvider } from "../shared/library";
+import { archiveOrphanBotWorkspaces, displayTitle, startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
 import { moveKey } from "../shared/sidebar";
 import { chatTranscript } from "../shared/transcript";
-import { ensureBotHomeRpc, mountRpc, exportBotRpc, importBotRpc, importTeamRpc, systemPromptRpc } from "../shared/rpc";
+import { ensureBotHomeRpc, hostCapsRpc, mountRpc, exportBotRpc, importBotRpc, importTeamRpc, systemPromptRpc } from "../shared/rpc";
 import { botFromPreset, newBot } from "../shared/templates";
+import { mergeDraft } from "./draft";
 import { AvatarTheme } from "./Avatar";
 import { botMenuEntries, chatMenuEntries, ExportDialog, NewBotDialog, RenameDialog } from "./BotDialogs";
+import { NO_HOST_CAPS } from "../shared/host-caps";
+import { sendsPromptInChat } from "../shared/identity";
+import { usesFiles } from "../shared/tools-mode";
+import { setupPromptText, shouldAutoSetup } from "../shared/setup";
 import { BotSidebar, type ChatMenuContext, type MenuSource, type Selection } from "./BotSidebar";
 import { ChatPane, type OutgoingMessage } from "./ChatPane";
-import { useBotHost, useChatInvalidation, useHostResolver, useProviders, type LocalHost } from "./data";
+import { ApprovalsList } from "./panel/ApprovalsList";
+import { friendlyStartError } from "./workspace-choice";
+import { useBotHost, useWorkspaceChoices, useChatInvalidation, useHostResolver, useProviders, type LocalHost } from "./data";
+import { pendingAutoStart } from "./auto-start";
 import { takeIntent } from "./intent";
 import { LibraryView } from "./library/LibraryView";
-import { onLibraryTarget, type LibraryTarget } from "./navigation";
+import { onApprovalsOpen, onLibraryTarget, type LibraryTarget } from "./navigation";
 import { Splash } from "./Splash";
 import { TeamMap } from "./teams/TeamMap";
 import { TeamSheet } from "./teams/TeamSheet";
@@ -32,6 +40,7 @@ import { ResizeHandle, SlideOver } from "./ui/Columns";
 import { fitColumns } from "../shared/layout";
 import { confirmDialog, errorText, nativeTokens } from "./native";
 import { measureAnchor, MenuProvider, useMenu } from "./ui/Menu";
+import { useT } from "./i18n/use-t";
 import { useTooltipTheme } from "./ui/Tooltip";
 import { homeIndicatorInset, useKeyboardHeight } from "./keyboard";
 import { newMessageId } from "./sent-attachments";
@@ -42,10 +51,6 @@ import { newUuid } from "../shared/uuid";
 import { ui, useTypeScale } from "./typography";
 
 type Colors = PluginTheme["colors"];
-
-const SETUP_PROMPT =
-  "Let's set you up. Interview me one short question at a time about what I want from you, how I like to work, and what you should never do. " +
-  "Then propose standing instructions for yourself and a starting MEMORY.md. Write the memory file once I confirm, and give me the instructions to paste into your Soul settings.";
 
 /** Autosave delay after the last edit in the settings panel. */
 const SAVE_DELAY_MS = 600;
@@ -66,12 +71,24 @@ export function BotsSurface(props: PluginSurfaceProps) {
 function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfaceProps) {
   const { colors } = theme;
   const { settings, latest, commit } = useBotSettings();
+  const { t, locale } = useT();
   const toast = useToast();
   const menu = useMenu();
   const queryClient = useQueryClient();
   const localHost: LocalHost = { id: host.id, label: host.label };
-  const localProviders = useProviders(useBotHost(null, localHost));
+  const localBotHost = useBotHost(null, localHost);
+  const localProviders = useProviders(localBotHost);
   const resolveHost = useHostResolver(localHost);
+
+  // A deleted bot's workspace would stay in the sidebar (deleting from a card, or in another window, never passes through remove()),
+  // so settle it whenever the bots change: archive the Bots-project workspaces whose bot is gone. Only once the bots have loaded.
+  const botIds = settings.status === "ready" ? settings.values.bots.map((bot) => bot.id).sort().join(",") : null;
+  const localApi = localBotHost.api;
+  useEffect(() => {
+    if (botIds === null || !localApi) return;
+    const timer = setTimeout(() => void archiveOrphanBotWorkspaces(localApi, new Set(botIds ? botIds.split(",") : [])).catch(() => {}), 2000);
+    return () => clearTimeout(timer);
+  }, [botIds, localApi]);
   const exportBot = useRpc(exportBotRpc);
   const importBot = useRpc(importBotRpc);
   const importTeam = useRpc(importTeamRpc);
@@ -85,6 +102,8 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   const [editingTeam, setEditingTeam] = useState<BotGroup | "new" | null>(null);
   /** Skills & Tools replaces the bot list and chat while open; `target` is its page (null: the list, on compact). */
   const [libraryView, setLibraryView] = useState<{ target: LibraryTarget | null } | null>(null);
+  /** The approvals list replaces the bot list and chat while open, as Skills & Tools does. */
+  const [approvalsOpen, setApprovalsOpen] = useState(false);
   const [renaming, setRenaming] = useState<Bot | null>(null);
   const [exporting, setExporting] = useState<Bot | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Bot>>({});
@@ -106,6 +125,8 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Each bot as it was when its draft began, so a save applies only what was edited. */
+  const draftBases = useRef<Record<string, Bot>>({});
 
   const flush = async () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -118,14 +139,18 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         const draft = pending[bot.id];
         if (!draft) return bot;
         history = pushHistory(history, bot);
-        return draft;
+        return mergeDraft(bot, draft, draftBases.current[bot.id]);
       });
       return { ...values, bots, history };
     });
     if (ok) {
       setDrafts((current) => {
         const next = { ...current };
-        for (const [id, bot] of Object.entries(pending)) if (next[id] === bot) delete next[id];
+        for (const [id, bot] of Object.entries(pending)) {
+          if (next[id] !== bot) continue;
+          delete next[id];
+          delete draftBases.current[id];
+        }
         return next;
       });
     }
@@ -134,6 +159,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   const patchBot = (botId: string, patch: Partial<Bot>) => {
     setDrafts((current) => {
       const base = current[botId] ?? (latest.current.status === "ready" ? latest.current.values.bots.find((bot) => bot.id === botId) : undefined);
+      if (base && !current[botId]) draftBases.current[botId] = base;
       return base ? { ...current, [botId]: { ...base, ...patch, updatedAt: new Date().toISOString() } } : current;
     });
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -184,14 +210,21 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     [],
   );
 
+  // The sidebar's Approvals button asks for the list through the navigation store.
+  useEffect(() => onApprovalsOpen(() => setApprovalsOpen(true)), []);
+
   // One step back through the Bots screen, as Paseo's own screens go back: a settings page to
   // the settings list, then the settings, Skills & Tools (page, then list), and on phones the
   // team map or a chat back to the bot list. Android's Back and the phone swipes use it; with
   // nothing left to step back from, Back leaves the plugin.
-  const back = useRef({ panel, compact: layout.compact, selection, teamMap, libraryView });
-  back.current = { panel, compact: layout.compact, selection, teamMap, libraryView };
+  const back = useRef({ panel, compact: layout.compact, selection, teamMap, libraryView, approvalsOpen });
+  back.current = { panel, compact: layout.compact, selection, teamMap, libraryView, approvalsOpen };
   const goBack = (): boolean => {
     const state = back.current;
+    if (state.approvalsOpen) {
+      setApprovalsOpen(false);
+      return true;
+    }
     if (state.libraryView) {
       setLibraryView(state.compact && state.libraryView.target ? { target: null } : null);
       return true;
@@ -229,13 +262,13 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     return (
       <View style={{ flex: 1, padding: 24, gap: 12, backgroundColor: colors.surface0, justifyContent: settings.status === "loading" ? "center" : "flex-start", alignItems: settings.status === "loading" ? "center" : "stretch" }}>
         {settings.status === "loading" ? (
-          <ActivityIndicator size="large" color={colors.foregroundMuted} accessibilityLabel="Loading bots" />
+          <ActivityIndicator size="large" color={colors.foregroundMuted} accessibilityLabel={t("surface.loadingBots")} />
         ) : (
-          <Text style={{ fontSize: ui(14), color: colors.statusDanger }}>Couldn't read bots: {settings.error}</Text>
+          <Text style={{ fontSize: ui(14), color: colors.statusDanger }}>{t("surface.readError", { error: settings.error })}</Text>
         )}
         {settings.status === "invalid" ? (
           <SettingsCard>
-            <SettingsAction label="Reset bots" hint="Replaces the unreadable bot list with an empty one." actionLabel="Reset" onPress={() => void settings.reset()} />
+            <SettingsAction label={t("surface.resetBots")} hint={t("surface.resetBotsHint")} actionLabel={t("surface.reset")} onPress={() => void settings.reset()} />
           </SettingsCard>
         ) : null}
       </View>
@@ -281,11 +314,14 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   };
 
   /** Saves a new bot and opens it with its settings. */
-  const addBot = async (bot: Bot, section: SectionId = "identity") => {
-    const saved = await commit((values) => ({ ...values, bots: [...values.bots, bot] }));
+  const addBot = async (bot: Bot, section: SectionId | null = null, setupPrompt?: string) => {
+    // Made while a team's tab is open, the bot joins that team.
+    const teamId = openTab?.group?.id;
+    const saved = await commit((values) => ({ ...values, bots: [...values.bots, bot], ...(teamId ? { groups: withBot(values.groups ?? [], teamId, bot.id, new Date().toISOString()) } : {}) }));
     if (saved) {
-      select({ botId: bot.id, chatId: null });
-      setPanel({ open: true, section });
+      // A blank bot starts its setup interview in the chat; the settings stay one tap away.
+      select({ botId: bot.id, chatId: null, ...(setupPrompt ? { prompt: setupPrompt } : {}) });
+      setPanel({ open: !setupPrompt, section });
     }
   };
 
@@ -301,7 +337,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     // Same library items as the original; the copy's own file only carries redacted server settings.
     await addBot({
       ...copy,
-      name: `${bot.name} copy`,
+      name: t("templates.copyName", { name: bot.name }),
       hostId: bot.hostId,
       cwd: bot.cwd,
       alwaysAllow: bot.alwaysAllow,
@@ -362,50 +398,50 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   const copy = (text: string, done: string) =>
     void copyText(text)
       .then(() => toast.show(done, { variant: "success" }))
-      .catch(() => toast.error("Unable to copy"));
+      .catch(() => toast.error(t("surface.unableToCopy")));
 
   const openBotMenu = (bot: Bot, anchor: LayoutRectangle, source: MenuSource) => {
     const botHost = resolveHost(bot.hostId);
-    const chats = queryClient.getQueryData<PaseoAgent[]>(["paseo-bots", "chats", botHost.key, bot.id]) ?? [];
+    const chats = queryClient.getQueryData<PaseoAgent[]>(["aydo", "chats", botHost.key, bot.id]) ?? [];
     const workspaceId = chats.find((chat) => chat.workspaceId)?.workspaceId;
     const openWorkspace = navigation?.openWorkspace;
     menu.open({
       anchor,
       align: source === "kebab" ? "end" : "start",
       width: 220,
-      title: "Bot actions",
+      title: t("sidebar.botActions"),
       entries: botMenuEntries({
         bot,
         onOpenInPaseo: openWorkspace && workspaceId && botHost.online ? () => openWorkspace({ workspaceId, serverId: botHost.key }) : undefined,
-        onOpenSettings: () => openPanel(bot, "identity"),
+        onOpenSettings: () => openPanel(bot, null),
         onTogglePin: () => void updateBot(bot.id, { pinned: !bot.pinned }),
         onMoveUp: moveBot(bot, -1),
         onMoveDown: moveBot(bot, 1),
         onRename: () => setRenaming(bot),
-        onDuplicate: () => duplicate(bot).catch((error: unknown) => toast.error(`Couldn't duplicate: ${errorText(error)}`)),
+        onDuplicate: () => duplicate(bot).catch((error: unknown) => toast.error(t("surface.couldntDuplicate", { error: errorText(error) }))),
         onExport: () => setExporting(bot),
-        onCopyId: () => copy(bot.id, "Bot ID copied"),
+        onCopyId: () => copy(bot.id, t("surface.botIdCopied")),
         onSaveAsPreset: () =>
           void flush()
             .then(() => commit((values) => ({ ...values, presets: [...(values.presets ?? []), presetFromBot(values.bots.find((entry) => entry.id === bot.id) ?? bot)] })))
-            .then((saved) => saved && toast.show(`Saved ${bot.name} as a preset. It's under New bot.`, { variant: "success" })),
+            .then((saved) => saved && toast.show(t("surface.savedPreset", { name: bot.name }), { variant: "success" })),
         onToggleArchive: () => void updateBot(bot.id, { archived: !bot.archived }),
         onDelete: async () => {
           const confirmed = await confirmDialog({
-            title: "Delete bot?",
-            message: `Delete "${bot.name}"?\n\nIts chats stay on the host and remain in Paseo's history.`,
-            confirmLabel: "Delete",
-            cancelLabel: "Cancel",
+            title: t("surface.deleteBotTitle"),
+            message: t("surface.deleteBotMessage", { name: bot.name }),
+            confirmLabel: t("settings.delete"),
+            cancelLabel: t("dialogs.cancel"),
             destructive: true,
           });
           if (confirmed) await remove(bot);
         },
-      }),
+      }, t),
     });
   };
 
   const deleteTeam = async (group: BotGroup) => {
-    const confirmed = await confirmDialog({ title: "Delete team?", message: `Delete the "${group.name}" team? Its bots stay, without a team.`, confirmLabel: "Delete", cancelLabel: "Cancel", destructive: true });
+    const confirmed = await confirmDialog({ title: t("surface.deleteTeamTitle"), message: t("surface.deleteTeamMessage", { name: group.name }), confirmLabel: t("settings.delete"), cancelLabel: t("dialogs.cancel"), destructive: true });
     if (!confirmed) return false;
     await commit((values) => ({ ...values, groups: (values.groups ?? []).filter((entry) => entry.id !== group.id) }));
     return true;
@@ -416,12 +452,12 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       anchor,
       align: "end",
       width: 200,
-      title: "Team actions",
+      title: t("surface.teamActions"),
       entries: [
-        { label: "Edit team", icon: "Pencil", onSelect: () => setEditingTeam(group) },
-        { label: "Team map", icon: "Network", onSelect: () => setTeamMap(true) },
+        { label: t("teams.editTeam"), icon: "Pencil", onSelect: () => setEditingTeam(group) },
+        { label: t("teams.teamMap"), icon: "Network", onSelect: () => setTeamMap(true) },
         { kind: "separator" },
-        { label: "Delete team", icon: "Trash2", destructive: true, onSelect: () => void deleteTeam(group) },
+        { label: t("teams.deleteTeam"), icon: "Trash2", destructive: true, onSelect: () => void deleteTeam(group) },
       ],
     });
 
@@ -437,22 +473,22 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       anchor,
       align: source === "kebab" ? "end" : "start",
       width: 260,
-      title: "Chat actions",
+      title: t("sidebar.chatActions"),
       entries: chatMenuEntries({
         pinned: context.pinned,
-        onCopyPath: () => (chat.cwd ? copy(chat.cwd, "Path copied") : toast.error("Chat path not available")),
-        onCopyId: () => copy(chat.id, "Chat ID copied"),
+        onCopyPath: () => (chat.cwd ? copy(chat.cwd, t("surface.pathCopied")) : toast.error(t("surface.chatPathUnavailable"))),
+        onCopyId: () => copy(chat.id, t("surface.chatIdCopied")),
         onCopyTranscript: async () => {
           if (!botHost.api) {
-            toast.error("Host is not connected");
+            toast.error(t("surface.hostNotConnected"));
             return;
           }
           try {
             const entries = await fullTimeline(botHost.api, chat.id);
-            await copyText(chatTranscript({ title: displayTitle(chat.title), botName: bot.name, entries, exportedAt: new Date() }));
-            toast.show("Transcript copied", { variant: "success" });
+            await copyText(chatTranscript({ title: displayTitle(chat.title, t), botName: bot.name, entries, exportedAt: new Date() }));
+            toast.show(t("surface.transcriptCopied"), { variant: "success" });
           } catch (error) {
-            toast.error(`Couldn't copy the transcript: ${errorText(error)}`);
+            toast.error(t("surface.couldntCopyTranscript", { error: errorText(error) }));
           }
         },
         onTogglePin: () =>
@@ -463,19 +499,20 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         onOpenInPaseo: openAgent && botHost.online ? () => openAgent({ agentId: chat.id, serverId: botHost.key }) : undefined,
         onArchive: async () => {
           if (!botHost.api) {
-            toast.error("Host is not connected");
+            toast.error(t("surface.hostNotConnected"));
             return;
           }
           try {
             await botHost.api.agents.ref(chat.id).archive();
-            if (selection?.chatId === chat.id) setSelection({ botId: bot.id, chatId: null });
+            // The selection as it is now: the menu was opened some time ago and the person may have moved on.
+            setSelection((current) => (current?.chatId === chat.id ? { botId: bot.id, chatId: null } : current));
             if (context.pinned) updateUi(unpin);
-            await queryClient.invalidateQueries({ queryKey: ["paseo-bots", "chats", botHost.key, bot.id] });
+            await queryClient.invalidateQueries({ queryKey: ["aydo", "chats", botHost.key, bot.id] });
           } catch (error) {
-            toast.error(`Failed to archive chat: ${errorText(error)}`);
+            toast.error(t("surface.archiveFailed", { error: errorText(error) }));
           }
         },
-      }),
+      }, t),
     });
   };
 
@@ -484,16 +521,16 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       anchor,
       align: "end",
       width: 232,
-      title: "Display",
+      title: t("surface.display"),
       entries: [
         {
-          label: "Archived bots",
-          trailing: listUi.showArchived ? "Shown" : archivedCount ? `Hidden (${archivedCount})` : "Hidden",
+          label: t("surface.archivedBots"),
+          trailing: listUi.showArchived ? t("surface.shown") : archivedCount ? t("surface.hiddenCount", { n: archivedCount }) : t("surface.hidden"),
           onSelect: () => updateUi((current) => ({ ...current, showArchived: !current.showArchived })),
         },
         {
-          label: "Chat order",
-          trailing: listUi.chatSort === "manual" ? "Manual" : "Last activity",
+          label: t("surface.chatOrder"),
+          trailing: listUi.chatSort === "manual" ? t("surface.manual") : t("surface.lastActivity"),
           onSelect: () => updateUi((current) => ({ ...current, chatSort: current.chatSort === "manual" ? "activity" : "manual" })),
         },
       ],
@@ -570,8 +607,9 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         typeVersion={typeVersion}
         onBack={layout.compact ? () => setSelection(null) : undefined}
         onBotMenu={(anchor) => (anchor ? openBotMenu(selectedBot, anchor, "kebab") : openBotMenuFromPane(selectedBot))}
-        onTogglePanel={() => setPanel({ open: !panel.open, section: panel.section })}
-        onStarted={(chatId) => setSelection({ botId: selectedBot.id, chatId })}
+        onTogglePanel={() => setPanel({ open: !panel.open, section: panel.open ? panel.section : null })}
+        // Only when the person is still on this bot: starting a chat takes a moment, and they may have gone elsewhere.
+        onStarted={(chatId) => setSelection((current) => (current?.botId === selectedBot.id ? { botId: selectedBot.id, chatId } : current))}
       />
     ) : (
       <Splash colors={colors} />
@@ -597,9 +635,9 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         onRestore={(snapshot) => {
           patchBot(selectedBot.id, snapshot);
           setPanelVersion((version) => version + 1);
-          toast.show("Restored. Undo it from History if needed.", { variant: "success" });
+          toast.show(t("surface.restored"), { variant: "success" });
         }}
-        onSetup={() => select({ botId: selectedBot.id, chatId: null, prompt: SETUP_PROMPT })}
+        onSetup={() => select({ botId: selectedBot.id, chatId: null, prompt: setupPromptText(settings.status === "ready" ? settings.values.setup : undefined, usesFiles(settings.status === "ready" ? settings.values.toolMode : undefined, selectedBot.provider, selectedBot.toolMode), locale) })}
         onOpenChat={(chatId) => {
           select({ botId: selectedBot.id, chatId });
           // On phones the panel covers the chat.
@@ -607,6 +645,18 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         }}
       />
     ) : null;
+
+  const approvalsScreen = approvalsOpen ? (
+    <ApprovalsList
+      colors={colors}
+      compact={layout.compact}
+      onBack={() => setApprovalsOpen(false)}
+      onOpenChat={(botId, chatId) => {
+        setApprovalsOpen(false);
+        select({ botId, chatId });
+      }}
+    />
+  ) : null;
 
   const libraryScreen = libraryView ? (
     <LibraryView
@@ -622,6 +672,9 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   ) : null;
 
   // On desktop Skills & Tools takes over the screen, like Paseo's settings.
+  if (approvalsScreen && !layout.compact) {
+    return <View style={{ flex: 1, backgroundColor: colors.surface0, paddingBottom: keyboardHeight }}>{approvalsScreen}</View>;
+  }
   if (libraryScreen && !layout.compact) {
     return <View style={{ flex: 1, backgroundColor: colors.surface0, paddingBottom: keyboardHeight }}>{libraryScreen}</View>;
   }
@@ -644,6 +697,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
             </SlideOver>
           ) : null}
           {libraryScreen ? <SlideOver onClose={() => setLibraryView(null)}>{libraryScreen}</SlideOver> : null}
+          {approvalsScreen ? <SlideOver onClose={() => setApprovalsOpen(false)}>{approvalsScreen}</SlideOver> : null}
         </View>
       ) : (
         <>
@@ -688,19 +742,22 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
           presets={settings.status === "ready" ? (settings.values.presets ?? []) : []}
           onCreate={(start) => {
             setCreating(false);
-            const bot = start?.preset ? botFromPreset(defaultProvider(), start.preset) : newBot(defaultProvider(), start?.template);
+            const bot = start?.preset ? botFromPreset(defaultProvider(), start.preset, t) : newBot(defaultProvider(), start?.template, t);
             const defaults = (settings.status === "ready" ? settings.values.defaults : undefined) ?? DEFAULT_BOT_DEFAULTS;
-            void addBot(applyDefaults(bot, defaults, defaultProvider()), start ? "overview" : "identity");
+            const created = applyDefaults(bot, defaults, defaultProvider());
+            const setup = settings.status === "ready" ? settings.values.setup : undefined;
+            void addBot(created, start ? "overview" : null, shouldAutoSetup(start, setup, created.provider) ? setupPromptText(setup, usesFiles(settings.status === "ready" ? settings.values.toolMode : undefined, created.provider, created.toolMode), locale) : undefined);
           }}
           onImport={async (json) => {
-            const { bots, teams } = await importTeam({ json });
+            const { bots: imported, teams } = await importTeam({ json });
+            const bots = withDefaultProvider(imported, defaultProvider());
             setCreating(false);
             const saved = await commit((values) => addImportedBots(values, bots, teams));
             const first = bots[0]?.bot;
             if (saved && first) {
               select({ botId: first.id, chatId: null });
               setPanel({ open: true, section: "overview" });
-              if (bots.length > 1) toast.show(`Added ${bots.length} bots`, { variant: "success" });
+              if (bots.length > 1) toast.show(t("surface.addedBots", { count: bots.length }), { variant: "success" });
             }
           }}
         />
@@ -709,12 +766,12 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       {renaming ? (
         <RenameDialog
           colors={colors}
-          title="Rename bot"
+          title={t("dialogs.menu.renameBot")}
           initialValue={renaming.name}
           placeholder={renaming.name}
           onClose={() => setRenaming(null)}
           onSubmit={async (name) => {
-            if (!(await updateBot(renaming.id, { name }, true))) throw new Error("Unable to save");
+            if (!(await updateBot(renaming.id, { name }, true))) throw new Error(t("dialogs.rename.unableToSave"));
             // The identity section holds its own copy of the name.
             if (panel.open && selection?.botId === renaming.id) setPanelVersion((version) => version + 1);
           }}
@@ -744,36 +801,62 @@ interface SelectedChatProps {
 }
 
 function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, layout, keyboardOpen, typeVersion, onBack, onBotMenu, onTogglePanel, onStarted }: SelectedChatProps) {
+  const { t } = useT();
   const host = useBotHost(bot.hostId, localHost);
   const chat = useChat(host.api, selection.chatId);
+  // Where a new chat runs: "" is the bot's own folder, else a workspace of one of the user's projects.
+  const choices = useWorkspaceChoices(host);
+  const [workspaceId, setWorkspaceId] = useState("");
+  useEffect(() => setWorkspaceId(""), [selection.chatId, bot.id]);
   const ensureHome = useRpc(ensureBotHomeRpc);
   const compose = useRpc(systemPromptRpc);
   const mountServers = useRpc(mountRpc);
+  const askHostCaps = useRpc(hostCapsRpc);
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { settings } = useBotSettings();
 
   const start = async (message: OutgoingMessage) => {
-    if (!host.api) throw new Error(`${host.label} is offline.`);
+    if (!host.api) throw new Error(t("surface.hostOffline", { host: host.label }));
     // The bot's folder holds its memory and skills even when it works elsewhere.
     const home = await ensureHome({ botId: bot.id });
     const placement = bot.cwd ? { path: bot.cwd, projectRoot: null } : { path: home.path, projectRoot: home.root };
+    // A chosen workspace must still exist; the chat then runs there and the bot's own folder is attached to it.
+    const target = host.isLocal && workspaceId ? choices.data?.find((choice) => choice.id === workspaceId) : undefined;
+    if (host.isLocal && workspaceId && !target) throw new Error(t("surface.workspaceGone"));
+    const workspace = target ? { id: target.id, path: target.directory } : undefined;
+    const chatFolder = workspace?.path ?? placement.path;
     const { systemPrompt } = await compose({ bot, local: host.isLocal, message: message.text });
-    // The plugin's tools and connected apps go through this host's relay, so only bots here get them.
+    // What this host does for Devin; only this host's plugin can say, so a bot on another host gets the stock behaviour.
+    const hostCaps = host.isLocal ? await askHostCaps({}).catch(() => NO_HOST_CAPS) : NO_HOST_CAPS;
+    // The plugin's tools go through this host's relay, so only bots here get them.
     const agentId = newUuid();
-    const plugin = host.isLocal ? await mountServers({ botId: bot.id, agentId }) : {};
+    const mounted = host.isLocal && !usesFiles(settings.status === "ready" ? settings.values.toolMode : undefined, bot.provider, bot.toolMode) ? await mountServers({ botId: bot.id, agentId }) : {};
+    // A team that lets its members ask each other freely also lets ask_bot run without a tool approval.
+    const askFreely = settings.status === "ready" && !!teamOf(bot.id, settings.values.groups ?? [])?.askFreely;
+    const plugin = askFreely ? { ...mounted, askFreely: true } : mounted;
     const id = await startBotChat(host.api, {
       bot,
       library,
       ...(host.isLocal ? { agentId } : {}),
       plugin,
       placement,
+      ...(workspace ? { workspace } : {}),
+      home: home.path,
+      // A member of a team gets its team's report folder attached (a folder of this host, so only for a bot here).
+      ...(host.isLocal && home.reports ? { extraFolders: [home.reports] } : {}),
+      hostCaps,
       prompt: message.text,
-      systemPrompt,
+      // A Devin chat in the bot's own folder reads its identity from the rules file the server just wrote.
+      systemPrompt: sendsPromptInChat(bot.provider, chatFolder, home.path, hostCaps) ? systemPrompt : "",
       images: message.images,
       attachments: message.attachments,
       clientMessageId: message.messageId,
+    }).catch((error: unknown) => {
+      // The host's words for a vanished workspace carry its internal id; say it plainly.
+      throw workspace ? new Error(friendlyStartError(error instanceof Error ? error.message : String(error), t)) : error;
     });
-    await queryClient.invalidateQueries({ queryKey: ["paseo-bots", "chats", host.key, bot.id] });
+    await queryClient.invalidateQueries({ queryKey: ["aydo", "chats", host.key, bot.id] });
     onStarted(id);
   };
 
@@ -790,14 +873,15 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
     // Only the name matters here.
   }, [bot.name, host.api]);
 
-  // "Set up with the bot" opens a new chat that sends its first message straight away.
-  const autoStarted = useRef(false);
+  // "Set up with the bot" opens a new chat that sends its first message straight away. It runs for
+  // each such selection, including a click while the new-chat pane is already open (no remount).
+  const handledSelection = useRef<unknown>(null);
   useEffect(() => {
-    if (selection.chatId !== null || !selection.prompt || autoStarted.current || !host.api) return;
-    autoStarted.current = true;
-    start({ text: selection.prompt, messageId: newMessageId(), images: [], attachments: [] }).catch((error: unknown) => toast.error(`Couldn't start: ${errorText(error)}`));
-    // Runs once for the selection that carries the prompt.
-  }, [host.api]);
+    if (!pendingAutoStart(selection, handledSelection.current, Boolean(host.api))) return;
+    handledSelection.current = selection;
+    start({ text: selection.prompt!, messageId: newMessageId(), images: [], attachments: [] }).catch((error: unknown) => toast.error(t("surface.couldntStart", { error: errorText(error) })));
+    // Runs for the selection that carries the prompt, once the host is ready.
+  }, [host.api, selection]);
 
   return (
     <ChatPane
@@ -815,6 +899,9 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
       onTogglePanel={onTogglePanel}
       onStart={start}
       onOpenChat={onStarted}
+      workspaces={choices.data ?? []}
+      newChatWorkspaceId={workspaceId}
+      onNewChatWorkspaceChange={setWorkspaceId}
     />
   );
 }

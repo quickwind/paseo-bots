@@ -5,6 +5,8 @@ import { Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { buildLineDiff, parseUnifiedDiff, hasMeaningfulToolCallDetail, type DiffLine, type ToolCallDetail } from "../../../shared/tools";
 import { MONO_FONT, MONO_PROPS, nativeTokens } from "../../native";
 import { code, ui } from "../../typography";
+import { useT } from "../../i18n/use-t";
+import type { Translate } from "../../../shared/translate";
 import { isWeb } from "./ui";
 
 type Colors = PluginTheme["colors"];
@@ -45,6 +47,7 @@ function monoText(colors: Colors): TextStyle {
 }
 
 export const ToolCallDetailsContent = memo(function ToolCallDetailsContent({ colors, toolName, detail, errorText, maxHeight, fillAvailableHeight = false, showLoadingSkeleton = false }: Props) {
+  const { t } = useT();
   const resolvedMax = fillAvailableHeight ? undefined : (maxHeight ?? 300);
   const fullBleed = detail?.type === "edit" || detail?.type === "shell" || detail?.type === "write";
   const fill = fillAvailableHeight && ["shell", "edit", "write", "read", "sub_agent"].includes(detail?.type ?? "");
@@ -54,11 +57,11 @@ export const ToolCallDetailsContent = memo(function ToolCallDetailsContent({ col
     maxHeight: resolvedMax,
     fill,
   };
-  const sections = buildSections(colors, toolName, detail, styles);
+  const sections = buildSections(colors, toolName, detail, styles, t);
   if (errorText) sections.push(<ErrorSection key="error" colors={colors} text={errorText} styles={styles} />);
   if (sections.length === 0) {
     if (showLoadingSkeleton) return <LoadingSkeleton colors={colors} />;
-    return <Text style={{ color: colors.foregroundMuted, fontSize: ui(14), fontStyle: "italic" }}>No additional details available</Text>;
+    return <Text style={{ color: colors.foregroundMuted, fontSize: ui(14), fontStyle: "italic" }}>{t("chat.stream.noDetails")}</Text>;
   }
   return <View style={{ gap: fullBleed ? 8 : 16, padding: 0, ...(fill ? { flex: 1, minHeight: 0 } : {}) }}>{sections}</View>;
 });
@@ -180,7 +183,7 @@ function stringify(value: unknown): string {
   }
 }
 
-function buildSections(colors: Colors, _toolName: string | undefined, detail: ToolCallDetail | undefined, styles: Styles): ReactNode[] {
+function buildSections(colors: Colors, _toolName: string | undefined, detail: ToolCallDetail | undefined, styles: Styles, t: Translate): ReactNode[] {
   if (!detail) return [];
   const mono = styles.mono;
   switch (detail.type) {
@@ -202,7 +205,7 @@ function buildSections(colors: Colors, _toolName: string | undefined, detail: To
       return [
         <CodeSurface key="worktree" colors={colors} styles={styles}>
           <Text selectable {...MONO_PROPS} style={mono}>
-            {log || `Preparing worktree ${detail.branchName} at ${detail.worktreePath}`}
+            {log || t("chat.stream.preparingWorktree", { branch: detail.branchName, path: detail.worktreePath })}
           </Text>
         </CodeSurface>,
       ];
@@ -249,8 +252,8 @@ function buildSections(colors: Colors, _toolName: string | undefined, detail: To
       if (typeof detail.input === "string" && detail.output === null) return [<PlainTextSection key="plain" colors={colors} text={detail.input} styles={styles} />];
       const out: ReactNode[] = [];
       for (const [title, value] of [
-        ["Input", detail.input],
-        ["Output", detail.output],
+        [t("chat.stream.input"), detail.input],
+        [t("chat.stream.output"), detail.output],
       ] as const) {
         if (!hasMeaningfulToolCallDetail({ type: "unknown", input: value ?? null, output: null })) continue;
         const text = stringify(value);
@@ -276,6 +279,7 @@ function buildSections(colors: Colors, _toolName: string | undefined, detail: To
 }
 
 function SubAgentSection({ colors, detail, styles }: { colors: Colors; detail: Extract<ToolCallDetail, { type: "sub_agent" }>; styles: Styles }) {
+  const { t } = useT();
   const parsed = useMemo(() => {
     const actions: { index: number; tool: string; summary?: string }[] = [];
     const rest: string[] = [];
@@ -288,7 +292,7 @@ function SubAgentSection({ colors, detail, styles }: { colors: Colors; detail: E
     }
     return { actions, log: rest.join("\n").replace(/^\n+/, "") };
   }, [detail.log]);
-  const header = detail.subAgentType && detail.description ? `${detail.subAgentType}: ${detail.description}` : (detail.subAgentType ?? detail.description ?? "Sub-agent activity");
+  const header = detail.subAgentType && detail.description ? `${detail.subAgentType}: ${detail.description}` : (detail.subAgentType ?? detail.description ?? t("chat.stream.subAgentActivity"));
   const toolName = (name: string) =>
     name
       .replace(/[._-]+/g, " ")
@@ -300,7 +304,7 @@ function SubAgentSection({ colors, detail, styles }: { colors: Colors; detail: E
     <CodeSurface colors={colors} styles={styles}>
       {detail.childSessionId ? (
         <Text selectable {...MONO_PROPS} style={[styles.mono, { color: colors.foregroundMuted, marginBottom: 8 }]}>
-          session {detail.childSessionId}
+          {t("chat.stream.session", { id: detail.childSessionId })}
         </Text>
       ) : null}
       {parsed.actions.length > 0 ? (
@@ -329,9 +333,10 @@ function SubAgentSection({ colors, detail, styles }: { colors: Colors; detail: E
 }
 
 function ErrorSection({ colors, text, styles }: { colors: Colors; text: string; styles: Styles }) {
+  const { t } = useT();
   return (
     <View style={{ gap: 8 }}>
-      <Text style={{ color: colors.statusDanger, fontSize: ui(12), fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 }}>Error</Text>
+      <Text style={{ color: colors.statusDanger, fontSize: ui(12), fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 }}>{t("chat.stream.error")}</Text>
       <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator style={{ borderWidth: 1, borderColor: colors.statusDanger, borderRadius: 4, backgroundColor: colors.surface2 }} contentContainerStyle={{ padding: PAD }}>
         <Text selectable {...MONO_PROPS} style={[styles.mono, { color: colors.statusDanger }]}>
           {text}

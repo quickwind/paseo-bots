@@ -1,11 +1,11 @@
-import { appendFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { appendFile, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { localDay, parseLog, type LogEntry } from "../shared/activity";
+import { INBOX_FILE, MEMORY_MAX_BYTES, MEMORY_MAX_LINES } from "../shared/memory-maintenance";
 import { botDataPath } from "./bot-home";
+import { dropLink, realDirUnder } from "./managed-files";
 
-/** OpenMausBot's budget: the first 200 lines or 24 KB of MEMORY.md go into every chat. */
-const MEMORY_MAX_LINES = 200;
-const MEMORY_MAX_BYTES = 24_000;
+// OpenMausBot's budget: the first MEMORY_MAX_LINES lines or MEMORY_MAX_BYTES bytes of MEMORY.md go into every chat.
 export const MAIN_MEMORY = "MEMORY.md";
 
 export function memoryFolder(botId: string): string {
@@ -24,12 +24,27 @@ async function readText(path: string): Promise<string> {
   }
 }
 
+function cutToBytes(text: string, limit: number): string {
+  let out = "";
+  let bytes = 0;
+  for (const char of text) {
+    bytes += Buffer.byteLength(char, "utf8");
+    if (bytes > limit) break;
+    out += char;
+  }
+  return out;
+}
+
 function trimForPrompt(text: string): string {
   const lines = text.split("\n").slice(0, MEMORY_MAX_LINES);
   let out = "";
   for (const line of lines) {
     const next = out ? `${out}\n${line}` : line;
-    if (Buffer.byteLength(next, "utf8") > MEMORY_MAX_BYTES) break;
+    if (Buffer.byteLength(next, "utf8") > MEMORY_MAX_BYTES) {
+      // A first line over the limit still gives its first part, cut between characters.
+      if (!out) out = cutToBytes(line, MEMORY_MAX_BYTES);
+      break;
+    }
     out = next;
   }
   return out;
@@ -82,8 +97,11 @@ function logPath(botId: string, day: string): string {
 
 /** Adds a line to today's log, memory/log/YYYY-MM-DD.md. */
 export async function appendDailyLog(botId: string, line: string, at = new Date()): Promise<void> {
-  await mkdir(logFolder(botId), { recursive: true });
-  await appendFile(logPath(botId, localDay(at)), `${line}\n`, { encoding: "utf8", mode: 0o600 });
+  // The bot can replace memory/log, or today's file, with a link; neither is followed.
+  await realDirUnder(botDataPath(botId), "memory", "log");
+  const path = logPath(botId, localDay(at));
+  await dropLink(path);
+  await appendFile(path, `${line}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
 /** The log's days, newest first, with how many lines each has. */
@@ -124,4 +142,53 @@ export async function memoryTexts(botId: string): Promise<{ path: string; text: 
   for (const name of topics.filter((entry) => entry.endsWith(".md")).sort()) files.push({ path: `memory/${name}`, text: await readText(memoryFilePath(botId, name)) });
   for (const { day } of (await listLogDays(botId)).days) files.push({ path: `memory/log/${day}.md`, text: await readText(logPath(botId, day)) });
   return files.filter((file) => file.text);
+}
+
+// ---------------------------------------------------------------- maintenance
+
+export function inboxPath(botId: string): string {
+  return memoryFilePath(botId, INBOX_FILE);
+}
+
+export async function memoryUsage(botId: string): Promise<{ lines: number; bytes: number }> {
+  const text = await readText(memoryFilePath(botId, MAIN_MEMORY));
+  return { lines: text ? text.split("\n").length : 0, bytes: Buffer.byteLength(text, "utf8") };
+}
+
+/** The topic files (memory/*.md, the inbox included) with their first non-empty line. */
+export async function topicIndex(botId: string): Promise<{ name: string; firstLine: string }[]> {
+  const names = (await readdir(join(botDataPath(botId), "memory")).catch(() => [] as string[])).filter((name) => name.endsWith(".md")).sort();
+  const out: { name: string; firstLine: string }[] = [];
+  for (const name of names) {
+    const text = await readText(memoryFilePath(botId, name));
+    out.push({ name, firstLine: text.split("\n").find((line) => line.trim())?.trim().slice(0, 120) ?? "" });
+  }
+  return out;
+}
+
+/** Bytes of real notes in the inbox: blank lines and headings do not count, so an inbox the tidy chat "emptied" with a blank line stays empty. */
+export async function inboxBytes(botId: string): Promise<number> {
+  const notes = (await readText(inboxPath(botId)))
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+  return Buffer.byteLength(notes.join("\n"), "utf8");
+}
+
+/** The log keeps minutes, so a line from the minute a tidy started in is counted: it may have come after the start. */
+const startOfMinute = (date: Date) => Math.floor(date.getTime() / 60_000) * 60_000;
+
+/** Daily-log lines written after `since` (all of the last 31 days when null), and the log files that hold them. */
+export async function newLogLines(botId: string, since: Date | null, now = new Date()): Promise<{ count: number; files: string[] }> {
+  let count = 0;
+  const files: string[] = [];
+  for (let back = 30; back >= 0; back--) {
+    const day = localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - back));
+    const entries = parseLog(day, await readText(logPath(botId, day))).filter((entry) => !since || entry.at.getTime() >= startOfMinute(since));
+    if (entries.length) {
+      count += entries.length;
+      files.push(logPath(botId, day));
+    }
+  }
+  return { count, files };
 }

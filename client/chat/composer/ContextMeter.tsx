@@ -4,6 +4,7 @@ import { Pressable, View } from "react-native";
 import { nativeTokens } from "../../native";
 import { measureAnchor, useMenu } from "../../ui/Menu";
 import { tooltip, tooltipsShown } from "../../ui/Tooltip";
+import { useT } from "../../i18n/use-t";
 import { formatSessionCost, formatTokenCount, meterTone, ringRotations, type ContextUsage } from "./logic";
 
 type Colors = PluginTheme["colors"];
@@ -19,6 +20,7 @@ const AMBER_500 = "#f59e0b";
  * compact) pressing opens the same lines in a small anchored panel.
  */
 export function ContextMeter({ colors, usage, pending, glyphSize }: { colors: Colors; usage: ContextUsage | null; pending: boolean; glyphSize: number }) {
+  const { t } = useT();
   const tokens = nativeTokens(colors);
   const menu = useMenu();
   const anchor = useRef<View>(null);
@@ -34,8 +36,8 @@ export function ContextMeter({ colors, usage, pending, glyphSize }: { colors: Co
   const tone = meterTone(usage.percent);
   const progress = tone === "danger" ? colors.statusDanger : tone === "warning" ? AMBER_500 : colors.foregroundMuted;
   const cost = usage.costUsd !== null ? formatSessionCost(usage.costUsd) : null;
-  const tokensLine = `${formatTokenCount(usage.used)} / ${formatTokenCount(usage.max)} tokens`;
-  const costLine = cost ? `Session cost ${cost}` : null;
+  const tokensLine = t("chat.context.tokens", { used: formatTokenCount(usage.used), max: formatTokenCount(usage.max) });
+  const costLine = cost ? t("chat.context.cost", { cost }) : null;
   const open = async () => {
     if (tooltipsShown()) return;
     const rect = await measureAnchor(anchor);
@@ -45,9 +47,9 @@ export function ContextMeter({ colors, usage, pending, glyphSize }: { colors: Co
       anchor: rect,
       align: "end",
       width: 220,
-      title: "Context window",
+      title: t("chat.context.title"),
       entries: [
-        { label: `${rounded}% used`, onSelect: noop },
+        { label: t("chat.context.percentUsed", { percent: rounded }), onSelect: noop },
         { label: tokensLine, onSelect: noop },
         ...(costLine ? [{ label: costLine, onSelect: noop }] : []),
       ],
@@ -57,8 +59,8 @@ export function ContextMeter({ colors, usage, pending, glyphSize }: { colors: Co
     <Pressable
       ref={anchor}
       accessibilityRole="button"
-      accessibilityLabel={`Context window ${rounded}% used`}
-      {...tooltip("Context window", "top", { lines: [`${rounded}% used`], details: costLine ? [tokensLine, costLine] : [tokensLine], delay: 0 })}
+      accessibilityLabel={t("chat.context.label", { percent: rounded })}
+      {...tooltip(t("chat.context.title"), "top", { lines: [t("chat.context.percentUsed", { percent: rounded })], details: costLine ? [tokensLine, costLine] : [tokensLine], delay: 0 })}
       onPress={() => void open()}
       style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" }}
     >

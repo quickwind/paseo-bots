@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Animated, Dimensions, Easing, PanResponder, Platform, View } from "react-native";
+import { useT } from "../i18n/use-t";
 
 // This plugin typechecks without the DOM library. Declare only what this module uses.
 type PointerListener = (event: { clientX: number }) => void;
@@ -15,12 +16,16 @@ const win = globalThis as unknown as {
  * pointer events until release, so no other gesture can resize a column.
  */
 export function ResizeHandle({ side, width, onResize, onCommit }: { side: "left" | "right"; width: number; onResize(width: number): void; onCommit(width: number): void }) {
+  const { t } = useT();
   const latest = useRef(width);
   latest.current = width;
   const onResizeRef = useRef(onResize);
   const onCommitRef = useRef(onCommit);
   onResizeRef.current = onResize;
   onCommitRef.current = onCommit;
+  // The listeners of a drag in progress, removed if the handle goes away (the panel closes) before the pointer is released.
+  const dragging = useRef<(() => void) | null>(null);
+  useEffect(() => () => dragging.current?.(), []);
   if (Platform.OS !== "web" || !win.addEventListener) return null;
 
   const begin = (event: { nativeEvent: { clientX?: number; pageX?: number } }) => {
@@ -32,12 +37,17 @@ export function ResizeHandle({ side, width, onResize, onCommit }: { side: "left"
       if (dx !== 0) moved = true;
       onResizeRef.current(startWidth + (side === "right" ? dx : -dx));
     };
-    const end: PointerListener = () => {
+    const stop = () => {
       win.removeEventListener?.("pointermove", move);
       win.removeEventListener?.("pointerup", end);
       win.removeEventListener?.("pointercancel", end);
+      dragging.current = null;
+    };
+    const end: PointerListener = () => {
+      stop();
       if (moved) onCommitRef.current(latest.current);
     };
+    dragging.current = stop;
     win.addEventListener?.("pointermove", move);
     win.addEventListener?.("pointerup", end);
     win.addEventListener?.("pointercancel", end);
@@ -46,7 +56,7 @@ export function ResizeHandle({ side, width, onResize, onCommit }: { side: "left"
   return (
     <View
       accessibilityRole="adjustable"
-      accessibilityLabel="Resize"
+      accessibilityLabel={t("common.resize")}
       onPointerDown={begin}
       style={[{ position: "absolute", top: 0, bottom: 0, width: 10, zIndex: 10, [side]: -5 }, { cursor: "col-resize" } as object]}
     />

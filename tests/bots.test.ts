@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildAgentConfig, EMPTY_LIBRARY } from "../shared/bot";
 import { fakeHost, makeBot } from "./helpers";
 
@@ -18,10 +21,18 @@ interface FakeChat {
   pendingPermissions?: unknown[];
 }
 
+const sentInto: { chatId: string; text: string }[] = [];
+
 function fakePaseo(chats: Record<string, FakeChat>) {
   return {
     agents: {
       ref: (id: string) => ({
+        send: async (text: string) => {
+          sentInto.push({ chatId: id, text });
+          const chat = chats[id]!;
+          chat.status = "running";
+          chat.reply = `Answer ${sentInto.length}.`;
+        },
         refresh: async () => {
           const chat = chats[id];
           return chat ? { agent: { id, status: chat.status, labels: chat.labels, title: chat.title ?? null, pendingPermissions: chat.pendingPermissions ?? [], lastError: null } } : null;
@@ -47,12 +58,43 @@ function fakePaseo(chats: Record<string, FakeChat>) {
   } as never;
 }
 
+let home: string;
+beforeEach(async () => {
+  home = await mkdtemp(join(tmpdir(), "aydo-askbot-"));
+  process.env.PASEO_HOME = home;
+  started.length = 0;
+  sentInto.length = 0;
+});
+afterEach(async () => {
+  delete process.env.PASEO_HOME;
+  await rm(home, { recursive: true, force: true });
+});
+
 describe("asking other bots", () => {
+  it("pushes the answer into the asking chat when ask_bot stopped waiting for it", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const { Asks } = await import("../server/asks");
+    const { loadRequests } = await import("../server/ask-store");
+    const scout = makeBot({ id: "bot-scout", name: "Scout" });
+    const host = fakeHost([scout, makeBot({ id: "bot-inbox", name: "Inbox" })]);
+    const chats: Record<string, FakeChat> = { "caller-chat": { status: "idle", labels: { "aydo.bot": "bot-scout" } }, "chat-new": { status: "idle", labels: {}, pendingPermissions: [{}] } };
+    host.attach(fakePaseo(chats));
+    const caller = { bot: scout, agentId: "caller-chat", host, relay: null as never };
+    const result = await askBot.run({ bot: "inbox", message: "Slow one" }, caller);
+    expect(result).toContain("waiting for the user to approve");
+    expect(result).toContain("will arrive in this chat as a message");
+    const [request] = await loadRequests();
+    expect(request).toMatchObject({ via: "tool", detached: true, status: "running" });
+    chats["chat-new"] = { status: "idle", labels: { "aydo.ask-request": request!.id }, reply: "Done at last." };
+    await new Asks(host, null as never).answered({ agentId: "chat-new", labels: { "aydo.ask-request": request!.id }, outcome: { kind: "completed" }, reply: "Done at last." });
+    expect(sentInto.filter((entry) => entry.chatId === "caller-chat").map((entry) => entry.text).join("\n")).toContain("Done at last.");
+  });
+
   it("frames the request and returns the other bot's answer", async () => {
     const { askBot, askPrompt, ASKED_BY_LABEL } = await import("../server/tools/bots");
     const scout = makeBot({ id: "bot-scout", name: "Scout" });
     const host = fakeHost([scout, makeBot({ id: "bot-inbox", name: "Inbox" }), makeBot({ id: "bot-old", name: "Old", archived: true })]);
-    const chats: Record<string, FakeChat> = { "caller-chat": { status: "running", labels: { "paseo-bots.bot": "bot-scout" } }, "chat-new": { status: "running", labels: {}, reply: "Three unread, one urgent." } };
+    const chats: Record<string, FakeChat> = { "caller-chat": { status: "running", labels: { "aydo.bot": "bot-scout" } }, "chat-new": { status: "running", labels: {}, reply: "Three unread, one urgent." } };
     host.attach(fakePaseo(chats));
     const caller = { bot: scout, agentId: "caller-chat", host, relay: null as never };
 
@@ -62,7 +104,7 @@ describe("asking other bots", () => {
     expect(await askBot.available!(caller)).toBe(true);
     expect(await askBot.run({ bot: "inbox", message: "How many unread mails?" }, caller)).toBe("Inbox answered (chat chat-new):\n\nThree unread, one urgent.");
     expect(started.at(-1)).toMatchObject({ botId: "bot-inbox", title: "Scout: How many unread mails?", labels: { [ASKED_BY_LABEL]: "bot-scout" } });
-    expect(await askBot.run({ bot: "bot-inbox", message: "Later", wait: false }, caller)).toBe("Asked Inbox in chat chat-new. Use check_chat with that id for the answer.");
+    expect(await askBot.run({ bot: "bot-inbox", message: "Later", wait: false }, caller)).toMatch(/^Asked Inbox in chat chat-new\. Its answer will arrive in this chat as a message/);
     await expect(askBot.run({ bot: "Old", message: "x" }, caller)).rejects.toThrow('There\'s no other bot called "Old". Ask one of: Inbox.');
 
     // A bot answering another bot can't ask further, and "off" hides the tool.
@@ -71,6 +113,12 @@ describe("asking other bots", () => {
     asked.attach(fakePaseo(chats));
     expect(await askBot.available!({ ...caller, host: asked })).toBe(false);
     expect(await askBot.available!({ ...caller, bot: { ...scout, contactBots: "off" } })).toBe(false);
+    // A memory tidy chat reads untrusted text unattended, so it can't ask other bots either.
+    delete chats["caller-chat"]!.labels[ASKED_BY_LABEL];
+    chats["caller-chat"]!.labels["aydo.tidy"] = "bot-scout";
+    const tidying = fakeHost([scout]);
+    tidying.attach(fakePaseo(chats));
+    expect(await askBot.available!({ ...caller, host: tidying })).toBe(false);
   });
 
   it("checks only the bot's own chats and the ones it asked", async () => {
@@ -79,10 +127,10 @@ describe("asking other bots", () => {
     const host = fakeHost([scout, makeBot({ id: "bot-inbox", name: "Inbox" })]);
     host.attach(
       fakePaseo({
-        asked: { status: "running", title: "Scout: count", labels: { "paseo-bots.bot": "bot-inbox", "paseo-bots.asked-by": "bot-scout" } },
-        waiting: { status: "idle", title: "Scout: send", labels: { "paseo-bots.bot": "bot-inbox", "paseo-bots.asked-by": "bot-scout" }, pendingPermissions: [{}] },
-        mine: { status: "idle", title: "Invoices", labels: { "paseo-bots.bot": "bot-scout" }, reply: "Sent." },
-        theirs: { status: "idle", labels: { "paseo-bots.bot": "bot-inbox" } },
+        asked: { status: "running", title: "Scout: count", labels: { "aydo.bot": "bot-inbox", "aydo.asked-by": "bot-scout" } },
+        waiting: { status: "idle", title: "Scout: send", labels: { "aydo.bot": "bot-inbox", "aydo.asked-by": "bot-scout" }, pendingPermissions: [{}] },
+        mine: { status: "idle", title: "Invoices", labels: { "aydo.bot": "bot-scout" }, reply: "Sent." },
+        theirs: { status: "idle", labels: { "aydo.bot": "bot-inbox" } },
       }),
     );
     const caller = { bot: scout, agentId: "x", host, relay: null as never };
@@ -100,5 +148,145 @@ describe("asking other bots", () => {
     expect(granted("allow")).toContain("ask_bot");
     expect(granted("ask")).not.toContain("ask_bot");
     expect(granted("ask")).toContain("check_chat");
+  });
+});
+
+describe("asking a bot that lives on another host", () => {
+  it("is refused up front, as that bot's chats cannot be started here, and nothing is left running", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const { loadRequests } = await import("../server/ask-store");
+    const scout = makeBot({ id: "bot-scout", name: "Scout", contactBots: "allow" });
+    const host = fakeHost([scout, makeBot({ id: "bot-far", name: "Far", hostId: "other-host" })]);
+    host.attach(fakePaseo({ "caller-chat": { status: "idle", labels: { "aydo.bot": "bot-scout" } } }));
+    await expect(askBot.run({ bot: "Far", message: "hi" }, { bot: scout, agentId: "caller-chat", host, relay: null as never })).rejects.toThrow("There are no other bots to ask.");
+    expect(await loadRequests()).toEqual([]);
+  });
+});
+
+describe("how often ask_bot may be used", () => {
+  it("allows a chat five questions an hour, and the team's Chief of Staff twenty", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const make = async (id: string, groups: Parameters<typeof fakeHost>[2]) => {
+      const bot = makeBot({ id, name: "Asker", contactBots: "allow" });
+      const host = fakeHost([bot, makeBot({ id: "bot-inbox", name: "Inbox" })], EMPTY_LIBRARY, groups);
+      host.attach(fakePaseo({ [`chat-of-${id}`]: { status: "idle", labels: { "aydo.bot": id } }, "chat-new": { status: "running", labels: {}, reply: "Done." } }));
+      return { bot, agentId: `chat-of-${id}`, host, relay: null as never };
+    };
+    const plain = await make("bot-plain", []);
+    for (let n = 0; n < 5; n++) await askBot.run({ bot: "Inbox", message: `q${n}`, wait: false }, plain);
+    await expect(askBot.run({ bot: "Inbox", message: "one more", wait: false }, plain)).rejects.toThrow(/too many times in the last hour \(5\)/);
+    const lead = await make("bot-lead", [{ id: "t1", name: "Ops", logo: null, leadId: "bot-lead", memberIds: ["bot-lead"], instructions: "", askFreely: false, createdAt: "", updatedAt: "" }]);
+    for (let n = 0; n < 20; n++) await askBot.run({ bot: "Inbox", message: `q${n}`, wait: false }, lead);
+    await expect(askBot.run({ bot: "Inbox", message: "one more", wait: false }, lead)).rejects.toThrow(/\(20\)/);
+  });
+});
+
+describe("asking the same bot again with ask_bot", () => {
+  async function setup() {
+    const { askBot } = await import("../server/tools/bots");
+    const scout = makeBot({ id: "bot-scout", name: "Scout", contactBots: "allow" });
+    const host = fakeHost([scout, makeBot({ id: "bot-inbox", name: "Inbox" })]);
+    const chats: Record<string, FakeChat> = { "caller-chat": { status: "idle", labels: { "aydo.bot": "bot-scout" } }, "chat-new": { status: "running", labels: {}, reply: "First answer." } };
+    host.attach(fakePaseo(chats));
+    const caller = { bot: scout, agentId: "caller-chat", host, relay: null as never };
+    return { askBot, chats, caller };
+  }
+
+  it("puts a follow-up into the chat it already has with that bot, and returns the answer from there", async () => {
+    const { askBot, chats, caller } = await setup();
+    expect(await askBot.run({ bot: "Inbox", message: "How many unread?" }, caller)).toContain("First answer.");
+    expect(started).toHaveLength(1);
+    chats["chat-new"]!.status = "idle";
+    const second = await askBot.run({ bot: "Inbox", message: "And how many urgent?" }, caller);
+    expect(started).toHaveLength(1);
+    expect(sentInto).toHaveLength(1);
+    expect(sentInto[0]!.chatId).toBe("chat-new");
+    expect(sentInto[0]!.text).toContain("And how many urgent?");
+    expect(sentInto[0]!.text).toContain("not from your user");
+    expect(second).toContain("Answer 1.");
+  });
+
+  it("holds a follow-up for a chat that waits for an approval", async () => {
+    const { askBot, chats, caller } = await setup();
+    const { createApproval, takeHeld } = await import("../server/approvals-store");
+    await askBot.run({ bot: "Inbox", message: "first" }, caller);
+    chats["chat-new"]!.status = "idle";
+    await createApproval({ botId: "bot-inbox", botName: "Inbox", agentId: "chat-new", chatTitle: "t", teamId: null, project: null, workspace: null, title: "T", text: "x", file: null });
+    await askBot.run({ bot: "Inbox", message: "second", wait: false }, caller);
+    expect(sentInto).toHaveLength(0);
+    expect((await takeHeld("chat-new"))[0]).toContain("second");
+  });
+
+  it("waits for the other bot to finish its last answer before sending the follow-up", async () => {
+    const { askBot, chats, caller } = await setup();
+    await askBot.run({ bot: "Inbox", message: "first" }, caller);
+    chats["chat-new"]!.status = "running";
+    await askBot.run({ bot: "Inbox", message: "second" }, caller);
+    expect(started).toHaveLength(1);
+    expect(sentInto).toHaveLength(1);
+  });
+
+  it("starts its own chat for another asking chat, and after an hour", async () => {
+    const { askBot, chats, caller } = await setup();
+    await askBot.run({ bot: "Inbox", message: "first" }, caller);
+    chats["chat-new"]!.status = "idle";
+    chats["other-chat"] = { status: "idle", labels: { "aydo.bot": "bot-scout" } };
+    await askBot.run({ bot: "Inbox", message: "from another chat" }, { ...caller, agentId: "other-chat" });
+    expect(started).toHaveLength(2);
+
+    const { updateRequests } = await import("../server/ask-store");
+    await updateRequests((requests) => {
+      for (const request of requests) Object.assign(request, { createdAt: new Date(Date.now() - 3 * 3_600_000).toISOString(), startedAt: new Date(Date.now() - 3 * 3_600_000).toISOString(), answeredAt: undefined });
+    });
+    await askBot.run({ bot: "Inbox", message: "much later" }, caller);
+    expect(started).toHaveLength(3);
+  });
+});
+
+describe("asking with the tool inside a team that allows it", () => {
+  const group = { id: "t1", name: "Ops", logo: null, leadId: "bot-scout", memberIds: ["bot-scout", "bot-inbox"], instructions: "", askFreely: true, createdAt: "", updatedAt: "" };
+
+  it("pre-approves ask_bot for a bot set to ask first, only when the team allows it, and never for Off", () => {
+    const tools = { type: "http" as const, url: "http://127.0.0.1:1/bots/b/a", headers: {} };
+    const granted = (contactBots: "ask" | "allow" | "off", askFreely?: boolean) => buildAgentConfig(makeBot({ contactBots }), EMPTY_LIBRARY, "m", "", { tools, ...(askFreely === undefined ? {} : { askFreely }) }).toolPolicy?.preapproved.map((grant) => grant.tool) ?? [];
+    expect(granted("ask", true)).toContain("ask_bot");
+    expect(granted("ask", false)).not.toContain("ask_bot");
+    expect(granted("ask")).not.toContain("ask_bot");
+    expect(granted("off", true)).not.toContain("ask_bot");
+  });
+
+  it("answers a teammate, and sends the bot back to the user for anyone else, since nothing asked them", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const scout = makeBot({ id: "bot-scout", name: "Scout", contactBots: "ask" });
+    const host = fakeHost([scout, makeBot({ id: "bot-inbox", name: "Inbox" }), makeBot({ id: "bot-solo", name: "Solo" })], EMPTY_LIBRARY, [group]);
+    const chats: Record<string, FakeChat> = { "caller-chat": { status: "idle", labels: { "aydo.bot": "bot-scout" } }, "chat-new": { status: "running", labels: {}, reply: "Done." } };
+    host.attach(fakePaseo(chats));
+    const caller = { bot: scout, agentId: "caller-chat", host, relay: null as never };
+    expect(await askBot.run({ bot: "Inbox", message: "hi" }, caller)).toContain("Done.");
+    await expect(askBot.run({ bot: "Solo", message: "hi" }, caller)).rejects.toThrow(/not on your team/);
+    // A team that does not allow it leaves the choice to the tool permission, as before.
+    const strict = fakeHost([scout, makeBot({ id: "bot-solo", name: "Solo" })], EMPTY_LIBRARY, [{ ...group, askFreely: false }]);
+    strict.attach(fakePaseo(chats));
+    expect(await askBot.run({ bot: "Solo", message: "hi" }, { ...caller, host: strict })).toContain("Done.");
+  });
+
+  it("stops a chat that was started pre-approved once the setting is gone", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const { ASK_PREAPPROVED_LABEL } = await import("../shared/groups");
+    const chatsFor = (basis: string) => ({ "caller-chat": { status: "idle", labels: { "aydo.bot": "bot-scout", [ASK_PREAPPROVED_LABEL]: basis } }, "chat-new": { status: "running", labels: {}, reply: "Done." } }) as Record<string, FakeChat>;
+    const run = async (basis: string, contactBots: "ask" | "allow", groups: (typeof group)[]) => {
+      const scout = makeBot({ id: "bot-scout", name: "Scout", contactBots });
+      const host = fakeHost([scout, makeBot({ id: "bot-inbox", name: "Inbox" }), makeBot({ id: "bot-solo", name: "Solo" })], EMPTY_LIBRARY, groups);
+      host.attach(fakePaseo(chatsFor(basis)));
+      const caller = { bot: scout, agentId: "caller-chat", host, relay: null as never };
+      return (who: string) => askBot.run({ bot: who, message: "hi" }, caller);
+    };
+    // Team pre-approval: the team switched askFreely off, or the bot left the team.
+    await expect((await run("team", "ask", [{ ...group, askFreely: false }]))("Inbox")).rejects.toThrow(/no longer/);
+    await expect((await run("team", "ask", []))("Inbox")).rejects.toThrow(/no longer/);
+    expect(await (await run("team", "ask", [group]))("Inbox")).toContain("Done.");
+    // "Allow" pre-approval: the user changed the bot back to Ask first.
+    await expect((await run("all", "ask", []))("Inbox")).rejects.toThrow(/no longer/);
+    expect(await (await run("all", "allow", []))("Solo")).toContain("Done.");
   });
 });
