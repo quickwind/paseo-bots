@@ -10,23 +10,13 @@ project workspaces, approvals, languages); the sections below name the one that 
 ## Where things are
 
 - Remotes: `origin` = `quickwind/paseo-bots` (our public fork), `upstream` = `oliexe/paseo-bots`.
-- Branches: `bot-crew` is the last **stable** line (it tracks `origin/bot-crew`). **Do not commit to it or merge into it**; it moves
-  only when the user says "release". `main` (local and `origin/main`) was reset to `upstream/main` (`39a7000`) on purpose, so it
-  is upstream's code without our changes. All current work is on `feature/project-workspaces` (placement in a project's
-  workspaces, create and list workspaces, the "Work in" picker, assign, Devin additional directories); do each next step on a
-  short-lived branch off it and merge it back into that feature branch, not into `bot-crew`. Nothing of it is pushed yet.
-  The older feature branches (`ask-followups`, `review-fixes`, `memory-maintenance`, `file-tools`,
-  `feature/native-agent-view`, `feature/new-bot-in-team`) were merged into `bot-crew` earlier and deleted.
-- `feature/proposal-notify` (build 34 and .35: the chat is told when the user accepts or dismisses its proposal card, and an
-  `ask_bot` answer the tool stopped waiting for is pushed into the asking chat) was never merged: its remote was deleted and only
-  the local copy was left. Ported onto this line as build 57 (2026-10-31) and the branch deleted. One change in the port: the
-  proposal notice goes out through `sendIntoChat`, so it is held while the chat waits for an approval. The `build 34` and `build 35` tags
-  of the two docs commits on this line (`9a6099d`, `2252856`) are an older numbering clash, not these features.
-- The native chat work (builds 23 to 30) and the sidebar work (builds 31 to 33) are in `bot-crew`.
-- Releases: the user says when to release; then, and only then, bump the version in `package.json` and `shared/version.ts` (plain semver,
-  `0.3.0` and on; up to 0.2.0 it was `0.2.0 build <n>`, and the "build <n>" numbers in this file are from that time). Do not bump it
-  with each change and do not build zips any more: another session publishes the package (`paseo-aydo`). `npm run pack -- --out <dir>`
-  still makes `aydo-<version>.zip`, if one is asked for.
+- Branches: `aydo` is the main line (it tracks `origin/aydo`). Every change is made on a short-lived feature branch off `aydo` and merged back
+  into `aydo` when it is done (`--no-ff`); do not commit to `aydo` directly. `bot-crew` (an earlier stable line), `feature/project-workspaces`
+  (the line `aydo` was squashed from) and `main` (reset to `upstream/main` on purpose, so it is upstream's code without our changes) are not
+  worked on any more: do not commit to or merge into them unless the user says so. Nothing is pushed unless the user asks.
+- Releases: the user says when to release; then, and only then, bump the version in `package.json`, `package-lock.json` (two places) and
+  `shared/version.ts` (plain semver). Do not bump it with each change and do not build zips: another session publishes the package
+  (`paseo-aydo`). `npm run pack -- --out <dir>` still makes `aydo-<version>.zip`, if one is asked for.
 - Tests: `npx tsc --noEmit && npm test` (includes `tests/no-network.test.ts`).
 
 ## Decisions
